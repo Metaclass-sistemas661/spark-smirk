@@ -26,6 +26,14 @@ function applySecurityHeaders(req, res) {
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.set('X-Content-Type-Options', 'nosniff');
+  res.set('X-Frame-Options', 'DENY');
+  res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+}
+
+function isOriginAllowed(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true; // Same-origin or server-to-server requests without Origin header
+  return ALLOWED_ORIGINS.has(origin);
 }
 
 function defaultPermissionsForRole(role = 'operador') {
@@ -370,7 +378,16 @@ exports.api = onRequest(
     applySecurityHeaders(req, res);
 
     if (req.method === 'OPTIONS') {
+      if (!isOriginAllowed(req)) {
+        res.status(403).json({ error: 'FORBIDDEN_ORIGIN' });
+        return;
+      }
       res.status(204).send('');
+      return;
+    }
+
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !isOriginAllowed(req)) {
+      res.status(403).json({ error: 'FORBIDDEN_ORIGIN' });
       return;
     }
 

@@ -81,8 +81,14 @@ function getSafeRedirectTarget() {
   try {
     const params = new window.URLSearchParams(window.location.search);
     const next = params.get('redirect') || '';
-    if (next.startsWith('/gestao')) {
-      return next;
+    if (next && next.startsWith('/') && !next.startsWith('//')) {
+      const parsed = new window.URL(next, window.location.origin);
+      if (
+        parsed.origin === window.location.origin &&
+        (parsed.pathname === '/gestao' || parsed.pathname.startsWith('/gestao/'))
+      ) {
+        return parsed.pathname + parsed.search;
+      }
     }
   } catch {
     // Ignore query parse error
@@ -98,6 +104,8 @@ function showRedirectNoticeIfNeeded() {
       showAlert('info', 'A sua sessão expirou por inatividade. Inicie sessão novamente para continuar.');
     } else if (reason === 'disabled') {
       showAlert('error', 'A sua conta encontra-se desativada ou bloqueada. Contacte o administrador do sistema.');
+    } else if (reason === 'unavailable') {
+      showAlert('error', 'Não foi possível validar a sessão com o servidor de segurança. Tente novamente.');
     } else if (reason === 'unauthenticated') {
       showAlert('info', 'Área reservada. Autentique-se com a sua conta Spark & Smirk para aceder ao sistema interno.');
     } else if (reason === 'logged_out') {

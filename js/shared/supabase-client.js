@@ -155,11 +155,13 @@ export async function verifyAuthenticatedUser() {
 }
 
 /**
- * Cross-checks the Supabase JWT with the Firebase Functions backend and loads user profile/permissions.
- * Fails closed when backend rejects (401/403).
+ * Cross-checks the Supabase JWT with the backend endpoint and loads user profile/permissions.
+ * Strictly FAIL-CLOSED: rejects access if backend verification fails or is unreachable.
  */
 export async function verifyWithBackendEndpoint(accessToken) {
-  if (!accessToken) return { authenticated: false, status: 401, profile: null };
+  if (!accessToken) {
+    return { authenticated: false, status: 401, error: 'MISSING_TOKEN', profile: null };
+  }
   try {
     const res = await window.fetch('/api/auth/verify', {
       method: 'POST',
@@ -172,11 +174,16 @@ export async function verifyWithBackendEndpoint(accessToken) {
 
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
-      return { authenticated: true, status: 200, profile: null, offlineFallback: true };
+      return {
+        authenticated: false,
+        status: res.status || 503,
+        error: 'VERIFICATION_UNAVAILABLE',
+        profile: null,
+      };
     }
 
     const payload = await res.json().catch(() => ({}));
-    if (res.status === 401 || res.status === 403 || !res.ok) {
+    if (res.status === 401 || res.status === 403 || !res.ok || !payload?.authenticated || !payload?.profile) {
       return {
         authenticated: false,
         status: res.status,
@@ -186,13 +193,18 @@ export async function verifyWithBackendEndpoint(accessToken) {
     }
 
     return {
-      authenticated: Boolean(payload?.authenticated),
+      authenticated: true,
       status: res.status,
-      user: payload?.user || null,
-      profile: payload?.profile || null,
+      user: payload.user || null,
+      profile: payload.profile,
     };
   } catch {
-    return { authenticated: true, status: 200, profile: null, offlineFallback: true };
+    return {
+      authenticated: false,
+      status: 503,
+      error: 'VERIFICATION_UNAVAILABLE',
+      profile: null,
+    };
   }
 }
 

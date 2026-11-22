@@ -267,14 +267,13 @@ class ErpApp {
 
   _canAccessRoute(routeKey) {
     const spec = ROUTES[routeKey];
-    if (!spec) return false;
-    if (!this.currentProfile) return true;
+    if (!spec || !this.currentProfile) return false;
     return hasPermission(this.currentProfile, spec.perm[0], spec.perm[1]);
   }
 
   _canQuickAction(actionKey) {
     const perm = QUICK_ACTION_PERMS[actionKey];
-    if (!perm || !this.currentProfile) return true;
+    if (!perm || !this.currentProfile) return false;
     return (
       hasPermission(this.currentProfile, perm[0], 'ver') &&
       hasPermission(this.currentProfile, perm[0], perm[1])
@@ -505,7 +504,7 @@ class ErpApp {
     const ctx = {
       month: this.month,
       search: this.search,
-      can: (mod, act) => (!this.currentProfile ? true : hasPermission(this.currentProfile, mod, act)),
+      can: (mod, act) => (this.currentProfile ? hasPermission(this.currentProfile, mod, act) : false),
     };
     if (this.activeRoute === 'dashboard') {
       this.dashboard.render(this.workspace, ctx);
@@ -633,14 +632,19 @@ async function bootstrapErp() {
   }
 
   const backendCheck = await verifyWithBackendEndpoint(auth.session.access_token);
-  if (!backendCheck.authenticated) {
+  if (!backendCheck.authenticated || !backendCheck.profile) {
     await signOutUser();
-    const reason = backendCheck.error === 'ACCOUNT_DISABLED' ? 'disabled' : 'unauthenticated';
+    const reason =
+      backendCheck.error === 'ACCOUNT_DISABLED'
+        ? 'disabled'
+        : backendCheck.error === 'VERIFICATION_UNAVAILABLE'
+          ? 'unavailable'
+          : 'unauthenticated';
     window.location.replace(`/login/?reason=${reason}`);
     return;
   }
 
-  const profile = backendCheck.profile || null;
+  const profile = backendCheck.profile;
   const mustChangePassword = Boolean(
     profile?.senha_provisoria || auth.user?.app_metadata?.must_change_password
   );
