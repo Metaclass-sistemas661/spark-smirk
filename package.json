@@ -45,7 +45,7 @@
   },
   "devDependencies": {
     "autoprefixer": "^10.4.20",
-    "cssnano": "^7.0.0",
+    "cssnano": "^9.9.0",
     "eslint": "^9.8.0",
     "firebase-tools": "^13.15.0",
     "postcss": "^8.4.40",
