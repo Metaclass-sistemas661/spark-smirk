@@ -105,7 +105,7 @@ jobs:
           echo "OK: Todos os entrypoints (/, /login/, /gestao/) compilados e sem chaves privadas."
 
       - name: Publicar Artifact de Produção (dist/)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: spark-smirk-dist-${{ github.sha }}
           path: dist
