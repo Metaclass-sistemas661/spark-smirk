@@ -139,10 +139,14 @@ export class OperacionalObrasModule {
               <option value="all">Todas as Tipologias</option>
               ${PROJECT_TYPES.map((t) => `<option value="${escapeHtml(t)}" ${this.typeFilter === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
             </select>
-            <button type="button" class="erp-btn erp-btn--primary" id="btnNewProject">
-              ${ICONS.plus}
-              <span>Nova Obra &amp; Orçamento</span>
-            </button>
+            ${
+              (ctx.can ? ctx.can('op_obras', 'criar') : true)
+                ? `<button type="button" class="erp-btn erp-btn--primary" id="btnNewProject">
+                    ${ICONS.plus}
+                    <span>Nova Obra &amp; Orçamento</span>
+                  </button>`
+                : ''
+            }
           </div>
         </div>
 
@@ -212,8 +216,8 @@ export class OperacionalObrasModule {
                       <td>
                         <div class="erp-row-actions">
                           <button type="button" class="erp-icon-btn" title="Ver Orçamento &amp; Pagamentos" data-proj-view="${escapeHtml(proj.id)}">${ICONS.eye}</button>
-                          <button type="button" class="erp-icon-btn" title="Editar Obra Completa" data-proj-edit="${escapeHtml(proj.id)}">${ICONS.edit}</button>
-                          <button type="button" class="erp-icon-btn erp-icon-btn--danger" title="Excluir Obra" data-proj-del="${escapeHtml(proj.id)}">${ICONS.trash}</button>
+                          ${!ctx.can || ctx.can('op_obras', 'editar') ? `<button type="button" class="erp-icon-btn" title="Editar Obra Completa" data-proj-edit="${escapeHtml(proj.id)}">${ICONS.edit}</button>` : ''}
+                          ${!ctx.can || ctx.can('op_obras', 'excluir') ? `<button type="button" class="erp-icon-btn erp-icon-btn--danger" title="Excluir Obra" data-proj-del="${escapeHtml(proj.id)}">${ICONS.trash}</button>` : ''}
                         </div>
                       </td>
                     </tr>`;
@@ -231,7 +235,7 @@ export class OperacionalObrasModule {
       store._commit();
     });
 
-    container.querySelector('#btnNewProject').addEventListener('click', () => {
+    container.querySelector('#btnNewProject')?.addEventListener('click', () => {
       this._openProjectFormModal(null, statusFilter);
     });
 

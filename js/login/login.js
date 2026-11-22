@@ -96,6 +96,8 @@ function showRedirectNoticeIfNeeded() {
     const reason = params.get('reason');
     if (reason === 'timeout') {
       showAlert('info', 'A sua sessão expirou por inatividade. Inicie sessão novamente para continuar.');
+    } else if (reason === 'disabled') {
+      showAlert('error', 'A sua conta encontra-se desativada ou bloqueada. Contacte o administrador do sistema.');
     } else if (reason === 'unauthenticated') {
       showAlert('info', 'Área reservada. Autentique-se com a sua conta Spark & Smirk para aceder ao sistema interno.');
     } else if (reason === 'logged_out') {

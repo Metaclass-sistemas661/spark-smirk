@@ -155,11 +155,11 @@ export async function verifyAuthenticatedUser() {
 }
 
 /**
- * Cross-checks the Supabase JWT with the Firebase Functions backend when running on Firebase Hosting.
- * Returns true if verified or if the endpoint is unavailable in local Vite-only mode.
+ * Cross-checks the Supabase JWT with the Firebase Functions backend and loads user profile/permissions.
+ * Fails closed when backend rejects (401/403).
  */
 export async function verifyWithBackendEndpoint(accessToken) {
-  if (!accessToken) return false;
+  if (!accessToken) return { authenticated: false, status: 401, profile: null };
   try {
     const res = await window.fetch('/api/auth/verify', {
       method: 'POST',
@@ -170,25 +170,71 @@ export async function verifyWithBackendEndpoint(accessToken) {
       cache: 'no-store',
     });
 
-    // If running local Vite dev without Firebase Functions proxy, endpoint returns 404 HTML/empty
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
-      return true;
+      return { authenticated: true, status: 200, profile: null, offlineFallback: true };
     }
 
-    if (res.status === 401 || res.status === 403) {
-      return false;
+    const payload = await res.json().catch(() => ({}));
+    if (res.status === 401 || res.status === 403 || !res.ok) {
+      return {
+        authenticated: false,
+        status: res.status,
+        error: payload?.error || 'UNAUTHORIZED',
+        profile: null,
+      };
     }
 
-    if (res.ok) {
-      const payload = await res.json();
-      return Boolean(payload?.authenticated);
-    }
-
-    return true;
+    return {
+      authenticated: Boolean(payload?.authenticated),
+      status: res.status,
+      user: payload?.user || null,
+      profile: payload?.profile || null,
+    };
   } catch {
-    return true;
+    return { authenticated: true, status: 200, profile: null, offlineFallback: true };
   }
+}
+
+/**
+ * Performs an authenticated JSON request to /api/** using the current Supabase access token.
+ */
+export async function authenticatedApiFetch(endpoint, options = {}) {
+  const supabase = await getSupabaseClient();
+  if (!supabase) {
+    throw new Error('Cliente Supabase não configurado.');
+  }
+
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  if (!token) {
+    throw new Error('Sessão expirada. Inicie sessão novamente.');
+  }
+
+  const headers = {
+    Accept: 'application/json',
+    Authorization: `Bearer ${token}`,
+    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    ...(options.headers || {}),
+  };
+
+  const response = await window.fetch(endpoint, {
+    method: options.method || 'GET',
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    cache: 'no-store',
+  });
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error('API administrativa indisponível neste servidor.');
+  }
+
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || `Erro HTTP ${response.status}`);
+  }
+  return payload;
 }
 
 /**

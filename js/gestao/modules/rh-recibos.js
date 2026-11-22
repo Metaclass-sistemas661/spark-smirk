@@ -177,16 +177,22 @@ export class RhRecibosModule {
               ${ICONS.download}
               <span>Exportar CSV</span>
             </button>
-            <button type="button" class="erp-btn erp-btn--primary" id="btnNewPayslip">
-              ${ICONS.plus}
-              <span>Emitir Vencimento</span>
-            </button>
+            ${
+              (ctx.can ? ctx.can('rh_recibos', 'emitir') : true)
+                ? `<button type="button" class="erp-btn erp-btn--primary" id="btnNewPayslip">
+                    ${ICONS.plus}
+                    <span>Emitir Vencimento</span>
+                  </button>`
+                : ''
+            }
           </div>
         </div>
 
         <div id="payViewBody"></div>
       </div>
     `;
+
+    this._can = ctx.can || (() => true);
 
     container.querySelectorAll('[data-pay-view]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -195,7 +201,7 @@ export class RhRecibosModule {
       });
     });
 
-    container.querySelector('#btnNewPayslip').addEventListener('click', () => {
+    container.querySelector('#btnNewPayslip')?.addEventListener('click', () => {
       const targetEmp = this.employeeFilter !== 'all' ? this.employeeFilter : null;
       this._openPayslipModal(null, month, targetEmp);
     });
@@ -314,8 +320,8 @@ export class RhRecibosModule {
                     <td>
                       <div class="erp-row-actions">
                         <button type="button" class="erp-icon-btn" title="Ver Lista do Ano deste Funcionário" data-go-annual="${escapeHtml(p.employeeId)}" data-go-year="${escapeHtml(String(p.month).slice(0, 4))}">${ICONS.calendar}</button>
-                        <button type="button" class="erp-icon-btn" title="Editar Vencimento" data-edit-pay="${escapeHtml(p.id)}">${ICONS.edit}</button>
-                        <button type="button" class="erp-icon-btn erp-icon-btn--danger" title="Excluir Vencimento" data-del-pay="${escapeHtml(p.id)}">${ICONS.trash}</button>
+                        ${!this._can || this._can('rh_recibos', 'emitir') ? `<button type="button" class="erp-icon-btn" title="Editar Vencimento" data-edit-pay="${escapeHtml(p.id)}">${ICONS.edit}</button>` : ''}
+                        ${!this._can || this._can('rh_recibos', 'excluir') ? `<button type="button" class="erp-icon-btn erp-icon-btn--danger" title="Excluir Vencimento" data-del-pay="${escapeHtml(p.id)}">${ICONS.trash}</button>` : ''}
                       </div>
                     </td>
                   </tr>`;
@@ -434,9 +440,13 @@ export class RhRecibosModule {
           <td>${p ? escapeHtml(formatCurrency(p.netSalary)) : '—'}</td>
           <td>${filesHtml}</td>
           <td style="text-align:right">
-            <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-attach-month="${escapeHtml(ym)}">
-              ${ICONS.paperclip}<span>Anexar Recibo</span>
-            </button>
+            ${
+              !this._can || this._can('rh_recibos', 'anexar')
+                ? `<button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-attach-month="${escapeHtml(ym)}">
+                    ${ICONS.paperclip}<span>Anexar Recibo</span>
+                  </button>`
+                : '<span style="font-size:11.5px;color:var(--erp-text-muted);">Só leitura</span>'
+            }
           </td>
         </tr>`;
     }).join('');

@@ -158,7 +158,7 @@ export class RhFuncionariosModule {
               <span>Diretório de Funcionários</span>
               <span class="erp-subtab__badge">${filtered.length}</span>
             </button>
-            <button type="button" class="erp-subtab ${this.viewMode === 'daily' ? 'is-active' : ''}" data-rh-view="daily">
+            <button type="button" class="erp-subtab ${this.viewMode === 'daily' ? 'is-active' : ''}" data-rh-view="daily" ${(ctx.can ? ctx.can('rh_funcionarios', 'assiduidade') : true) ? '' : 'style="display:none"'}>
               ${ICONS.calendar}
               <span>Marcar Presenças &amp; Faltas</span>
             </button>
@@ -174,16 +174,25 @@ export class RhFuncionariosModule {
                 ? `<button type="button" class="erp-btn erp-btn--outline" id="btnExportAttendanceCsv">${ICONS.download}<span>Exportar CSV</span></button>`
                 : ''
             }
-            <button type="button" class="erp-btn erp-btn--primary" id="btnNewEmployee">
-              ${ICONS.plus}
-              <span>Novo Funcionário</span>
-            </button>
+            ${
+              (ctx.can ? ctx.can('rh_funcionarios', 'criar') : true)
+                ? `<button type="button" class="erp-btn erp-btn--primary" id="btnNewEmployee">
+                    ${ICONS.plus}
+                    <span>Novo Funcionário</span>
+                  </button>`
+                : ''
+            }
           </div>
         </div>
 
         <div id="rhViewBody"></div>
       </div>
     `;
+
+    this._can = ctx.can || (() => true);
+    if (this.viewMode === 'daily' && !this._can('rh_funcionarios', 'assiduidade')) {
+      this.viewMode = 'directory';
+    }
 
     container.querySelectorAll('[data-rh-view]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -192,7 +201,7 @@ export class RhFuncionariosModule {
       });
     });
 
-    container.querySelector('#btnNewEmployee').addEventListener('click', () => {
+    container.querySelector('#btnNewEmployee')?.addEventListener('click', () => {
       this._openEmployeeModal(null);
     });
 
@@ -290,8 +299,8 @@ export class RhFuncionariosModule {
                       <div class="erp-row-actions">
                         <button type="button" class="erp-icon-btn" title="Ver Recibos do Ano" data-emp-payslips="${escapeHtml(emp.id)}">${ICONS.receipt}</button>
                         <button type="button" class="erp-icon-btn" title="Calendário Mensal" data-emp-calendar="${escapeHtml(emp.id)}">${ICONS.calendar}</button>
-                        <button type="button" class="erp-icon-btn" title="Editar Funcionário" data-emp-edit="${escapeHtml(emp.id)}">${ICONS.edit}</button>
-                        <button type="button" class="erp-icon-btn erp-icon-btn--danger" title="Excluir Funcionário" data-emp-delete="${escapeHtml(emp.id)}">${ICONS.trash}</button>
+                        ${!this._can || this._can('rh_funcionarios', 'editar') ? `<button type="button" class="erp-icon-btn" title="Editar Funcionário" data-emp-edit="${escapeHtml(emp.id)}">${ICONS.edit}</button>` : ''}
+                        ${!this._can || this._can('rh_funcionarios', 'excluir') ? `<button type="button" class="erp-icon-btn erp-icon-btn--danger" title="Excluir Funcionário" data-emp-delete="${escapeHtml(emp.id)}">${ICONS.trash}</button>` : ''}
                       </div>
                     </td>
                   </tr>`;

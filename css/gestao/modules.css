@@ -379,3 +379,311 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Sidebar Active User Card ── */
+.erp-sidebar__user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  margin-bottom: 6px;
+  border-radius: var(--erp-radius-md);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.erp-sidebar__user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--erp-primary), #ff8534);
+  color: #fff;
+  font-family: var(--erp-font-heading);
+  font-size: 11px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.erp-sidebar__user-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.erp-sidebar__user-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.erp-sidebar__user-role {
+  font-size: 10.5px;
+  color: #fb923c;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.erp-shell.is-sidebar-collapsed .erp-sidebar__user-info {
+  display: none;
+}
+
+.erp-shell.is-sidebar-collapsed .erp-sidebar__user {
+  justify-content: center;
+  padding: 6px;
+}
+
+/* ── Forced Provisional Password Gate ── */
+.erp-force-pw-card {
+  width: 100%;
+  max-width: 460px;
+  background: var(--erp-surface);
+  border-radius: var(--erp-radius-xl);
+  padding: 32px 28px;
+  box-shadow: var(--erp-shadow-lg);
+  border: 1px solid var(--erp-border);
+  border-top: 4px solid var(--erp-primary);
+}
+
+.erp-force-pw-card__badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--erp-primary-soft);
+  color: var(--erp-primary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+}
+
+.erp-force-pw-card__title {
+  font-family: var(--erp-font-heading);
+  font-size: 21px;
+  font-weight: 800;
+  color: var(--erp-heading);
+  margin-bottom: 6px;
+}
+
+.erp-force-pw-card__desc {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--erp-text-secondary);
+  margin-bottom: 18px;
+}
+
+.erp-force-pw-alert {
+  display: none;
+  padding: 10px 13px;
+  border-radius: var(--erp-radius-md);
+  font-size: 12.5px;
+  font-weight: 500;
+  margin-bottom: 14px;
+  border: 1px solid transparent;
+}
+
+.erp-force-pw-alert.is-visible {
+  display: block;
+}
+
+.erp-force-pw-alert--error {
+  background: var(--erp-danger-soft);
+  border-color: rgba(220, 38, 38, 0.3);
+  color: var(--erp-danger);
+}
+
+.erp-force-pw-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.erp-pw-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.erp-pw-input-wrap input {
+  width: 100%;
+  padding-right: 78px;
+}
+
+.erp-pw-toggle {
+  position: absolute;
+  right: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--erp-primary);
+  padding: 4px 6px;
+}
+
+.erp-pw-checklist {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  padding: 10px 12px;
+  border-radius: var(--erp-radius-md);
+  background: var(--erp-surface-alt);
+  border: 1px solid var(--erp-border);
+  font-size: 11.5px;
+  color: var(--erp-text-muted);
+}
+
+.erp-pw-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.erp-pw-checklist li::before {
+  content: '○';
+  font-weight: 700;
+  color: var(--erp-text-muted);
+}
+
+.erp-pw-checklist li.is-valid {
+  color: var(--erp-success);
+  font-weight: 600;
+}
+
+.erp-pw-checklist li.is-valid::before {
+  content: '✓';
+  color: var(--erp-success);
+}
+
+.erp-force-pw-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* ── Admin Utilizadores & Matriz de Permissões ── */
+.erp-pw-generator {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.erp-pw-generator input {
+  flex: 1;
+  font-family: ui-monospace, sfmono-regular, menlo, monospace;
+}
+
+.erp-role-templates {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.erp-perm-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.erp-perm-card {
+  padding: 12px 14px;
+  border-radius: var(--erp-radius-md);
+  border: 1px solid var(--erp-border);
+  background: var(--erp-surface-alt);
+}
+
+.erp-perm-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--erp-border);
+}
+
+.erp-perm-card__title {
+  font-family: var(--erp-font-heading);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--erp-heading);
+}
+
+.erp-perm-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.erp-perm-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: var(--erp-radius-sm);
+  border: 1px solid var(--erp-border);
+  background: var(--erp-surface);
+  font-size: 12px;
+  color: var(--erp-text);
+  cursor: pointer;
+}
+
+.erp-perm-chip input {
+  width: auto;
+  accent-color: var(--erp-primary);
+}
+
+.erp-cred-box {
+  padding: 14px 16px;
+  border-radius: var(--erp-radius-md);
+  border: 1px solid var(--erp-primary-border);
+  background: var(--erp-primary-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.erp-cred-box__code {
+  font-family: ui-monospace, sfmono-regular, menlo, monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--erp-heading);
+  background: var(--erp-surface);
+  padding: 8px 12px;
+  border-radius: var(--erp-radius-sm);
+  border: 1px solid var(--erp-border);
+}
+
+.erp-perm-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.erp-perm-tag {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  background: var(--erp-surface-alt);
+  border: 1px solid var(--erp-border);
+  color: var(--erp-text-secondary);
+}
+
+@media (width <= 760px) {
+  .erp-perm-grid,
+  .erp-pw-checklist {
+    grid-template-columns: 1fr;
+  }
+}

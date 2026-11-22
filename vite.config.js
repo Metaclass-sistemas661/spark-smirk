@@ -32,6 +32,13 @@ export default defineConfig(({ mode }) => {
       hmr: {
         overlay: true,
       },
+      proxy: {
+        '/api': {
+          target: 'https://spark-smirk.web.app',
+          changeOrigin: true,
+          secure: true,
+        },
+      },
     },
 
     // ═══════════════════════════════════════════════════════════
