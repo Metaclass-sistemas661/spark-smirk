@@ -126,7 +126,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Transferir Artifact Compilado
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: spark-smirk-dist-${{ github.sha }}
           path: dist
@@ -166,7 +166,7 @@ jobs:
             functions/package-lock.json
 
       - name: Transferir Artifact Compilado (dist/)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: spark-smirk-dist-${{ github.sha }}
           path: dist
