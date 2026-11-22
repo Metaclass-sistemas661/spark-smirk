@@ -219,8 +219,8 @@ jobs:
           set -euo pipefail
           echo "A validar endpoints em ${{ env.PRODUCTION_URL }}..."
 
-          for route in "/" "/login/" "/gestao/"; do
-            code=$(curl -sS -o /dev/null -w "%{http_code}" "${{ env.PRODUCTION_URL }}${route}")
+          for route in "/" "/login" "/gestao"; do
+            code=$(curl -sS -L -o /dev/null -w "%{http_code}" "${{ env.PRODUCTION_URL }}${route}")
             echo "GET ${route} -> HTTP ${code}"
             if [ "$code" != "200" ]; then
               echo "::error::Rota ${route} devolveu HTTP ${code} em produção!"
