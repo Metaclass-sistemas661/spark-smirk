@@ -6,6 +6,7 @@ Os scripts SQL estão separados por **schemas PostgreSQL distintos** e organizad
 
 ### `00-setup/` — Schemas Base e Permissões
 - [`01-schemas-e-permissoes.sql`](./00-setup/01-schemas-e-permissoes.sql) — Cria os schemas `seguranca`, `rh` e `operacional`, bloqueia acesso anónimo (`anon`) e define a função partilhada `seguranca.atualizar_timestamp()`.
+- [`02-erp-bridge-e-storage.sql`](./00-setup/02-erp-bridge-e-storage.sql) — Cria o bucket privado `recibos-vencimentos`, endurece políticas RLS granulares por módulo/ação e disponibiliza RPCs transacionais de sincronização para RH e Operacional.
 
 ### `01-seguranca/` — Schema `seguranca`
 - [`01-utilizadores-perfil.sql`](./01-seguranca/01-utilizadores-perfil.sql) — Tabela `seguranca.perfis_utilizadores` (papéis, permissões granulares JSONB, controlo de senha provisória e ligação a `auth.users`).

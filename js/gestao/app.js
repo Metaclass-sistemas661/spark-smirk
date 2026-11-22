@@ -225,7 +225,6 @@ class ErpApp {
           confirmLabel: 'Repor Dados',
           onConfirm: () => {
             store.resetDemo();
-            showToast('Dados de demonstração restaurados.');
           },
         });
       });
@@ -653,12 +652,23 @@ async function bootstrapErp() {
     showForcedPasswordChangeGate({
       user: auth.user,
       profile,
-      onComplete: (updatedProfile) => {
+      onComplete: async (updatedProfile) => {
+        try {
+          await store.init(updatedProfile);
+        } catch (err) {
+          showToast(err?.message || 'Erro ao sincronizar dados iniciais.', 'error');
+        }
         const app = new ErpApp();
         app.init(auth.user, updatedProfile);
       },
     });
     return;
+  }
+
+  try {
+    await store.init(profile);
+  } catch (err) {
+    showToast(err?.message || 'Erro ao carregar dados do sistema.', 'error');
   }
 
   const app = new ErpApp();

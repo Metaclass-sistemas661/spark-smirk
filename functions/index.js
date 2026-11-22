@@ -103,6 +103,11 @@ function hasAdminUserAction(profile, actionKey) {
   return profile.nivel_acesso === 'administrador';
 }
 
+function hasModuleAction(profile, moduleKey, actionKey = 'ver') {
+  if (!profile || profile.ativo === false) return false;
+  return profile.permissoes?.[moduleKey]?.[actionKey] === true;
+}
+
 async function fetchDbProfile(supabaseAdmin, userId) {
   try {
     const { data, error } = await supabaseAdmin
@@ -855,6 +860,504 @@ exports.api = onRequest(
       } catch (err) {
         console.error('Erro na gestão de utilizador:', err);
         res.status(500).json({ error: 'ADMIN_USER_OPERATION_ERROR' });
+        return;
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MÓDULOS ERP (RH + RECIBOS + ANEXOS STORAGE + OPERACIONAL) — LIVE POSTGRES
+    // ═══════════════════════════════════════════════════════════════════════════
+    if (requestPath.startsWith('/api/erp')) {
+      try {
+        const ctx = await resolveCallerContext(req, supabaseAdmin);
+        if (ctx.errorStatus) {
+          res.status(ctx.errorStatus).json({ error: ctx.errorCode });
+          return;
+        }
+
+        const canRhVer = hasModuleAction(ctx.profile, 'rh_funcionarios', 'ver');
+        const canRecibosVer = hasModuleAction(ctx.profile, 'rh_recibos', 'ver');
+        const canOpVer = hasModuleAction(ctx.profile, 'op_obras', 'ver');
+
+        // ── GET /api/erp/bootstrap ───────────────────────────────────────────
+        if (req.method === 'GET' && requestPath === '/api/erp/bootstrap') {
+          const { data: snapshot, error: snapErr } = await supabaseAdmin.rpc('spark_erp_snapshot', {
+            p_include_rh: canRhVer,
+            p_include_payslips: canRecibosVer,
+            p_include_projects: canOpVer,
+          });
+
+          if (snapErr) {
+            res.status(500).json({
+              error: 'ERP_DB_READ_ERROR',
+              message: 'Não foi possível carregar os registos da base de dados.',
+            });
+            return;
+          }
+
+          res.status(200).json(
+            snapshot || {
+              employees: [],
+              attendance: {},
+              payslips: [],
+              attachedReceipts: [],
+              projects: [],
+            }
+          );
+          return;
+        }
+
+        // ── POST /api/erp/bootstrap-seed (Repor Dados Demo no Postgres) ──────
+        if (req.method === 'POST' && requestPath === '/api/erp/bootstrap-seed') {
+          if (!hasAdminUserAction(ctx.profile, 'editar')) {
+            res.status(403).json({
+              error: 'FORBIDDEN',
+              message: 'Apenas administradores autorizados podem repor dados de demonstração.',
+            });
+            return;
+          }
+
+          const body = req.body && typeof req.body === 'object' ? req.body : {};
+          const employees = Array.isArray(body.employees) ? body.employees : [];
+          const attendance = body.attendance && typeof body.attendance === 'object' ? body.attendance : {};
+          const payslips = Array.isArray(body.payslips) ? body.payslips : [];
+          const projects = Array.isArray(body.projects) ? body.projects : [];
+
+          for (const emp of employees) {
+            const { error } = await supabaseAdmin.rpc('spark_erp_upsert_employee', {
+              p_payload: emp,
+              p_actor: ctx.authUser.id,
+            });
+            if (error) throw new Error(error.message);
+          }
+
+          for (const [empCode, dayMap] of Object.entries(attendance)) {
+            for (const [dateISO, rec] of Object.entries(dayMap || {})) {
+              if (!rec?.status) continue;
+              await supabaseAdmin.rpc('spark_erp_set_attendance', {
+                p_emp_code: empCode,
+                p_date: dateISO,
+                p_status: rec.status,
+                p_note: rec.note || '',
+                p_actor: ctx.authUser.id,
+              });
+            }
+          }
+
+          for (const pay of payslips) {
+            const { error } = await supabaseAdmin.rpc('spark_erp_upsert_payslip', {
+              p_payload: pay,
+              p_actor: ctx.authUser.id,
+            });
+            if (error) throw new Error(error.message);
+          }
+
+          for (const proj of projects) {
+            const { error } = await supabaseAdmin.rpc('spark_erp_upsert_project', {
+              p_payload: proj,
+              p_actor: ctx.authUser.id,
+            });
+            if (error) throw new Error(error.message);
+          }
+
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'erp.sistema',
+            acao: 'REPOR_DADOS_DEMO',
+          });
+
+          const { data: snapshot } = await supabaseAdmin.rpc('spark_erp_snapshot', {
+            p_include_rh: canRhVer,
+            p_include_payslips: canRecibosVer,
+            p_include_projects: canOpVer,
+          });
+          res.status(200).json(snapshot);
+          return;
+        }
+
+        // ── FUNCIONÁRIOS (POST / PUT / DELETE) ───────────────────────────────
+        if (req.method === 'POST' && requestPath === '/api/erp/employees') {
+          if (!hasModuleAction(ctx.profile, 'rh_funcionarios', 'criar')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para adicionar funcionários.' });
+            return;
+          }
+          const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_employee', {
+            p_payload: req.body || {},
+            p_actor: ctx.authUser.id,
+          });
+          if (error) {
+            res.status(400).json({ error: 'EMPLOYEE_SAVE_ERROR', message: error.message });
+            return;
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'rh.funcionarios',
+            acao: 'CRIAR_FUNCIONARIO',
+            entidadeId: data?.id,
+          });
+          res.status(201).json(data);
+          return;
+        }
+
+        const empMatch = requestPath.match(/^\/api\/erp\/employees\/([^/]+)$/);
+        if (empMatch && (req.method === 'PUT' || req.method === 'DELETE')) {
+          const empCode = decodeURIComponent(empMatch[1]);
+          if (req.method === 'PUT') {
+            if (!hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar')) {
+              res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para editar funcionários.' });
+              return;
+            }
+            const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_employee', {
+              p_payload: { ...(req.body || {}), id: empCode },
+              p_actor: ctx.authUser.id,
+            });
+            if (error) {
+              res.status(400).json({ error: 'EMPLOYEE_UPDATE_ERROR', message: error.message });
+              return;
+            }
+            await writeAuditLog(supabaseAdmin, {
+              userId: ctx.authUser.id,
+              userEmail: ctx.authUser.email,
+              modulo: 'rh.funcionarios',
+              acao: 'EDITAR_FUNCIONARIO',
+              entidadeId: empCode,
+            });
+            res.status(200).json(data);
+            return;
+          }
+
+          if (!hasModuleAction(ctx.profile, 'rh_funcionarios', 'excluir')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para excluir funcionários.' });
+            return;
+          }
+          const { error } = await supabaseAdmin.rpc('spark_erp_delete_employee', { p_code: empCode });
+          if (error) {
+            res.status(400).json({ error: 'EMPLOYEE_DELETE_ERROR', message: error.message });
+            return;
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'rh.funcionarios',
+            acao: 'EXCLUIR_FUNCIONARIO',
+            entidadeId: empCode,
+          });
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        // ── ASSIDUIDADE (PUT /api/erp/attendance) ────────────────────────────
+        if (req.method === 'PUT' && requestPath === '/api/erp/attendance') {
+          if (!hasModuleAction(ctx.profile, 'rh_funcionarios', 'assiduidade')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para registar assiduidade.' });
+            return;
+          }
+          const body = req.body && typeof req.body === 'object' ? req.body : {};
+          if (body.action === 'mark_all_present') {
+            const { error } = await supabaseAdmin.rpc('spark_erp_mark_all_present', {
+              p_date: body.dateISO,
+              p_actor: ctx.authUser.id,
+            });
+            if (error) {
+              res.status(400).json({ error: 'ATTENDANCE_BATCH_ERROR', message: error.message });
+              return;
+            }
+          } else {
+            const { error } = await supabaseAdmin.rpc('spark_erp_set_attendance', {
+              p_emp_code: body.employeeId,
+              p_date: body.dateISO,
+              p_status: body.status || '',
+              p_note: body.note || '',
+              p_actor: ctx.authUser.id,
+            });
+            if (error) {
+              res.status(400).json({ error: 'ATTENDANCE_SAVE_ERROR', message: error.message });
+              return;
+            }
+          }
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        // ── RECIBOS DE VENCIMENTO (POST / PUT / DELETE) ──────────────────────
+        if (req.method === 'POST' && requestPath === '/api/erp/payslips') {
+          if (!hasModuleAction(ctx.profile, 'rh_recibos', 'emitir')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para emitir vencimentos.' });
+            return;
+          }
+          const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_payslip', {
+            p_payload: req.body || {},
+            p_actor: ctx.authUser.id,
+          });
+          if (error) {
+            res.status(400).json({ error: 'PAYSLIP_SAVE_ERROR', message: error.message });
+            return;
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'rh.recibos',
+            acao: 'EMITIR_VENCIMENTO',
+            entidadeId: data?.id,
+          });
+          res.status(201).json(data);
+          return;
+        }
+
+        const payMatch = requestPath.match(/^\/api\/erp\/payslips\/([^/]+)$/);
+        if (payMatch && (req.method === 'PUT' || req.method === 'DELETE')) {
+          const payCode = decodeURIComponent(payMatch[1]);
+          if (req.method === 'PUT') {
+            if (!hasModuleAction(ctx.profile, 'rh_recibos', 'emitir')) {
+              res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para editar vencimentos.' });
+              return;
+            }
+            const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_payslip', {
+              p_payload: { ...(req.body || {}), id: payCode },
+              p_actor: ctx.authUser.id,
+            });
+            if (error) {
+              res.status(400).json({ error: 'PAYSLIP_UPDATE_ERROR', message: error.message });
+              return;
+            }
+            res.status(200).json(data);
+            return;
+          }
+
+          if (!hasModuleAction(ctx.profile, 'rh_recibos', 'excluir')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para excluir vencimentos.' });
+            return;
+          }
+          const { error } = await supabaseAdmin.rpc('spark_erp_delete_payslip', { p_code: payCode });
+          if (error) {
+            res.status(400).json({ error: 'PAYSLIP_DELETE_ERROR', message: error.message });
+            return;
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'rh.recibos',
+            acao: 'EXCLUIR_VENCIMENTO',
+            entidadeId: payCode,
+          });
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        // ── ANEXOS DE RECIBOS (Storage Privado + rh.recibos_anexados) ────────
+        if (req.method === 'POST' && requestPath === '/api/erp/attachments') {
+          if (!hasModuleAction(ctx.profile, 'rh_recibos', 'anexar')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para anexar recibos.' });
+            return;
+          }
+          const body = req.body && typeof req.body === 'object' ? req.body : {};
+          const rawB64 = String(body.fileBase64 || '');
+          if (!rawB64) {
+            res.status(400).json({ error: 'MISSING_FILE_DATA', message: 'Ficheiro em falta.' });
+            return;
+          }
+
+          const fileBuffer = Buffer.from(rawB64, 'base64');
+          if (fileBuffer.length > 10 * 1024 * 1024) {
+            res.status(400).json({ error: 'FILE_TOO_LARGE', message: 'O ficheiro excede o limite de 10 MB.' });
+            return;
+          }
+
+          const mime = String(body.fileType || 'application/pdf');
+          const allowedMime = mime === 'application/pdf' || mime.startsWith('image/');
+          if (!allowedMime) {
+            res.status(400).json({ error: 'INVALID_MIME', message: 'Apenas ficheiros PDF ou imagem são permitidos.' });
+            return;
+          }
+
+          const safeName = String(body.fileName || 'recibo.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
+          const fileCode = String(body.id || `ATT-${Date.now()}`);
+          const storagePath = `${body.employeeId}/${body.month}/${fileCode}_${safeName}`;
+
+          const { error: uploadErr } = await supabaseAdmin.storage
+            .from('recibos-vencimentos')
+            .upload(storagePath, fileBuffer, { contentType: mime, upsert: true });
+
+          if (uploadErr) {
+            res.status(400).json({ error: 'STORAGE_UPLOAD_ERROR', message: uploadErr.message });
+            return;
+          }
+
+          const { data: metaRow, error: dbErr } = await supabaseAdmin.rpc('spark_erp_add_attachment', {
+            p_payload: {
+              id: fileCode,
+              employeeId: body.employeeId,
+              month: body.month,
+              payslipId: body.payslipId || null,
+              fileName: body.fileName || safeName,
+              fileType: mime,
+              fileSize: fileBuffer.length,
+              storagePath,
+            },
+            p_actor: ctx.authUser.id,
+          });
+
+          if (dbErr) {
+            await supabaseAdmin.storage.from('recibos-vencimentos').remove([storagePath]).catch(() => {});
+            res.status(400).json({ error: 'ATTACHMENT_META_ERROR', message: dbErr.message });
+            return;
+          }
+
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'rh.recibos',
+            acao: 'ANEXAR_RECIBO',
+            entidadeId: fileCode,
+            detalhes: { employeeId: body.employeeId, month: body.month, fileName: body.fileName },
+          });
+
+          res.status(201).json(metaRow);
+          return;
+        }
+
+        const attMatch = requestPath.match(/^\/api\/erp\/attachments\/([^/]+)$/);
+        if (attMatch && (req.method === 'GET' || req.method === 'DELETE')) {
+          const attCode = decodeURIComponent(attMatch[1]);
+          if (req.method === 'GET') {
+            if (!canRecibosVer) {
+              res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para visualizar recibos.' });
+              return;
+            }
+            const { data: meta, error: metaErr } = await supabaseAdmin.rpc('spark_erp_get_attachment', {
+              p_code: attCode,
+            });
+            if (metaErr || !meta?.storagePath) {
+              res.status(404).json({ error: 'ATTACHMENT_NOT_FOUND', message: 'Ficheiro não encontrado.' });
+              return;
+            }
+            const { data: fileBlob, error: dlErr } = await supabaseAdmin.storage
+              .from('recibos-vencimentos')
+              .download(meta.storagePath);
+            if (dlErr || !fileBlob) {
+              res.status(404).json({ error: 'STORAGE_READ_ERROR', message: 'Não foi possível transferir o ficheiro.' });
+              return;
+            }
+            const arrayBuf = await fileBlob.arrayBuffer();
+            res.status(200).json({
+              id: meta.id,
+              name: meta.fileName,
+              type: meta.fileType,
+              size: meta.fileSize || arrayBuf.byteLength,
+              base64: Buffer.from(arrayBuf).toString('base64'),
+            });
+            return;
+          }
+
+          if (!hasModuleAction(ctx.profile, 'rh_recibos', 'excluir')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para remover anexos.' });
+            return;
+          }
+          const { data: removedPath, error: delErr } = await supabaseAdmin.rpc('spark_erp_delete_attachment', {
+            p_code: attCode,
+          });
+          if (delErr) {
+            res.status(400).json({ error: 'ATTACHMENT_DELETE_ERROR', message: delErr.message });
+            return;
+          }
+          if (removedPath) {
+            await supabaseAdmin.storage.from('recibos-vencimentos').remove([removedPath]).catch(() => {});
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'rh.recibos',
+            acao: 'REMOVER_ANEXO',
+            entidadeId: attCode,
+          });
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        // ── OBRAS, ORÇAMENTOS & PAGAMENTOS (POST / PUT / DELETE) ─────────────
+        if (req.method === 'POST' && requestPath === '/api/erp/projects') {
+          if (!hasModuleAction(ctx.profile, 'op_obras', 'criar')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para cadastrar obras.' });
+            return;
+          }
+          const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_project', {
+            p_payload: req.body || {},
+            p_actor: ctx.authUser.id,
+          });
+          if (error) {
+            res.status(400).json({ error: 'PROJECT_CREATE_ERROR', message: error.message });
+            return;
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'operacional.obras',
+            acao: 'CRIAR_OBRA',
+            entidadeId: data?.id,
+          });
+          res.status(201).json(data);
+          return;
+        }
+
+        const projMatch = requestPath.match(/^\/api\/erp\/projects\/([^/]+)$/);
+        if (projMatch && (req.method === 'PUT' || req.method === 'DELETE')) {
+          const projCode = decodeURIComponent(projMatch[1]);
+          if (req.method === 'PUT') {
+            const body = req.body && typeof req.body === 'object' ? req.body : {};
+            const keys = Object.keys(body);
+            const paymentsOnly = keys.length === 1 && keys[0] === 'payments';
+            const allowed = paymentsOnly
+              ? hasModuleAction(ctx.profile, 'op_obras', 'pagamentos') ||
+                hasModuleAction(ctx.profile, 'op_obras', 'editar')
+              : hasModuleAction(ctx.profile, 'op_obras', 'editar');
+
+            if (!allowed) {
+              res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para atualizar esta obra.' });
+              return;
+            }
+            const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_project', {
+              p_payload: { ...body, code: body.code || projCode, id: projCode },
+              p_actor: ctx.authUser.id,
+            });
+            if (error) {
+              res.status(400).json({ error: 'PROJECT_UPDATE_ERROR', message: error.message });
+              return;
+            }
+            await writeAuditLog(supabaseAdmin, {
+              userId: ctx.authUser.id,
+              userEmail: ctx.authUser.email,
+              modulo: 'operacional.obras',
+              acao: paymentsOnly ? 'ATUALIZAR_PAGAMENTOS_OBRA' : 'EDITAR_OBRA',
+              entidadeId: projCode,
+            });
+            res.status(200).json(data);
+            return;
+          }
+
+          if (!hasModuleAction(ctx.profile, 'op_obras', 'excluir')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para excluir obras.' });
+            return;
+          }
+          const { error } = await supabaseAdmin.rpc('spark_erp_delete_project', { p_code: projCode });
+          if (error) {
+            res.status(400).json({ error: 'PROJECT_DELETE_ERROR', message: error.message });
+            return;
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'operacional.obras',
+            acao: 'EXCLUIR_OBRA',
+            entidadeId: projCode,
+          });
+          res.status(200).json({ ok: true });
+          return;
+        }
+      } catch (err) {
+        console.error('Erro na operação ERP:', err);
+        res.status(500).json({ error: 'ERP_INTERNAL_ERROR', message: 'Erro interno ao processar operação na base de dados.' });
         return;
       }
     }
