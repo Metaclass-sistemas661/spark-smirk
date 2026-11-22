@@ -276,8 +276,8 @@ exports.api = onRequest(
     if (req.method === 'GET' && requestPath === '/api/auth/config') {
       if (!supabaseUrl || !supabaseAnonKey) {
         res.status(503).json({
-          error: 'SUPABASE_SECRETS_NOT_CONFIGURED',
-          message: 'Os segredos SUPABASE_URL e SUPABASE_ANON_KEY não estão configurados no Secret Manager.',
+          error: 'AUTH_SERVICE_UNAVAILABLE',
+          message: 'Serviço de autenticação temporariamente indisponível.',
         });
         return;
       }
@@ -522,8 +522,8 @@ exports.api = onRequest(
 
         if (createErr || !created?.user) {
           res.status(400).json({
-            error: 'SUPABASE_CREATE_USER_FAILED',
-            message: createErr?.message || 'Não foi possível criar o utilizador no Supabase Auth.',
+            error: 'CREATE_USER_FAILED',
+            message: createErr?.message || 'Não foi possível criar a conta de utilizador.',
           });
           return;
         }
@@ -662,8 +662,8 @@ exports.api = onRequest(
 
           if (updateErr || !updatedAuth?.user) {
             res.status(400).json({
-              error: 'SUPABASE_UPDATE_USER_FAILED',
-              message: updateErr?.message || 'Erro ao atualizar utilizador no Supabase Auth.',
+              error: 'UPDATE_USER_FAILED',
+              message: updateErr?.message || 'Não foi possível atualizar os dados do utilizador.',
             });
             return;
           }

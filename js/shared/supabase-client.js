@@ -202,7 +202,7 @@ export async function verifyWithBackendEndpoint(accessToken) {
 export async function authenticatedApiFetch(endpoint, options = {}) {
   const supabase = await getSupabaseClient();
   if (!supabase) {
-    throw new Error('Cliente Supabase não configurado.');
+    throw new Error('Serviço de autenticação temporariamente indisponível.');
   }
 
   const { data } = await supabase.auth.getSession();
@@ -227,7 +227,7 @@ export async function authenticatedApiFetch(endpoint, options = {}) {
 
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
-    throw new Error('API administrativa indisponível neste servidor.');
+    throw new Error('Serviço de gestão temporariamente indisponível.');
   }
 
   const payload = await response.json();

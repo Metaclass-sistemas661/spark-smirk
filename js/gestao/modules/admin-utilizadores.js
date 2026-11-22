@@ -82,13 +82,15 @@ export class AdminUtilizadoresModule {
     try {
       const data = await authenticatedApiFetch('/api/admin/users', { method: 'GET' });
       this.users = Array.isArray(data?.users) ? data.users : [];
-      this.dbWarning = data?.dbWarning || '';
+      if (data?.dbWarning) {
+        console.warn('Sync warning:', data.dbWarning);
+      }
       this.loadedOnce = true;
       if (typeof this.onUsersUpdated === 'function') {
         this.onUsersUpdated(this.users.length);
       }
     } catch (err) {
-      this.loadError = err?.message || 'Erro ao carregar utilizadores do Supabase.';
+      this.loadError = err?.message || 'Não foi possível carregar a lista de utilizadores.';
       this.loadedOnce = true;
     } finally {
       this.loading = false;
@@ -143,7 +145,7 @@ export class AdminUtilizadoresModule {
             <div class="erp-kpi-card__icon erp-kpi-card__icon--navy">${ICONS.users}</div>
           </div>
           <div class="erp-kpi-card__value">${total}</div>
-          <div class="erp-kpi-card__sub">${ativos} contas ativas no Supabase Auth</div>
+          <div class="erp-kpi-card__sub">${ativos} contas ativas no sistema</div>
         </article>
 
         <article class="erp-kpi-card">
@@ -175,23 +177,9 @@ export class AdminUtilizadoresModule {
       </div>
 
       ${
-        this.dbWarning
-          ? `<div class="erp-panel" style="border-left:4px solid var(--erp-warning);padding:14px 18px;">
-              <strong style="color:var(--erp-warning);display:block;margin-bottom:4px;">Aviso de Sincronização SQL (` +
-            escapeHtml('seguranca.perfis_utilizadores') +
-            `):</strong>
-              <span style="font-size:12.5px;color:var(--erp-text-secondary);">
-                As contas estão a ser guardadas no Supabase Auth, mas a tabela SQL devolveu: <code>${escapeHtml(this.dbWarning)}</code>.
-                Execute o script <code>supabase/01-seguranca/03-permissoes-e-senha-provisoria.sql</code> no Supabase SQL Editor e exponha o schema <code>seguranca</code> em <em>API → Exposed schemas</em>.
-              </span>
-            </div>`
-          : ''
-      }
-
-      ${
         this.loadError
           ? `<div class="erp-panel" style="border-left:4px solid var(--erp-danger);padding:14px 18px;">
-              <strong style="color:var(--erp-danger);display:block;margin-bottom:4px;">Erro de Ligação ao Servidor:</strong>
+              <strong style="color:var(--erp-danger);display:block;margin-bottom:4px;">Não foi possível ligar ao serviço de utilizadores:</strong>
               <span style="font-size:12.5px;color:var(--erp-text-secondary);">${escapeHtml(this.loadError)}</span>
             </div>`
           : ''
@@ -250,7 +238,7 @@ export class AdminUtilizadoresModule {
             <tbody>
               ${
                 this.loading && !this.loadedOnce
-                  ? `<tr><td colspan="7" class="erp-empty">A carregar utilizadores do Supabase...</td></tr>`
+                  ? `<tr><td colspan="7" class="erp-empty">A carregar utilizadores...</td></tr>`
                   : filtered.length === 0
                     ? `<tr><td colspan="7" class="erp-empty">Nenhum utilizador encontrado para os filtros aplicados.</td></tr>`
                     : filtered
@@ -363,7 +351,7 @@ export class AdminUtilizadoresModule {
         if (!target) return;
         confirmAction({
           title: 'Remover Utilizador do Sistema',
-          message: `Tem a certeza de que pretende eliminar "${target.nome_completo}" (${target.email})? A conta será removida permanentemente do Supabase Auth e da base de dados.`,
+          message: `Tem a certeza de que pretende eliminar "${target.nome_completo}" (${target.email})? A conta perderá imediatamente o acesso ao sistema interno.`,
           confirmLabel: 'Eliminar Utilizador',
           onConfirm: () => this._deleteUser(target),
         });
@@ -376,7 +364,7 @@ export class AdminUtilizadoresModule {
       await authenticatedApiFetch(`/api/admin/users/${encodeURIComponent(target.id)}`, {
         method: 'DELETE',
       });
-      showToast(`Utilizador ${target.nome_completo} removido do sistema e do Supabase.`);
+      showToast(`Utilizador ${target.nome_completo} removido do sistema.`);
       await this.fetchUsers({ silent: true });
     } catch (err) {
       showToast(err?.message || 'Erro ao remover utilizador.', 'error');
@@ -432,7 +420,7 @@ export class AdminUtilizadoresModule {
       title: isEdit ? `Editar Utilizador — ${existingUser.nome_completo}` : 'Criar Novo Utilizador do Sistema',
       subtitle: isEdit
         ? 'Atualize dados, estado da conta, palavra-passe provisória e permissões granulares.'
-        : 'O utilizador será criado automaticamente no Supabase Auth e obrigado a definir nova senha no 1.º acesso.',
+        : 'Defina as permissões de acesso e uma senha provisória. No 1.º acesso o sistema solicitará uma nova palavra-passe.',
       size: 'wide',
       bodyHtml: `
         <form id="erpUserForm" class="erp-form-grid">
@@ -521,7 +509,7 @@ export class AdminUtilizadoresModule {
       footerHtml: `
         <button type="button" class="erp-btn erp-btn--ghost" data-modal-close>Cancelar</button>
         <button type="submit" form="erpUserForm" class="erp-btn erp-btn--primary" id="btnSubmitUserForm">
-          ${isEdit ? 'Guardar Alterações no Supabase' : 'Criar Utilizador no Supabase'}
+          ${isEdit ? 'Guardar Alterações' : 'Criar Utilizador'}
         </button>
       `,
       onMount: (modal) => {
@@ -641,7 +629,7 @@ export class AdminUtilizadoresModule {
 
           if (submitBtn) {
             submitBtn.disabled = true;
-            submitBtn.textContent = isEdit ? 'A guardar no Supabase...' : 'A criar no Supabase...';
+            submitBtn.textContent = isEdit ? 'A guardar...' : 'A criar utilizador...';
           }
 
           try {
@@ -673,18 +661,16 @@ export class AdminUtilizadoresModule {
                 isReset: isEdit,
               });
             } else {
-              showToast(`Utilizador ${nome_completo} atualizado no Supabase.`);
+              showToast(`Utilizador ${nome_completo} atualizado com sucesso.`);
             }
 
             await this.fetchUsers({ silent: true });
           } catch (err) {
-            showToast(err?.message || 'Erro ao guardar utilizador no Supabase.', 'error');
+            showToast(err?.message || 'Não foi possível guardar os dados do utilizador.', 'error');
           } finally {
             if (submitBtn) {
               submitBtn.disabled = false;
-              submitBtn.textContent = isEdit
-                ? 'Guardar Alterações no Supabase'
-                : 'Criar Utilizador no Supabase';
+              submitBtn.textContent = isEdit ? 'Guardar Alterações' : 'Criar Utilizador';
             }
           }
         });
@@ -694,7 +680,7 @@ export class AdminUtilizadoresModule {
 
   _showCredentialsModal({ user, provisionalPassword, isReset }) {
     openModal({
-      title: isReset ? 'Nova Senha Provisória Definida' : 'Utilizador Criado no Supabase',
+      title: isReset ? 'Nova Senha Provisória Definida' : 'Utilizador Criado com Sucesso',
       subtitle: 'Entregue estas credenciais ao colaborador. No primeiro acesso o sistema exigirá a criação de uma nova palavra-passe.',
       size: 'narrow',
       bodyHtml: `

@@ -151,7 +151,7 @@ async function initLoginPage() {
   if (!config) {
     showAlert(
       'info',
-      'Ligação ao Supabase ainda não configurada neste ambiente. Defina VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY ou os segredos no Firebase Secret Manager.'
+      'O serviço de autenticação encontra-se temporariamente indisponível. Contacte a administração do sistema.'
     );
   }
 
@@ -170,7 +170,7 @@ async function initLoginPage() {
       if (!supabase) {
         showAlert(
           'error',
-          'Não é possível recuperar a palavra-passe porque as credenciais do Supabase ainda não estão configuradas.'
+          'Serviço de recuperação temporariamente indisponível. Tente novamente mais tarde.'
         );
         return;
       }
@@ -215,7 +215,7 @@ async function initLoginPage() {
       if (!supabase) {
         showAlert(
           'error',
-          'Configuração Supabase em falta. Configure o Firebase Secret Manager (SUPABASE_URL e SUPABASE_ANON_KEY) ou o ficheiro .env antes de iniciar sessão.'
+          'Não foi possível estabelecer ligação segura ao servidor de autenticação. Tente novamente dentro de instantes.'
         );
         return;
       }
@@ -256,7 +256,7 @@ async function initLoginPage() {
         showAlert('success', 'Autenticação validada. A entrar no Sistema de Gestão...');
         window.location.replace(getSafeRedirectTarget());
       } catch {
-        showAlert('error', 'Falha de rede ao contactar o servidor de autenticação Supabase.');
+        showAlert('error', 'Falha de ligação ao servidor de autenticação. Verifique a sua internet e tente novamente.');
       } finally {
         if (Date.now() >= cooldownUntil && submitBtn) {
           submitBtn.disabled = false;

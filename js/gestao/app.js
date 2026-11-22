@@ -563,18 +563,18 @@ function showForcedPasswordChangeGate({ user, profile, onComplete }) {
 
     if (saveBtn) {
       saveBtn.disabled = true;
-      saveBtn.textContent = 'A atualizar palavra-passe no Supabase...';
+      saveBtn.textContent = 'A guardar palavra-passe...';
     }
 
     try {
       const supabase = await getSupabaseClient();
-      if (!supabase) throw new Error('Ligação Supabase indisponível.');
+      if (!supabase) throw new Error('Serviço de autenticação temporariamente indisponível.');
 
       const { error: updateErr } = await supabase.auth.updateUser({
         password: newPwInput.value,
       });
       if (updateErr) {
-        throw new Error(updateErr.message || 'Erro ao guardar nova palavra-passe no Supabase Auth.');
+        throw new Error(updateErr.message || 'Não foi possível atualizar a palavra-passe.');
       }
 
       const completion = await authenticatedApiFetch('/api/auth/complete-password-change', {
