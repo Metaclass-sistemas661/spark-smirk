@@ -85,8 +85,10 @@ export default defineConfig(({ mode }) => {
             }
             return 'assets/[name]-[hash][extname]';
           },
-          manualChunks: {
-            vendor: ['gsap', 'lenis'],
+          manualChunks(id) {
+            if (id.includes('node_modules') && (id.includes('gsap') || id.includes('lenis'))) {
+              return 'vendor';
+            }
           },
         },
       },

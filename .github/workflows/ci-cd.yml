@@ -46,10 +46,10 @@ jobs:
 
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configurar Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -105,31 +105,44 @@ jobs:
           echo "OK: Todos os entrypoints (/, /login/, /gestao/) compilados e sem chaves privadas."
 
       - name: Publicar Artifact de Produção (dist/)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: spark-smirk-dist-${{ github.sha }}
           path: dist
           retention-days: 7
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # 2. PREVIEW EPHEMERO PARA PULL REQUESTS (Firebase Hosting Preview Channel)
+  # 2. PREVIEW TEMPORÁRIO PARA PULL REQUESTS HUMANOS (Firebase Hosting Preview)
   # ═══════════════════════════════════════════════════════════════════════════
   deploy-preview:
     name: Preview Temporário (PR)
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.actor != 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     needs: [quality-and-build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Transferir Artifact Compilado
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: spark-smirk-dist-${{ github.sha }}
           path: dist
+
+      - name: Validar Secret de Service Account Firebase
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SPARK_SMIRK }}
+        shell: bash
+        run: |
+          if [ -z "$SA_JSON" ]; then
+            echo "::error::Secret FIREBASE_SERVICE_ACCOUNT_SPARK_SMIRK em falta em Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
 
       - name: Publicar Preview Channel no Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -154,10 +167,10 @@ jobs:
 
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configurar Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -166,7 +179,7 @@ jobs:
             functions/package-lock.json
 
       - name: Transferir Artifact Compilado (dist/)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: spark-smirk-dist-${{ github.sha }}
           path: dist
@@ -174,8 +187,18 @@ jobs:
       - name: Instalar Dependências de Produção das Cloud Functions
         run: npm ci --prefix functions --omit=dev --no-audit --no-fund
 
+      - name: Validar Secret de Service Account Firebase
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SPARK_SMIRK }}
+        shell: bash
+        run: |
+          if [ -z "$SA_JSON" ]; then
+            echo "::error::Secret FIREBASE_SERVICE_ACCOUNT_SPARK_SMIRK em falta! Adicione o JSON da Service Account em https://github.com/Metaclass-sistemas661/spark-smirk/settings/secrets/actions"
+            exit 1
+          fi
+
       - name: Autenticar no Google Cloud / Firebase (Service Account)
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SPARK_SMIRK }}
 

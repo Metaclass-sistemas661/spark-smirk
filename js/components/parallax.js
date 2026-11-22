@@ -92,7 +92,7 @@ export class Parallax {
   _parallaxPortfolio() {
     const items = document.querySelectorAll('.portfolio__item');
 
-    items.forEach((item, i) => {
+    items.forEach((item) => {
       const img = item.querySelector('.portfolio__image');
       if (!img) return;
 
