@@ -1,0 +1,94 @@
+/* ═══════════════════════════════════════════════════════════
+   SPARK & SMIRK ERP — Design Tokens (Light & Dark Themes)
+   Isolado exclusivamente no Sistema de Gestão (/gestao/)
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  /* Marca */
+  --erp-primary: #e8650a;
+  --erp-primary-hover: #c24e00;
+  --erp-primary-soft: rgba(232, 101, 10, 0.1);
+  --erp-primary-border: rgba(232, 101, 10, 0.28);
+  --erp-navy: #0c1829;
+  --erp-navy-mid: #142236;
+  --erp-navy-light: #1e324d;
+  --erp-gold: #d4a03c;
+
+  /* Superfícies (Modo Claro) */
+  --erp-bg: #f4f5f7;
+  --erp-surface: #fff;
+  --erp-surface-alt: #f9fafb;
+  --erp-topbar-bg: rgba(255, 255, 255, 0.92);
+  --erp-border: #e5e7eb;
+  --erp-border-strong: #d1d5db;
+  --erp-hover-row: rgba(12, 24, 41, 0.02);
+  --erp-pill-active-bg: #0c1829;
+  --erp-bar-primary-top: #1e324d;
+  --erp-bar-primary-bot: #0c1829;
+
+  /* Texto (Modo Claro) */
+  --erp-heading: #0c1829;
+  --erp-text: #111827;
+  --erp-text-secondary: #4b5563;
+  --erp-text-muted: #6b7280;
+
+  /* Estados semânticos */
+  --erp-success: #059669;
+  --erp-success-soft: rgba(5, 150, 105, 0.1);
+  --erp-warning: #d97706;
+  --erp-warning-soft: rgba(217, 119, 6, 0.12);
+  --erp-danger: #dc2626;
+  --erp-danger-soft: rgba(220, 38, 38, 0.1);
+  --erp-info: #2563eb;
+  --erp-info-soft: rgba(37, 99, 235, 0.1);
+
+  /* Tipografia */
+  --erp-font-heading: 'Montserrat', -apple-system, blinkmacsystemfont, sans-serif;
+  --erp-font-body: 'Inter', -apple-system, blinkmacsystemfont, sans-serif;
+
+  /* Layout */
+  --erp-sidebar-w: 272px;
+  --erp-sidebar-collapsed-w: 76px;
+  --erp-quickrail-w: 58px;
+  --erp-topbar-h: 68px;
+
+  /* Raios & Sombras */
+  --erp-radius-sm: 6px;
+  --erp-radius-md: 10px;
+  --erp-radius-lg: 14px;
+  --erp-radius-xl: 18px;
+  --erp-shadow-xs: 0 1px 2px rgba(12, 24, 41, 0.05);
+  --erp-shadow-sm: 0 2px 8px rgba(12, 24, 41, 0.06);
+  --erp-shadow-md: 0 8px 24px rgba(12, 24, 41, 0.09);
+  --erp-shadow-lg: 0 20px 48px rgba(12, 24, 41, 0.18);
+  --erp-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Modo Escuro (Exclusivo do Sistema de Gestão) ── */
+:root[data-erp-theme='dark'] {
+  --erp-bg: #070e18;
+  --erp-surface: #0f1c2e;
+  --erp-surface-alt: #16263d;
+  --erp-topbar-bg: rgba(15, 28, 46, 0.92);
+  --erp-border: rgba(255, 255, 255, 0.1);
+  --erp-border-strong: rgba(255, 255, 255, 0.2);
+  --erp-hover-row: rgba(255, 255, 255, 0.03);
+  --erp-pill-active-bg: #e8650a;
+  --erp-bar-primary-top: #60a5fa;
+  --erp-bar-primary-bot: #2563eb;
+  --erp-heading: #f8fafc;
+  --erp-text: #e2e8f0;
+  --erp-text-secondary: #cbd5e1;
+  --erp-text-muted: #94a3b8;
+  --erp-primary-soft: rgba(232, 101, 10, 0.18);
+  --erp-success-soft: rgba(16, 185, 129, 0.16);
+  --erp-warning-soft: rgba(245, 158, 11, 0.18);
+  --erp-danger-soft: rgba(239, 68, 68, 0.18);
+  --erp-info-soft: rgba(59, 130, 246, 0.18);
+  --erp-shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --erp-shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --erp-shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --erp-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.65);
+
+  color-scheme: dark;
+}

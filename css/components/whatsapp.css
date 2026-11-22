@@ -1,0 +1,170 @@
+/* ═══════════════════════════════════════════════════════════
+   SPARK & SMIRK — WhatsApp Floating Button
+   ═══════════════════════════════════════════════════════════ */
+
+.whatsapp {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: var(--z-whatsapp, 3000);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-md);
+  pointer-events: auto;
+}
+
+/* ── Tooltip ── */
+.whatsapp__tooltip {
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius-lg);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  box-shadow: var(--shadow-lg);
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(10px) scale(0.95);
+  transition: opacity 0.4s var(--ease-out-expo),
+              transform 0.4s var(--ease-out-expo);
+  pointer-events: none;
+}
+
+.whatsapp__tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  right: 24px;
+  width: 12px;
+  height: 12px;
+  background: var(--color-surface);
+  border-radius: 2px;
+  transform: rotate(45deg);
+  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.whatsapp:hover .whatsapp__tooltip {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* ── Button ── */
+.whatsapp__btn {
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-whatsapp);
+  border-radius: 50%;
+  color: white;
+  box-shadow:
+    0 4px 15px rgba(37, 211, 102, 0.4),
+    0 8px 30px rgba(37, 211, 102, 0.2);
+  transition: transform 0.4s var(--ease-out-expo),
+              box-shadow 0.4s var(--ease-out-expo);
+  position: relative;
+  cursor: pointer;
+}
+
+.whatsapp__btn:hover {
+  transform: scale(1.1);
+  box-shadow:
+    0 6px 20px rgba(37, 211, 102, 0.5),
+    0 12px 40px rgba(37, 211, 102, 0.3);
+}
+
+.whatsapp__btn svg {
+  width: 30px;
+  height: 30px;
+  fill: white;
+}
+
+/* ── Pulse Rings ── */
+.whatsapp__pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--color-whatsapp);
+  animation: whatsapp-pulse 2s ease-out infinite;
+  pointer-events: none;
+}
+
+.whatsapp__pulse--delay {
+  animation-delay: 0.5s;
+}
+
+@keyframes whatsapp-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+/* ── Badge (notification dot) ── */
+.whatsapp__badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  background: var(--color-error);
+  border-radius: 50%;
+  border: 2px solid white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  color: white;
+  animation: badge-bounce 2s ease-in-out infinite;
+}
+
+@keyframes badge-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+/* ── Hide on scroll down, show on scroll up ── */
+.whatsapp.is-hidden {
+  transform: translateY(120px);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.5s var(--ease-out-expo),
+              opacity 0.5s var(--ease-out-expo);
+}
+
+.whatsapp.is-visible {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+  transition: transform 0.5s var(--ease-out-expo),
+              opacity 0.5s var(--ease-out-expo);
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .whatsapp {
+    bottom: 1.25rem;
+    right: 1.25rem;
+  }
+  
+  .whatsapp__btn {
+    width: 54px;
+    height: 54px;
+  }
+  
+  .whatsapp__btn svg {
+    width: 26px;
+    height: 26px;
+  }
+  
+  .whatsapp__tooltip {
+    display: none;
+  }
+}

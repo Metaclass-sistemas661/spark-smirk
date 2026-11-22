@@ -1,0 +1,381 @@
+/* ═══════════════════════════════════════════════════════════
+   SPARK & SMIRK ERP — Module-Specific Views
+   Presenças, Relatórios, Recibos, Orçamentos e Pagamentos
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Avatar ── */
+.erp-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--erp-navy), var(--erp-navy-light));
+  color: #fff;
+  font-family: var(--erp-font-heading);
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.erp-person-cell {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+/* ── Filter Bar ── */
+.erp-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.erp-select-sm {
+  padding: 7px 11px;
+  border-radius: var(--erp-radius-sm);
+  border: 1px solid var(--erp-border-strong);
+  background: var(--erp-surface);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--erp-heading);
+}
+
+/* ── Attendance Matrix / Daily Sheet ── */
+.erp-attendance-controls {
+  padding: 16px 20px;
+  background: var(--erp-surface-alt);
+  border-bottom: 1px solid var(--erp-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.erp-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--erp-text-secondary);
+}
+
+.erp-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.erp-att-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid transparent;
+  transition: transform 0.12s, box-shadow 0.15s;
+}
+
+.erp-att-pill:hover {
+  transform: scale(1.06);
+}
+
+.erp-att-pill--P {
+  background: var(--erp-success-soft);
+  color: var(--erp-success);
+  border-color: rgba(5, 150, 105, 0.25);
+}
+
+.erp-att-pill--FJ {
+  background: var(--erp-warning-soft);
+  color: var(--erp-warning);
+  border-color: rgba(217, 119, 6, 0.25);
+}
+
+.erp-att-pill--FI {
+  background: var(--erp-danger-soft);
+  color: var(--erp-danger);
+  border-color: rgba(220, 38, 38, 0.28);
+}
+
+.erp-att-pill--FE {
+  background: var(--erp-info-soft);
+  color: var(--erp-info);
+  border-color: rgba(37, 99, 235, 0.25);
+}
+
+.erp-att-pill--empty {
+  background: var(--erp-surface);
+  color: var(--erp-text-muted);
+  border-color: var(--erp-border);
+}
+
+.erp-att-quick-group {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.erp-att-quick-btn {
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid var(--erp-border);
+  background: var(--erp-surface);
+  color: var(--erp-text-secondary);
+  transition: all 0.15s;
+}
+
+.erp-att-quick-btn.is-selected-P {
+  background: var(--erp-success);
+  color: #fff;
+  border-color: var(--erp-success);
+}
+
+.erp-att-quick-btn.is-selected-FJ {
+  background: var(--erp-warning);
+  color: #fff;
+  border-color: var(--erp-warning);
+}
+
+.erp-att-quick-btn.is-selected-FI {
+  background: var(--erp-danger);
+  color: #fff;
+  border-color: var(--erp-danger);
+}
+
+.erp-att-quick-btn.is-selected-FE {
+  background: var(--erp-info);
+  color: #fff;
+  border-color: var(--erp-info);
+}
+
+.erp-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.erp-cal-head {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--erp-text-muted);
+  padding-bottom: 4px;
+}
+
+.erp-cal-day {
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius-sm);
+  padding: 8px 6px;
+  text-align: center;
+  background: var(--erp-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.erp-cal-day:hover {
+  border-color: var(--erp-primary);
+}
+
+.erp-cal-day--weekend {
+  background: var(--erp-surface-alt);
+}
+
+.erp-cal-day__num {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--erp-heading);
+}
+
+/* ── File Dropzone & Attachment Preview ── */
+.erp-dropzone {
+  border: 2px dashed var(--erp-border-strong);
+  border-radius: var(--erp-radius-md);
+  padding: 18px;
+  text-align: center;
+  background: var(--erp-surface-alt);
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.erp-dropzone:hover {
+  border-color: var(--erp-primary);
+  background: var(--erp-primary-soft);
+}
+
+.erp-dropzone__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--erp-heading);
+}
+
+.erp-dropzone__hint {
+  font-size: 11.5px;
+  color: var(--erp-text-muted);
+  margin-top: 3px;
+}
+
+.erp-attachment-preview {
+  width: 100%;
+  height: 480px;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius-md);
+  background: var(--erp-surface-alt);
+}
+
+.erp-attachment-img {
+  max-width: 100%;
+  max-height: 480px;
+  margin: 0 auto;
+  display: block;
+  border-radius: var(--erp-radius-md);
+  border: 1px solid var(--erp-border);
+}
+
+/* ── Payslip Breakdown Box ── */
+.erp-summary-box {
+  background: var(--erp-surface-alt);
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius-md);
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.erp-summary-item__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--erp-text-muted);
+}
+
+.erp-summary-item__val {
+  font-family: var(--erp-font-heading);
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--erp-heading);
+  margin-top: 2px;
+}
+
+.erp-summary-item__val--accent {
+  color: var(--erp-primary);
+}
+
+.erp-summary-item__val--success {
+  color: var(--erp-success);
+}
+
+.erp-summary-item__val--danger {
+  color: var(--erp-danger);
+}
+
+/* ── Dynamic Line Items (Orçamento & Pagamentos) ── */
+.erp-line-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.erp-line-row {
+  display: grid;
+  gap: 8px;
+  align-items: end;
+  padding: 10px 12px;
+  border-radius: var(--erp-radius-md);
+  border: 1px solid var(--erp-border);
+  background: var(--erp-surface-alt);
+}
+
+.erp-line-row--budget {
+  grid-template-columns: 2.2fr 1.1fr 0.7fr 0.7fr 0.9fr auto;
+}
+
+.erp-line-row--payment {
+  grid-template-columns: 1.6fr 1fr 1fr 0.9fr 1fr 0.9fr auto;
+}
+
+/* ── Team Multi-select chips ── */
+.erp-team-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.erp-team-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--erp-radius-sm);
+  border: 1px solid var(--erp-border);
+  background: var(--erp-surface);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.erp-team-chip input {
+  width: auto;
+  accent-color: var(--erp-primary);
+}
+
+/* ── Project Detail Split ── */
+.erp-detail-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--erp-border);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.erp-detail-tab {
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--erp-text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.erp-detail-tab.is-active {
+  color: var(--erp-primary);
+  border-bottom-color: var(--erp-primary);
+}
+
+@media (width <= 900px) {
+  .erp-summary-box {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .erp-line-row--budget,
+  .erp-line-row--payment {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .erp-team-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (width <= 560px) {
+  .erp-summary-box,
+  .erp-line-row--budget,
+  .erp-line-row--payment,
+  .erp-team-grid {
+    grid-template-columns: 1fr;
+  }
+}

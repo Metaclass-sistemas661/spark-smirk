@@ -1,0 +1,141 @@
+/* ═══════════════════════════════════════════════════════════
+   SPARK & SMIRK — Design Tokens
+   Paleta: Laranja Construção + Azul Petróleo Profissional
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Primary Colors — The Spark ── */
+  --color-primary: #E8650A;
+  --color-primary-rgb: 232, 101, 10;
+  --color-primary-light: #FF8534;
+  --color-primary-dark: #C24E00;
+  --color-primary-darker: #8B3500;
+
+  /* ── Secondary Colors — Profissionalismo ── */
+  --color-secondary: #0C1829;
+  --color-secondary-rgb: 12, 24, 41;
+  --color-secondary-light: #1A2D45;
+  --color-secondary-mid: #142236;
+
+  /* ── Accent Colors — Destaque Dourado ── */
+  --color-accent: #D4A03C;
+  --color-accent-rgb: 212, 160, 60;
+  --color-accent-light: #F0C85A;
+
+  /* ── Neutrals ── */
+  --color-bg: #FAFAF8;
+  --color-bg-alt: #F0EDE8;
+  --color-bg-dark: #0A1420;
+  --color-surface: #FFFFFF;
+  --color-border: #E5E2DD;
+  --color-border-light: #F0EDE8;
+
+  /* ── Text ── */
+  --color-text: #1A1A2E;
+  --color-text-secondary: #5A6072;
+  --color-text-light: #F9FAFB;
+  --color-text-muted: #9CA3AF;
+
+  /* ── Status ── */
+  --color-whatsapp: #25D366;
+  --color-whatsapp-dark: #128C7E;
+  --color-success: #10B981;
+  --color-error: #EF4444;
+
+  /* ═══════ TYPOGRAPHY ═══════ */
+  --font-heading: 'Montserrat', sans-serif;
+  --font-body: 'Inter', sans-serif;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extrabold: 800;
+  --fw-black: 900;
+
+  --fs-xs: clamp(0.7rem, 0.65rem + 0.25vw, 0.75rem);
+  --fs-sm: clamp(0.8rem, 0.75rem + 0.25vw, 0.875rem);
+  --fs-base: clamp(0.9rem, 0.85rem + 0.25vw, 1rem);
+  --fs-lg: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --fs-xl: clamp(1.1rem, 1rem + 0.5vw, 1.25rem);
+  --fs-2xl: clamp(1.25rem, 1.1rem + 0.75vw, 1.5rem);
+  --fs-3xl: clamp(1.5rem, 1.2rem + 1.5vw, 1.875rem);
+  --fs-4xl: clamp(1.75rem, 1.3rem + 2.25vw, 2.5rem);
+  --fs-5xl: clamp(2rem, 1.4rem + 3vw, 3.25rem);
+  --fs-6xl: clamp(2.5rem, 1.5rem + 5vw, 4.5rem);
+  --fs-7xl: clamp(3rem, 1.5rem + 7vw, 6rem);
+
+  --lh-tight: 1.1;
+  --lh-snug: 1.25;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.7;
+  --ls-tight: -0.03em;
+  --ls-normal: 0;
+  --ls-wide: 0.05em;
+  --ls-wider: 0.1em;
+  --ls-widest: 0.2em;
+
+  /* ═══════ SPACING ═══════ */
+  --space-2xs: 0.125rem;
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+  --space-4xl: 6rem;
+  --space-5xl: 8rem;
+  --space-6xl: 10rem;
+  --section-padding: clamp(4rem, 8vw, 8rem);
+
+  /* ═══════ LAYOUT ═══════ */
+  --container-max: 1200px;
+  --container-wide: 1400px;
+  --container-narrow: 800px;
+  --container-padding: clamp(1rem, 4vw, 2rem);
+  --navbar-height: 80px;
+
+  /* ═══════ BORDERS ═══════ */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-2xl: 2rem;
+  --radius-full: 9999px;
+
+  /* ═══════ SHADOWS ═══════ */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.1), 0 4px 8px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.06);
+  --shadow-2xl: 0 32px 80px rgba(0, 0, 0, 0.16);
+  --shadow-primary: 0 8px 30px rgba(var(--color-primary-rgb), 0.35);
+  --shadow-primary-sm: 0 4px 14px rgba(var(--color-primary-rgb), 0.25);
+  --shadow-inner: inset 0 2px 4px rgba(0, 0, 0, 0.06);
+
+  /* ═══════ TRANSITIONS ═══════ */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --transition-fast: 150ms var(--ease-out-expo);
+  --transition-base: 300ms var(--ease-out-expo);
+  --transition-slow: 500ms var(--ease-out-expo);
+  --transition-smooth: 700ms var(--ease-out-expo);
+  --transition-parallax: 1000ms var(--ease-out-quart);
+
+  /* ═══════ Z-INDEX ═══════ */
+  --z-behind: -1;
+  --z-base: 1;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-overlay: 500;
+  --z-navbar: 1000;
+  --z-modal: 2000;
+  --z-whatsapp: 3000;
+  --z-tooltip: 4000;
+}

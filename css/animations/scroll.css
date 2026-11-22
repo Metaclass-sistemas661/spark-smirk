@@ -1,0 +1,151 @@
+/* ═══════════════════════════════════════════════════════════
+   SPARK & SMIRK — Scroll Animation Classes
+   Applied by GSAP ScrollTrigger via JS
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Base reveal states (before GSAP triggers) ── */
+[data-animate] {
+  will-change: transform, opacity;
+}
+
+[data-animate="fade-up"] {
+  opacity: 0;
+  transform: translateY(60px);
+}
+
+[data-animate="fade-down"] {
+  opacity: 0;
+  transform: translateY(-60px);
+}
+
+[data-animate="fade-left"] {
+  opacity: 0;
+  transform: translateX(-60px);
+}
+
+[data-animate="fade-right"] {
+  opacity: 0;
+  transform: translateX(60px);
+}
+
+[data-animate="fade-in"] {
+  opacity: 0;
+}
+
+[data-animate="scale-up"] {
+  opacity: 0;
+  transform: scale(0.85);
+}
+
+[data-animate="scale-in"] {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+[data-animate="rotate-in"] {
+  opacity: 0;
+  transform: rotate(-5deg) translateY(30px);
+}
+
+[data-animate="clip-up"] {
+  clip-path: inset(100% 0 0 0);
+}
+
+[data-animate="clip-left"] {
+  clip-path: inset(0 100% 0 0);
+}
+
+[data-animate="blur-in"] {
+  opacity: 0;
+  filter: blur(10px);
+  transform: translateY(20px);
+}
+
+/* ── Stagger children ── */
+[data-stagger] > * {
+  opacity: 0;
+  transform: translateY(40px);
+}
+
+/* ── Split text animation ── */
+.split-text .char {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(100%);
+}
+
+.split-text .word {
+  display: inline-block;
+  overflow: hidden;
+}
+
+/* ── Parallax depth layers ── */
+[data-parallax] {
+  will-change: transform;
+}
+
+[data-speed] {
+  will-change: transform;
+}
+
+/* ── Magnetic button effect (cursor follow) ── */
+.magnetic {
+  transition: transform 0.3s var(--ease-out-expo);
+}
+
+/* ── Line draw animation ── */
+.line-draw {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+}
+
+.line-draw.is-active {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 2s var(--ease-out-expo);
+}
+
+/* ── Progress bar ── */
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0%;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+  z-index: calc(var(--z-navbar) + 1);
+  transform-origin: left;
+  will-change: width;
+}
+
+/* ── Horizontal scroll section ── */
+.horizontal-scroll {
+  display: flex;
+  flex-wrap: nowrap;
+  will-change: transform;
+}
+
+/* ── Counter animation ── */
+.counter-number {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* ── Image reveal ── */
+.img-reveal {
+  position: relative;
+  overflow: hidden;
+}
+
+.img-reveal::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: var(--color-primary);
+  transform-origin: left;
+  will-change: transform;
+}
+
+.img-reveal img {
+  transform: scale(1.3);
+  will-change: transform;
+}

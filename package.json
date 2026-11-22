@@ -1,0 +1,73 @@
+{
+  "name": "spark-smirk-landing",
+  "version": "1.0.0",
+  "description": "Landing Page Enterprise - Spark & Smirk, Lda. | Engenharia, Construção Civil e Jardinagem",
+  "type": "module",
+  "main": "index.html",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "lint:css": "stylelint \"css/**/*.css\" --fix",
+    "lint:js": "eslint js/**/*.js --fix",
+    "lint": "npm run lint:css && npm run lint:js",
+    "lint:ci": "stylelint \"css/login/**/*.css\" \"css/gestao/**/*.css\" && eslint \"js/**/*.js\" && node -c functions/index.js",
+    "format": "prettier --write \"**/*.{html,css,js,json,md}\"",
+    "clean": "rimraf dist",
+    "build:prod": "npm run clean && npm run lint && vite build",
+    "analyze": "vite build --mode analyze",
+    "firebase:login": "firebase login",
+    "firebase:init": "firebase init hosting",
+    "firebase:deploy": "npm run build && firebase deploy --only hosting",
+    "firebase:preview": "npm run build && firebase hosting:channel:deploy preview",
+    "deploy": "npm run build:prod && firebase deploy --only hosting",
+    "deploy:preview": "npm run build && firebase hosting:channel:deploy preview --expires 7d"
+  },
+  "keywords": [
+    "landing-page",
+    "construção-civil",
+    "engenharia",
+    "jardinagem",
+    "portugal",
+    "vite",
+    "gsap",
+    "lenis",
+    "firebase"
+  ],
+  "author": {
+    "name": "Spark & Smirk, Lda.",
+    "email": "info.sparksmirk@gmail.com"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "cssnano": "^7.0.0",
+    "eslint": "^9.8.0",
+    "firebase-tools": "^13.15.0",
+    "postcss": "^8.4.40",
+    "postcss-preset-env": "^9.6.0",
+    "prettier": "^3.3.3",
+    "rimraf": "^6.0.1",
+    "stylelint": "^16.8.0",
+    "stylelint-config-standard": "^36.0.1",
+    "terser": "^5.31.0",
+    "vite": "^5.4.0",
+    "vite-plugin-compression": "^0.5.1",
+    "vite-plugin-html": "^3.2.2"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.2",
+    "firebase": "^13.4.0",
+    "gsap": "^3.12.5",
+    "lenis": "^1.1.14"
+  },
+  "browserslist": [
+    ">0.3%",
+    "not dead",
+    "not op_mini all"
+  ]
+}

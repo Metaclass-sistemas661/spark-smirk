@@ -1,0 +1,119 @@
+/* ═══════════════════════════════════════════════════════════
+   SPARK & SMIRK — Why Us Section
+   ═══════════════════════════════════════════════════════════ */
+
+.why-us {
+  position: relative;
+  padding: var(--section-padding) 0;
+  overflow: hidden;
+}
+
+.why-us__bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.why-us__bg-image {
+  position: absolute;
+  inset: 0;
+  background-image: url('https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=1920&q=80');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+.why-us__bg-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(12, 24, 41, 0.95) 0%, rgba(12, 24, 41, 0.85) 100%);
+}
+
+.why-us__content {
+  position: relative;
+  z-index: 1;
+}
+
+.why-us__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-xl);
+  margin-top: var(--space-3xl);
+}
+
+.why-us__card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-lg);
+  padding: var(--space-xl);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(10px);
+  transition: all 0.4s var(--ease-out-expo);
+}
+
+.why-us__card:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--color-primary);
+  transform: translateY(-4px);
+}
+
+.why-us__card-icon {
+  flex-shrink: 0;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+  border-radius: var(--radius-md);
+}
+
+.why-us__card-icon svg {
+  width: 24px;
+  height: 24px;
+  color: white;
+  stroke-width: 1.5;
+}
+
+.why-us__card-title {
+  font-family: var(--font-heading);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  color: white;
+  margin-bottom: var(--space-xs);
+}
+
+.why-us__card-text {
+  font-size: var(--fs-sm);
+  color: rgba(255, 255, 255, 0.6);
+  line-height: var(--lh-relaxed);
+}
+
+/* Light variants for section labels */
+.section-label--light {
+  color: var(--color-primary-light);
+  border-color: rgba(232, 101, 10, 0.3);
+  background: rgba(232, 101, 10, 0.1);
+}
+
+.section-title--light {
+  color: white;
+}
+
+@media (max-width: 1024px) {
+  .why-us__bg-image {
+    background-attachment: scroll;
+  }
+
+  .why-us__grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .why-us__grid {
+    grid-template-columns: 1fr;
+  }
+}

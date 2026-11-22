@@ -1,0 +1,104 @@
+/* ═══════════════════════════════════════════════════════════
+   SPARK & SMIRK — Projects Carousel (Auto-scroll)
+   ═══════════════════════════════════════════════════════════ */
+
+.projects {
+  padding: var(--space-4xl) 0;
+  background: var(--color-bg-alt);
+  overflow: hidden;
+}
+
+.projects .section-header {
+  margin-bottom: var(--space-3xl);
+}
+
+/* Carousel Container */
+.projects__carousel {
+  width: 100%;
+  overflow: hidden;
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 5%,
+    black 95%,
+    transparent
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 5%,
+    black 95%,
+    transparent
+  );
+}
+
+/* Track - Contains all cards and animates */
+.projects__track {
+  display: flex;
+  gap: var(--space-xl);
+  width: max-content;
+  animation: projectsScroll 40s linear infinite;
+}
+
+.projects__track:hover {
+  animation-play-state: paused;
+}
+
+/* Project Card */
+.project-card {
+  flex-shrink: 0;
+  width: 320px;
+  height: 320px;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.project-card:hover {
+  transform: scale(1.05);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+
+.project-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.project-card:hover img {
+  transform: scale(1.1);
+}
+
+/* Keyframes for auto-scroll */
+@keyframes projectsScroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .project-card {
+    width: 280px;
+    height: 280px;
+  }
+  
+  .projects__track {
+    gap: var(--space-lg);
+    animation-duration: 30s;
+  }
+}
+
+@media (max-width: 480px) {
+  .project-card {
+    width: 240px;
+    height: 240px;
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "spark-smirk-functions",
+  "description": "Cloud Functions protegidas por Firebase Secret Manager para autenticação do sistema interno Spark & Smirk",
+  "engines": {
+    "node": "22"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "firebase-admin": "^13.0.2",
+    "firebase-functions": "^6.3.2"
+  }
+}

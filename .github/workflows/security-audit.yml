@@ -1,0 +1,35 @@
+name: Spark & Smirk — Auditoria de Segurança Semanal
+
+on:
+  schedule:
+    # Todas as segundas-feiras às 06:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    name: Auditoria de Vulnerabilidades (npm audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+
+      - name: Auditar Dependências da Raiz (nível high/critical)
+        run: npm audit --audit-level=high
+
+      - name: Auditar Dependências das Cloud Functions (nível high/critical)
+        run: npm --prefix functions audit --audit-level=high

@@ -1,0 +1,158 @@
+/* ═══════════════════════════════════════════════════════════
+   SPARK & SMIRK — Process Section (Como Atuamos)
+   ═══════════════════════════════════════════════════════════ */
+
+.process {
+  background: var(--color-secondary);
+  position: relative;
+}
+
+.process::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image:
+    radial-gradient(circle at 20% 50%, rgba(232, 101, 10, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 80% 50%, rgba(212, 160, 60, 0.05) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.process__timeline {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3xl);
+  position: relative;
+  padding-top: var(--space-3xl);
+}
+
+/* ── Connecting Line ── */
+.process__line {
+  position: absolute;
+  top: calc(var(--space-3xl) + 40px);
+  left: calc(16.66% + 40px);
+  width: calc(66.66% - 80px);
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  z-index: 1;
+}
+
+.process__line-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+  border-radius: var(--radius-full);
+  transition: width 1.5s var(--ease-out-expo);
+}
+
+.process__line-fill.is-active {
+  width: 100%;
+}
+
+/* ── Step Card ── */
+.process__step {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+}
+
+.process__step-number {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--space-2xl);
+  background: var(--color-secondary-light);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  font-family: var(--font-heading);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-extrabold);
+  color: var(--color-primary);
+  transition: background 0.5s var(--ease-out-expo),
+              border-color 0.5s var(--ease-out-expo),
+              transform 0.5s var(--ease-out-expo),
+              box-shadow 0.5s var(--ease-out-expo);
+}
+
+.process__step:hover .process__step-number {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+  border-color: var(--color-primary);
+  color: white;
+  transform: scale(1.1);
+  box-shadow: 0 0 40px rgba(var(--color-primary-rgb), 0.3);
+}
+
+.process__step-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--space-lg);
+  color: var(--color-accent);
+  opacity: 0.6;
+}
+
+.process__step-icon svg {
+  width: 32px;
+  height: 32px;
+  stroke-width: 1.5;
+}
+
+.process__step-title {
+  font-family: var(--font-heading);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
+  color: var(--color-text-light);
+  margin-bottom: var(--space-md);
+}
+
+.process__step-text {
+  font-size: var(--fs-base);
+  color: rgba(249, 250, 251, 0.5);
+  line-height: var(--lh-relaxed);
+  max-width: 300px;
+  margin: 0 auto;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .process__timeline {
+    grid-template-columns: 1fr;
+    gap: var(--space-3xl);
+    padding-left: var(--space-3xl);
+  }
+  
+  .process__line {
+    top: calc(var(--space-3xl) + 40px);
+    left: calc(var(--space-3xl) / 2 - 1px);
+    width: 2px;
+    height: calc(100% - var(--space-3xl) - 40px);
+  }
+  
+  .process__line-fill {
+    width: 100%;
+    height: 0%;
+  }
+  
+  .process__line-fill.is-active {
+    height: 100%;
+  }
+  
+  .process__step {
+    text-align: left;
+  }
+  
+  .process__step-number {
+    position: absolute;
+    left: calc(-1 * var(--space-3xl) - 40px);
+    top: 0;
+    width: 60px;
+    height: 60px;
+    margin: 0;
+  }
+}

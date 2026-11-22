@@ -1,0 +1,175 @@
+/* ═══════════════════════════════════════════════════════════
+   SPARK & SMIRK — Interactive Portfolio Section
+   ═══════════════════════════════════════════════════════════ */
+
+.portfolio {
+  padding: var(--space-4xl) 0;
+  background: var(--color-bg-alt);
+}
+
+.portfolio__wrapper {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: var(--space-3xl);
+  margin-top: var(--space-3xl);
+}
+
+/* Menu Lateral */
+.portfolio__menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.portfolio__menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-lg) var(--space-xl);
+  background: white;
+  border: 2px solid transparent;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: left;
+}
+
+.portfolio__menu-item svg {
+  width: 24px;
+  height: 24px;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  transition: color 0.3s ease;
+}
+
+.portfolio__menu-item span {
+  font-family: var(--font-heading);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-secondary);
+  transition: color 0.3s ease;
+}
+
+.portfolio__menu-item:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 4px 15px rgba(232, 101, 10, 0.1);
+}
+
+.portfolio__menu-item:hover svg,
+.portfolio__menu-item:hover span {
+  color: var(--color-primary);
+}
+
+.portfolio__menu-item.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: 0 4px 20px rgba(232, 101, 10, 0.3);
+}
+
+.portfolio__menu-item.active svg,
+.portfolio__menu-item.active span {
+  color: white;
+}
+
+/* Conteúdo */
+.portfolio__content {
+  position: relative;
+  min-width: 0;
+  min-height: 400px;
+}
+
+.portfolio__panel {
+  display: none;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: var(--space-2xl);
+  align-items: start;
+}
+
+.portfolio__panel.active {
+  display: grid;
+  animation: fadeIn 0.4s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Info */
+.portfolio__info {
+  padding: var(--space-xl);
+  background: white;
+  border-radius: var(--radius-xl);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+
+.portfolio__info h3 {
+  font-family: var(--font-heading);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
+  color: var(--color-secondary);
+  margin-bottom: var(--space-md);
+}
+
+.portfolio__info p {
+  font-size: var(--fs-base);
+  color: var(--color-text-secondary);
+  line-height: var(--lh-relaxed);
+}
+
+/* Carrossel */
+.portfolio__carousel {
+  min-width: 0;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
+
+.portfolio__slides {
+  display: flex;
+  gap: var(--space-lg);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  padding: var(--space-xs);
+}
+
+.portfolio__slides::-webkit-scrollbar { display: none; }
+
+.portfolio__slide {
+  flex-shrink: 0;
+  width: 320px;
+  height: 320px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  scroll-snap-align: start;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.portfolio__slide img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.5s ease;
+}
+
+.portfolio__slide:hover img {
+  transform: scale(1.08);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .portfolio__wrapper { grid-template-columns: minmax(0, 1fr); gap: var(--space-xl); }
+  .portfolio__menu { flex-direction: row; flex-wrap: wrap; justify-content: center; }
+  .portfolio__menu-item { padding: var(--space-sm) var(--space-md); }
+  .portfolio__panel { grid-template-columns: minmax(0, 1fr); }
+  .portfolio__slide { width: 280px; height: 280px; }
+}
+
+@media (max-width: 640px) {
+  .portfolio__menu { gap: var(--space-xs); }
+  .portfolio__menu-item { padding: 0.6rem 0.85rem; gap: 0.45rem; }
+  .portfolio__menu-item svg { width: 18px; height: 18px; }
+  .portfolio__menu-item span { font-size: var(--fs-xs); }
+  .portfolio__content { min-height: auto; }
+  .portfolio__slide { width: 240px; height: 240px; }
+}

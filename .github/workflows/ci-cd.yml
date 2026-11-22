@@ -1,0 +1,231 @@
+name: Spark & Smirk — CI/CD Pipeline (GitHub → Firebase)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Alvo de publicação no Firebase'
+        required: true
+        default: 'functions,hosting'
+        type: choice
+        options:
+          - functions,hosting
+          - hosting
+          - functions
+
+# Evita concorrência destrutiva em produção; cancela PRs desatualizados
+concurrency:
+  group: >-
+    ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+env:
+  NODE_VERSION: '22'
+  FIREBASE_PROJECT_ID: spark-smirk
+  PRODUCTION_URL: https://spark-smirk.web.app
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 1. QUALITY GATE, VERIFICAÇÃO DE SEGREDOS & BUILD DE PRODUÇÃO
+  # ═══════════════════════════════════════════════════════════════════════════
+  quality-and-build:
+    name: Qualidade, Segurança & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+
+      - name: Bloqueio Anti-Fuga de Ficheiros .env
+        shell: bash
+        run: |
+          tracked_env=$(git ls-files '.env' '.env.*' ':!.env.example')
+          if [ -n "$tracked_env" ]; then
+            echo "::error::Ficheiros sensíveis .env detetados no histórico Git: $tracked_env"
+            exit 1
+          fi
+          echo "OK: Nenhum ficheiro .env privado está versionado no Git."
+
+      - name: Instalar Dependências (Frontend + Cloud Functions)
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --prefix functions --no-audit --no-fund
+
+      - name: Validar Qualidade (Stylelint, ESLint e Sintaxe Cloud Functions)
+        run: npm run lint:ci
+
+      - name: Compilar Build de Produção (Vite MPA)
+        env:
+          # Credenciais Supabase vêm em runtime do Firebase Secret Manager (/api/auth/config).
+          # As variáveis públicas Firebase Web App são lidas de GitHub Variables (vars) caso definidas.
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+        run: npm run build
+
+      - name: Verificar Entrypoints MPA & Integridade de Segurança no Bundle
+        shell: bash
+        run: |
+          for file in dist/index.html dist/login/index.html dist/gestao/index.html; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Entrypoint obrigatório em falta no build: $file"
+              exit 1
+            fi
+          done
+
+          if grep -rn "service_role" dist/ >/dev/null 2>&1; then
+            echo "::error::Detetada referência indevida a service_role no bundle público dist/!"
+            exit 1
+          fi
+
+          echo "OK: Todos os entrypoints (/, /login/, /gestao/) compilados e sem chaves privadas."
+
+      - name: Publicar Artifact de Produção (dist/)
+        uses: actions/upload-artifact@v4
+        with:
+          name: spark-smirk-dist-${{ github.sha }}
+          path: dist
+          retention-days: 7
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 2. PREVIEW EPHEMERO PARA PULL REQUESTS (Firebase Hosting Preview Channel)
+  # ═══════════════════════════════════════════════════════════════════════════
+  deploy-preview:
+    name: Preview Temporário (PR)
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: [quality-and-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Transferir Artifact Compilado
+        uses: actions/download-artifact@v4
+        with:
+          name: spark-smirk-dist-${{ github.sha }}
+          path: dist
+
+      - name: Publicar Preview Channel no Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SPARK_SMIRK }}
+          projectId: ${{ env.FIREBASE_PROJECT_ID }}
+          expires: 7d
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 3. DEPLOY EM PRODUÇÃO (Push na main ou Workflow Manual) + SMOKE TESTS
+  # ═══════════════════════════════════════════════════════════════════════════
+  deploy-production:
+    name: Deploy Produção (Firebase)
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    needs: [quality-and-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://spark-smirk.web.app
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+
+      - name: Transferir Artifact Compilado (dist/)
+        uses: actions/download-artifact@v4
+        with:
+          name: spark-smirk-dist-${{ github.sha }}
+          path: dist
+
+      - name: Instalar Dependências de Produção das Cloud Functions
+        run: npm ci --prefix functions --omit=dev --no-audit --no-fund
+
+      - name: Autenticar no Google Cloud / Firebase (Service Account)
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SPARK_SMIRK }}
+
+      - name: Publicar para Firebase (${{ env.FIREBASE_PROJECT_ID }})
+        shell: bash
+        run: |
+          TARGET="${{ github.event.inputs.deploy_target || 'functions,hosting' }}"
+          echo "A publicar alvo: $TARGET no projeto ${{ env.FIREBASE_PROJECT_ID }}..."
+          npx --yes firebase-tools@latest deploy \
+            --only "$TARGET" \
+            --project "${{ env.FIREBASE_PROJECT_ID }}" \
+            --non-interactive \
+            --force
+
+      - name: Smoke Tests Pós-Deploy em Produção
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "A validar endpoints em ${{ env.PRODUCTION_URL }}..."
+
+          for route in "/" "/login/" "/gestao/"; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" "${{ env.PRODUCTION_URL }}${route}")
+            echo "GET ${route} -> HTTP ${code}"
+            if [ "$code" != "200" ]; then
+              echo "::error::Rota ${route} devolveu HTTP ${code} em produção!"
+              exit 1
+            fi
+          done
+
+          cfg_code=$(curl -sS -o /tmp/auth_cfg.json -w "%{http_code}" "${{ env.PRODUCTION_URL }}/api/auth/config")
+          echo "GET /api/auth/config -> HTTP ${cfg_code}"
+          if [ "$cfg_code" != "200" ]; then
+            echo "::error::/api/auth/config falhou com HTTP ${cfg_code}"
+            exit 1
+          fi
+
+          node -e "
+            const fs = require('fs');
+            const cfg = JSON.parse(fs.readFileSync('/tmp/auth_cfg.json', 'utf8'));
+            if (!cfg.url || !cfg.anonKey) {
+              throw new Error('Resposta inválida de /api/auth/config');
+            }
+            console.log('OK: Firebase Secret Manager respondeu corretamente.');
+          "
+
+          verify_code=$(curl -sS -X POST -o /dev/null -w "%{http_code}" "${{ env.PRODUCTION_URL }}/api/auth/verify")
+          echo "POST /api/auth/verify (sem token) -> HTTP ${verify_code}"
+          if [ "$verify_code" != "401" ]; then
+            echo "::error::Barreira /api/auth/verify deveria devolver 401 sem token, mas devolveu ${verify_code}!"
+            exit 1
+          fi
+
+          echo "✅ Todos os smoke tests em produção passaram com sucesso!"

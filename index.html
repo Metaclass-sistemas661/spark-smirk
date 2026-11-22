@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Spark & Smirk — Engenharia e Construção Civil em Portugal.">
+  <meta name="theme-color" content="#E8650A">
+  <title>Spark & Smirk — Engenharia, Construção e Jardinagem</title>
+  <link rel="icon" type="image/jpeg" href="/logotipo.jpeg">
+  <link rel="apple-touch-icon" href="/logotipo.jpeg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+  <div class="scroll-progress"></div>
+  <div class="preloader"><div class="preloader__content"><div class="preloader__logo">SPARK<span>&</span>SMIRK</div><div class="preloader__bar"></div></div></div>
+
+  <nav class="navbar" id="navbar">
+    <div class="navbar__inner">
+      <a href="#inicio" class="navbar__logo"><img src="/logotipo.jpeg" alt="Logótipo Spark & Smirk" class="navbar__logo-img"><div class="navbar__logo-text">SPARK<span>&</span>SMIRK</div></a>
+      <div class="navbar__nav">
+        <a href="#inicio" class="navbar__link active">Início</a>
+        <a href="#servicos" class="navbar__link">Serviços</a>
+        <a href="#quem-somos" class="navbar__link">Quem Somos</a>
+        <a href="#sobre" class="navbar__link">Porquê Nós</a>
+        <a href="#projetos" class="navbar__link">Projetos</a>
+        <a href="/gestao/" class="navbar__link">Gestão</a>
+        <a href="#contacto" class="navbar__cta">Orçamento</a>
+      </div>
+      <button class="navbar__toggle" aria-label="Menu"><span class="navbar__toggle-line"></span><span class="navbar__toggle-line"></span><span class="navbar__toggle-line"></span></button>
+    </div>
+  </nav>
+
+  <!-- Mobile Menu Overlay -->
+  <div class="navbar__mobile-menu" aria-label="Menu mobile">
+    <a href="#inicio" class="navbar__mobile-link">Início</a>
+    <a href="#servicos" class="navbar__mobile-link">Serviços</a>
+    <a href="#quem-somos" class="navbar__mobile-link">Quem Somos</a>
+    <a href="#sobre" class="navbar__mobile-link">Porquê Nós</a>
+    <a href="#projetos" class="navbar__mobile-link">Projetos</a>
+    <a href="#parceiros" class="navbar__mobile-link">Parceiros</a>
+    <a href="/gestao/" class="navbar__mobile-link">Gestão Interna</a>
+    <a href="#contacto" class="navbar__mobile-link">Orçamento</a>
+  </div>
+
+  <section class="hero" id="inicio">
+    <div class="hero__bg"><div class="hero__bg-image"></div><div class="hero__bg-overlay"></div></div>
+    <div class="hero__content">
+      <h1 class="hero__title">Construímos Alicerces<br><span class="hero__title-highlight">Sólidos para o Futuro</span></h1>
+      <p class="hero__subtitle">Projetos residenciais e comerciais de excelência em Portugal.</p>
+      <div class="hero__actions">
+        <a href="#contacto" class="btn btn--primary">Pedir Orçamento <span class="btn__icon">→</span></a>
+        <a href="#projetos" class="btn btn--outline">Ver Projetos</a>
+      </div>
+    </div>
+    <div class="hero__scroll"><span>Scroll</span><div class="hero__scroll-line"></div></div>
+  </section>
+
+  <!-- Services Section -->
+  <section class="services" id="servicos">
+    <div class="container">
+      <div class="section-header section-header--center">
+        <h2 class="section-title">Os Nossos Serviços</h2>
+        <p class="section-subtitle">Soluções completas em engenharia e construção para transformar os seus projetos em realidade.</p>
+        <div class="section-divider"></div>
+      </div>
+      <div class="services__grid">
+        <div class="service-card">
+          <div class="service-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M5 20V8.5L12 4l7 4.5V20"/><path d="M9 20v-6h6v6"/><path d="M9 12h6"/></svg></div>
+          <h3 class="service-card__title">Realização de Obras</h3>
+          <p class="service-card__text">Execução completa de obras residenciais e comerciais com qualidade superior.</p>
+        </div>
+        <div class="service-card">
+          <div class="service-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
+          <h3 class="service-card__title">Consultoria de Projetos</h3>
+          <p class="service-card__text">Planeamento estratégico e acompanhamento técnico especializado.</p>
+        </div>
+        <div class="service-card">
+          <div class="service-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6"/><path d="M8 11h6"/></svg></div>
+          <h3 class="service-card__title">Fiscalização de Obras</h3>
+          <p class="service-card__text">Controlo rigoroso de qualidade e conformidade em cada etapa.</p>
+        </div>
+        <div class="service-card">
+          <div class="service-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></div>
+          <h3 class="service-card__title">Capoto & Fachadas</h3>
+          <p class="service-card__text">Isolamento térmico e requalificação exterior de edifícios.</p>
+        </div>
+        <div class="service-card">
+          <div class="service-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+          <h3 class="service-card__title">Remodelação Interior</h3>
+          <p class="service-card__text">Transformação completa de espaços interiores com design moderno.</p>
+        </div>
+        <div class="service-card">
+          <div class="service-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg></div>
+          <h3 class="service-card__title">Obras em Pladur</h3>
+          <p class="service-card__text">Divisórias, tetos falsos e acabamentos em gesso cartonado.</p>
+        </div>
+        <div class="service-card">
+          <div class="service-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+          <h3 class="service-card__title">Instalações Elétricas</h3>
+          <p class="service-card__text">Instalações elétricas certificadas para residências e comércios.</p>
+        </div>
+        <div class="service-card">
+          <div class="service-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c4-4 8-7.5 8-12a8 8 0 1 0-16 0c0 4.5 4 8 8 12z"/><path d="M12 6v4"/><path d="M9 11l3 3 3-3"/></svg></div>
+          <h3 class="service-card__title">Manutenção de Jardins</h3>
+          <p class="service-card__text">Jardinagem profissional e sistemas de rega automáticos.</p>
+        </div>
+        <div class="service-card">
+          <div class="service-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
+          <h3 class="service-card__title">Manutenção Geral</h3>
+          <p class="service-card__text">Serviços de manutenção preventiva e corretiva de edifícios.</p>
+        </div>
+        <div class="service-card">
+          <div class="service-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></div>
+          <h3 class="service-card__title">Construção Comercial</h3>
+          <p class="service-card__text">Edificação de espaços comerciais e estabelecimentos modernos.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quem Somos Section -->
+  <section class="about" id="quem-somos">
+    <div class="container">
+      <div class="about__grid">
+        <div class="about__images"><div class="about__image-main"><img src="/quem-somos.jpg" alt="Entrega de obra"></div></div>
+        <div class="about__content">
+          <h2 class="about__title">A Satisfação do Cliente é a Nossa Maior Conquista</h2>
+          <p class="about__text">Na Spark & Smirk, não entregamos apenas obras — entregamos sonhos realizados. Cada projeto concluído representa mais uma família satisfeita.</p>
+          <p class="about__text">A nossa equipa acompanha cada detalhe, desde a primeira reunião até à entrega das chaves. O sorriso de um cliente satisfeito é o nosso maior troféu.</p>
+          <a href="#contacto" class="btn btn--primary">Fale Connosco <span class="btn__icon">→</span></a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Why Us Section -->
+  <section class="why-us" id="sobre">
+    <div class="why-us__bg"><div class="why-us__bg-image"></div><div class="why-us__bg-overlay"></div></div>
+    <div class="container">
+      <div class="why-us__content">
+        <div class="section-header">
+          <h2 class="section-title section-title--light">Porquê Escolher a Spark & Smirk</h2>
+          <div class="section-divider"></div>
+        </div>
+        <div class="why-us__grid">
+          <div class="why-us__card"><div class="why-us__card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="M8 12h8"/></svg></div><div class="why-us__card-content"><h3 class="why-us__card-title">Compromisso Total</h3><p class="why-us__card-text">Dedicação absoluta em cada projeto.</p></div></div>
+          <div class="why-us__card"><div class="why-us__card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div class="why-us__card-content"><h3 class="why-us__card-title">Equipa Qualificada</h3><p class="why-us__card-text">Profissionais experientes e certificados.</p></div></div>
+          <div class="why-us__card"><div class="why-us__card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div><div class="why-us__card-content"><h3 class="why-us__card-title">Inovação Constante</h3><p class="why-us__card-text">Soluções modernas e atualizadas.</p></div></div>
+          <div class="why-us__card"><div class="why-us__card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div><div class="why-us__card-content"><h3 class="why-us__card-title">Resultados Garantidos</h3><p class="why-us__card-text">Clientes satisfeitos comprovam.</p></div></div>
+          <div class="why-us__card"><div class="why-us__card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div class="why-us__card-content"><h3 class="why-us__card-title">Atendimento Personalizado</h3><p class="why-us__card-text">Cada cliente é tratado como único.</p></div></div>
+          <div class="why-us__card"><div class="why-us__card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div><div class="why-us__card-content"><h3 class="why-us__card-title">Transparência Total</h3><p class="why-us__card-text">Orçamentos claros e honestos.</p></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Projects Section - Interactive Portfolio -->
+  <section class="portfolio" id="projetos">
+    <div class="container">
+      <div class="section-header section-header--center">
+        <h2 class="section-title">Os Nossos Projetos</h2>
+        <p class="section-subtitle">Explore os nossos trabalhos organizados por categoria</p>
+        <div class="section-divider"></div>
+      </div>
+      
+      <div class="portfolio__wrapper">
+        <!-- Menu Lateral -->
+        <div class="portfolio__menu">
+          <button class="portfolio__menu-item active" data-category="eletrica"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg><span>Instalações Elétricas</span></button>
+          <button class="portfolio__menu-item" data-category="construcao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 20h20"/><path d="M5 20V8.5L12 4l7 4.5V20"/></svg><span>Construção Civil</span></button>
+          <button class="portfolio__menu-item" data-category="cofragem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/></svg><span>Cofragem</span></button>
+          <button class="portfolio__menu-item" data-category="pladur"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg><span>Pladur</span></button>
+          <button class="portfolio__menu-item" data-category="capoto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><span>Capoto & Reboco</span></button>
+        </div>
+
+        <!-- Conteúdo Dinâmico -->
+        <div class="portfolio__content">
+          <div class="portfolio__panel active" data-panel="eletrica">
+            <div class="portfolio__info"><h3>Instalações Elétricas</h3><p>Quadros elétricos industriais e residenciais com componentes certificados. Garantimos segurança e conformidade com as normas portuguesas.</p></div>
+            <div class="portfolio__carousel"><div class="portfolio__slides">
+              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-2.jpeg" alt="Quadro elétrico"></div>
+              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-10.jpeg" alt="Cabos"></div>
+            </div></div>
+          </div>
+          <div class="portfolio__panel" data-panel="construcao">
+            <div class="portfolio__info"><h3>Construção Civil</h3><p>Obras de construção de pequeno e grande porte. Especialistas em estruturas de betão armado, escadarias e fundações.</p></div>
+            <div class="portfolio__carousel"><div class="portfolio__slides">
+              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-3.jpeg" alt="Escadaria"></div>
+              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-4.jpeg" alt="Betão"></div>
+              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-7.jpeg" alt="Armação"></div>
+              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-8.jpeg" alt="Malha"></div>
+            </div></div>
+          </div>
+          <div class="portfolio__panel" data-panel="cofragem">
+            <div class="portfolio__info"><h3>Cofragem</h3><p>Especialistas em cofragem para estruturas de betão. Técnicas tradicionais e modernas para escadarias, lajes e muros.</p></div>
+            <div class="portfolio__carousel"><div class="portfolio__slides">
+              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-5.jpeg" alt="Cofragem"></div>
+              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-9.jpeg" alt="Estrutura"></div>
+            </div></div>
+          </div>
+          <div class="portfolio__panel" data-panel="pladur">
+            <div class="portfolio__info"><h3>Pladur</h3><p>Divisórias, tetos falsos e revestimentos em gesso cartonado. Ideal para remodelações com isolamento térmico e acústico.</p></div>
+            <div class="portfolio__carousel"><div class="portfolio__slides">
+              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-1.jpeg" alt="Pladur"></div>
+            </div></div>
+          </div>
+          <div class="portfolio__panel" data-panel="capoto">
+            <div class="portfolio__info"><h3>Capoto & Reboco</h3><p>Sistemas ETICS/Capoto e reboco tradicional. Melhoramos a eficiência energética e estética dos edifícios.</p></div>
+            <div class="portfolio__carousel"><div class="portfolio__slides">
+              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-6.jpeg" alt="Capoto"></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Partners -->
+  <section class="partners" id="parceiros">
+    <div class="partners__bg"></div>
+    <div class="container">
+      <div class="section-header section-header--center">
+        <h2 class="section-title section-title--light">Parceiros</h2>
+        <div class="section-divider"></div>
+      </div>
+      <div class="partners__grid">
+        <div class="partners__card">
+          <span class="partners__name">ATEC</span>
+          <span class="partners__desc">Engenharia e Construção</span>
+        </div>
+        <div class="partners__card">
+          <span class="partners__name">Be Water</span>
+          <span class="partners__desc">Águas de Valongo</span>
+        </div>
+        <div class="partners__card">
+          <span class="partners__name">NextLayout</span>
+          <span class="partners__desc">Next to you. Next to healthcare.</span>
+        </div>
+        <div class="partners__card">
+          <span class="partners__name">NR Engenharia</span>
+          <span class="partners__desc">Pilares da inovação</span>
+        </div>
+        <div class="partners__card">
+          <span class="partners__name">Pintos Grupo</span>
+          <span class="partners__desc">30 anos de experiência</span>
+        </div>
+        <div class="partners__card">
+          <span class="partners__name">Restradas</span>
+          <span class="partners__desc">Revitalização de Estradas</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       CTA — Tem um Projeto?
+  ═══════════════════════════════════════ -->
+  <section class="cta" id="contacto">
+    <div class="cta__bg" aria-hidden="true">
+      <div class="cta__pattern"></div>
+    </div>
+
+    <div class="container">
+      <div class="cta__wrapper">
+
+        <!-- Left: Message -->
+        <div class="cta__content" data-animate="fade-right">
+          <h2 class="cta__title">
+            Tem um projeto<br>
+            em <span class="cta__title-highlight">mente?</span>
+          </h2>
+
+          <p class="cta__text">
+            Da primeira ideia à entrega da obra, a nossa equipa de engenheiros e técnicos
+            acompanha cada etapa. Fale connosco e receba uma proposta detalhada, sem compromisso.
+          </p>
+
+          <ul class="cta__benefits">
+            <li class="cta__benefit">
+              <span class="cta__benefit-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              </span>
+              Orçamento gratuito e detalhado
+            </li>
+            <li class="cta__benefit">
+              <span class="cta__benefit-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              </span>
+              Resposta em até 24 horas
+            </li>
+            <li class="cta__benefit">
+              <span class="cta__benefit-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              </span>
+              Visita técnica ao local
+            </li>
+          </ul>
+
+          <div class="cta__actions">
+            <a href="tel:+351965834197" class="cta__btn cta__btn--primary">
+              <span class="cta__btn-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+              </span>
+              <span class="cta__btn-label">
+                <small>Ligue agora</small>
+                965 834 197
+              </span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Right: Contact Card -->
+        <aside class="cta__card" data-animate="fade-left">
+          <div class="cta__card-header">
+            <span class="cta__status"><span class="cta__status-dot"></span>Disponíveis agora</span>
+            <h3 class="cta__card-title">Contacto direto</h3>
+            <p class="cta__card-text">Escolha o canal que preferir.</p>
+          </div>
+
+          <ul class="cta__channels">
+            <li>
+              <a href="tel:+351965834197" class="cta__channel">
+                <span class="cta__channel-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                </span>
+                <span class="cta__channel-body">
+                  <span class="cta__channel-label">Telefone principal</span>
+                  <span class="cta__channel-value">(+351) 965 834 197</span>
+                </span>
+                <svg class="cta__channel-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg>
+              </a>
+            </li>
+            <li>
+              <a href="tel:+351926323726" class="cta__channel">
+                <span class="cta__channel-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+                </span>
+                <span class="cta__channel-body">
+                  <span class="cta__channel-label">Telemóvel</span>
+                  <span class="cta__channel-value">(+351) 926 323 726</span>
+                </span>
+                <svg class="cta__channel-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg>
+              </a>
+            </li>
+            <li>
+              <a href="tel:+351935692377" class="cta__channel">
+                <span class="cta__channel-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+                </span>
+                <span class="cta__channel-body">
+                  <span class="cta__channel-label">Apoio técnico</span>
+                  <span class="cta__channel-value">(+351) 935 692 377</span>
+                </span>
+                <svg class="cta__channel-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg>
+              </a>
+            </li>
+            <li>
+              <a href="mailto:info.sparksmirk@gmail.com" class="cta__channel">
+                <span class="cta__channel-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                </span>
+                <span class="cta__channel-body">
+                  <span class="cta__channel-label">Email</span>
+                  <span class="cta__channel-value">info.sparksmirk@gmail.com</span>
+                </span>
+                <svg class="cta__channel-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg>
+              </a>
+            </li>
+          </ul>
+
+          <div class="cta__card-footer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            <span>Segunda a Sexta · 08h00 – 19h00</span>
+          </div>
+        </aside>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer__grid">
+        <!-- Coluna 1: Marca -->
+        <div class="footer__brand">
+          <a href="#inicio" class="footer__logo">
+            <img src="/logotipo.jpeg" alt="Logótipo Spark & Smirk" class="footer__logo-img">
+            <div>SPARK<span>&</span>SMIRK</div>
+          </a>
+          <p class="footer__description">
+            Empresa de Engenharia, Construção Civil e Jardinagem em Portugal, comprometida em transformar projetos em resultados sólidos, de elevada excelência e qualidade.
+          </p>
+        </div>
+
+        <!-- Coluna 2: Secções -->
+        <div>
+          <h4 class="footer__column-title">Secções</h4>
+          <ul class="footer__links">
+            <li><a href="#inicio" class="footer__link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg><span>Início</span></a></li>
+            <li><a href="#servicos" class="footer__link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg><span>Serviços</span></a></li>
+            <li><a href="#quem-somos" class="footer__link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg><span>Quem Somos</span></a></li>
+            <li><a href="#sobre" class="footer__link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg><span>Porquê Nós</span></a></li>
+            <li><a href="#projetos" class="footer__link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg><span>Projetos</span></a></li>
+            <li><a href="#parceiros" class="footer__link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg><span>Parceiros</span></a></li>
+            <li><a href="#contacto" class="footer__link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg><span>Orçamento</span></a></li>
+            <li><a href="/gestao/" class="footer__link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg><span>Sistema de Gestão</span></a></li>
+          </ul>
+        </div>
+
+        <!-- Coluna 3: Entre em Contacto -->
+        <div>
+          <h4 class="footer__column-title">Entre em Contacto</h4>
+          <div class="footer__contacts">
+            <a href="tel:+351965834197" class="footer__contact-item">
+              <span class="footer__contact-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+              </span>
+              <span class="footer__contact-body">
+                <span class="footer__contact-label">Telemóvel Principal</span>
+                <span class="footer__contact-value">(+351) 965 834 197</span>
+              </span>
+            </a>
+            <a href="tel:+351926323726" class="footer__contact-item">
+              <span class="footer__contact-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+              </span>
+              <span class="footer__contact-body">
+                <span class="footer__contact-label">Telemóvel</span>
+                <span class="footer__contact-value">(+351) 926 323 726</span>
+              </span>
+            </a>
+            <a href="tel:+351935692377" class="footer__contact-item">
+              <span class="footer__contact-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+              </span>
+              <span class="footer__contact-body">
+                <span class="footer__contact-label">Apoio Técnico</span>
+                <span class="footer__contact-value">(+351) 935 692 377</span>
+              </span>
+            </a>
+            <a href="mailto:info.sparksmirk@gmail.com" class="footer__contact-item">
+              <span class="footer__contact-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+              </span>
+              <span class="footer__contact-body">
+                <span class="footer__contact-label">Email</span>
+                <span class="footer__contact-value">info.sparksmirk@gmail.com</span>
+              </span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer__bottom">
+        <p class="footer__copyright">© 2025 Spark &amp; Smirk, Lda. Todos os direitos reservados.</p>
+        <a href="#inicio" class="footer__back-top">
+          <span>Voltar ao topo</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- WhatsApp -->
+  <div class="whatsapp">
+    <div class="whatsapp__tooltip">Fale connosco no WhatsApp</div>
+    <a class="whatsapp__btn" href="https://wa.me/351965834197?text=Ol%C3%A1!%20Gostaria%20de%20saber%20mais%20sobre%20os%20servi%C3%A7os%20da%20Spark%20%26%20Smirk." target="_blank" rel="noopener noreferrer" aria-label="Contactar via WhatsApp"><span class="whatsapp__pulse"></span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg></a>
+  </div>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
