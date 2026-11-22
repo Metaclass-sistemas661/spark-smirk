@@ -49,8 +49,9 @@ function summarizeModules(user) {
 }
 
 export class AdminUtilizadoresModule {
-  constructor({ onUsersUpdated } = {}) {
+  constructor({ onUsersUpdated, onProfileUpdated } = {}) {
     this.onUsersUpdated = onUsersUpdated;
+    this.onProfileUpdated = onProfileUpdated;
     this.users = [];
     this.loading = false;
     this.loadedOnce = false;
@@ -529,7 +530,20 @@ export class AdminUtilizadoresModule {
               const [modKey, actKey] = cb.dataset.permKey.split('.');
               if (!workingPerms[modKey]) workingPerms[modKey] = {};
               workingPerms[modKey][actKey] = cb.checked;
-              // Se desativar "ver", mantém consistente se o gestor quiser, ou apenas atualiza o botão marcar tudo
+
+              if (actKey === 'ver' && !cb.checked) {
+                for (const key of Object.keys(workingPerms[modKey])) {
+                  workingPerms[modKey][key] = false;
+                }
+                syncCheckboxesFromWorking();
+                return;
+              }
+              if (actKey !== 'ver' && cb.checked && 'ver' in workingPerms[modKey] && !workingPerms[modKey].ver) {
+                workingPerms[modKey].ver = true;
+                syncCheckboxesFromWorking();
+                return;
+              }
+
               const card = cb.closest('[data-perm-module]');
               const toggleBtn = card?.querySelector('[data-toggle-module]');
               const allCbs = Array.from(card?.querySelectorAll('[data-perm-key]') || []);
@@ -653,6 +667,10 @@ export class AdminUtilizadoresModule {
 
             const res = await authenticatedApiFetch(endpoint, { method, body: payload });
             closeModal();
+
+            if (res?.user && typeof this.onProfileUpdated === 'function') {
+              this.onProfileUpdated(res.user);
+            }
 
             if (!isEdit || provisionalPassword) {
               this._showCredentialsModal({

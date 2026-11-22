@@ -114,6 +114,15 @@ class ErpApp {
         const el = document.getElementById('cntUsers');
         if (el) el.textContent = String(count);
       },
+      onProfileUpdated: (updatedUser) => {
+        if (updatedUser?.id && updatedUser.id === this.currentProfile?.id) {
+          this.currentProfile = updatedUser;
+          this.adminUtilizadores.setCurrentProfile(updatedUser);
+          this._renderOperatorInfo();
+          this._applyPermissionsUi();
+          this.render();
+        }
+      },
     });
   }
 
@@ -266,7 +275,10 @@ class ErpApp {
   _canQuickAction(actionKey) {
     const perm = QUICK_ACTION_PERMS[actionKey];
     if (!perm || !this.currentProfile) return true;
-    return hasPermission(this.currentProfile, perm[0], perm[1]);
+    return (
+      hasPermission(this.currentProfile, perm[0], 'ver') &&
+      hasPermission(this.currentProfile, perm[0], perm[1])
+    );
   }
 
   _renderOperatorInfo() {
@@ -462,7 +474,22 @@ class ErpApp {
   render() {
     if (!this._canAccessRoute(this.activeRoute)) {
       const firstAllowed = Object.keys(ROUTES).find((k) => this._canAccessRoute(k));
-      if (firstAllowed) this.activeRoute = firstAllowed;
+      if (firstAllowed) {
+        this.activeRoute = firstAllowed;
+      } else {
+        if (this.kickerEl) this.kickerEl.textContent = 'Acesso Restrito';
+        if (this.titleEl) this.titleEl.textContent = 'Sem Módulos Atribuídos';
+        document.querySelectorAll('[data-route]').forEach((btn) => btn.classList.remove('is-active'));
+        if (this.workspace) {
+          this.workspace.innerHTML = `
+            <div class="erp-panel" style="padding:28px;text-align:center;">
+              <h2 class="erp-panel__title">Sem permissões ativas</h2>
+              <p class="erp-panel__subtitle" style="margin-top:6px;">A sua conta ainda não possui módulos autorizados. Contacte o administrador do sistema.</p>
+            </div>
+          `;
+        }
+        return;
+      }
     }
 
     const route = ROUTES[this.activeRoute] || ROUTES.dashboard;

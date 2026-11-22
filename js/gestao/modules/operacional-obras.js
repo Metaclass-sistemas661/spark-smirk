@@ -57,6 +57,7 @@ export class OperacionalObrasModule {
   }
 
   render(container, ctx) {
+    this._can = ctx.can || (() => true);
     const state = store.getState();
     const { statusFilter, search } = ctx; // 'em_andamento' | 'a_iniciar' | 'concluida'
     const query = (search || '').trim().toLowerCase();
@@ -302,8 +303,8 @@ export class OperacionalObrasModule {
 
       <div class="erp-detail-tabs">
         <button type="button" class="erp-detail-tab is-active" data-det-tab="overview">Dados Técnicos &amp; Equipa</button>
-        <button type="button" class="erp-detail-tab" data-det-tab="budget">Orçamento Detalhado (${proj.budget?.items?.length || 0})</button>
-        <button type="button" class="erp-detail-tab" data-det-tab="payments">Plano &amp; Datas de Pagamento (${proj.payments?.length || 0})</button>
+        ${!this._can || this._can('op_obras', 'orcamentos') ? `<button type="button" class="erp-detail-tab" data-det-tab="budget">Orçamento Detalhado (${proj.budget?.items?.length || 0})</button>` : ''}
+        ${!this._can || this._can('op_obras', 'pagamentos') ? `<button type="button" class="erp-detail-tab" data-det-tab="payments">Plano &amp; Datas de Pagamento (${proj.payments?.length || 0})</button>` : ''}
       </div>
 
       <div id="detPaneOverview">
@@ -415,9 +416,13 @@ export class OperacionalObrasModule {
                       </span>
                     </td>
                     <td style="text-align:right">
-                      <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-toggle-pay="${escapeHtml(p.id)}">
-                        ${p.status === 'pago' ? 'Reabrir' : 'Marcar Pago'}
-                      </button>
+                      ${
+                        !this._can || this._can('op_obras', 'pagamentos')
+                          ? `<button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-toggle-pay="${escapeHtml(p.id)}">
+                              ${p.status === 'pago' ? 'Reabrir' : 'Marcar Pago'}
+                            </button>`
+                          : '<span style="font-size:11px;color:var(--erp-text-muted);">Só leitura</span>'
+                      }
                     </td>
                   </tr>`;
                 })
@@ -435,7 +440,7 @@ export class OperacionalObrasModule {
       bodyHtml,
       footerHtml: `
         <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Fechar</button>
-        <button type="button" class="erp-btn erp-btn--primary" id="btnDetEdit">${ICONS.edit}<span>Editar Obra &amp; Orçamento</span></button>
+        ${!this._can || this._can('op_obras', 'editar') ? `<button type="button" class="erp-btn erp-btn--primary" id="btnDetEdit">${ICONS.edit}<span>Editar Obra &amp; Orçamento</span></button>` : ''}
       `,
       onMount: (modal) => {
         const panes = {
@@ -471,7 +476,7 @@ export class OperacionalObrasModule {
           });
         });
 
-        modal.querySelector('#btnDetEdit').addEventListener('click', () => {
+        modal.querySelector('#btnDetEdit')?.addEventListener('click', () => {
           closeModal();
           this._openProjectFormModal(proj, proj.status);
         });

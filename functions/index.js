@@ -88,8 +88,11 @@ function getBearerToken(req) {
 
 function hasAdminUserAction(profile, actionKey) {
   if (!profile || profile.ativo === false) return false;
-  if (profile.nivel_acesso === 'administrador') return true;
-  return Boolean(profile.permissoes?.admin_utilizadores?.[actionKey]);
+  const adminPerms = profile.permissoes?.admin_utilizadores;
+  if (adminPerms && typeof adminPerms[actionKey] === 'boolean') {
+    return adminPerms[actionKey] === true;
+  }
+  return profile.nivel_acesso === 'administrador';
 }
 
 async function fetchDbProfile(supabaseAdmin, userId) {
@@ -101,13 +104,69 @@ async function fetchDbProfile(supabaseAdmin, userId) {
       .eq('id', userId)
       .maybeSingle();
 
+    if (!error) {
+      return { data, dbError: null };
+    }
+  } catch {
+    // Fallback para bridge RPC abaixo
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin.rpc('spark_get_perfil', { p_user_id: userId });
     if (error) {
       return { data: null, dbError: error.message };
     }
-    return { data, dbError: null };
+    return { data: data || null, dbError: null };
   } catch (err) {
     return { data: null, dbError: err.message };
   }
+}
+
+async function listDbProfiles(supabaseAdmin) {
+  try {
+    const { data, error } = await supabaseAdmin
+      .schema('seguranca')
+      .from('perfis_utilizadores')
+      .select('*');
+
+    if (!error) {
+      return { rows: data || [], dbWarning: null };
+    }
+  } catch {
+    // Fallback para bridge RPC abaixo
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin.rpc('spark_list_perfis');
+    if (error) {
+      return { rows: [], dbWarning: error.message };
+    }
+    return { rows: Array.isArray(data) ? data : [], dbWarning: null };
+  } catch (err) {
+    return { rows: [], dbWarning: err.message };
+  }
+}
+
+async function countDbProfiles(supabaseAdmin) {
+  try {
+    const countRes = await supabaseAdmin
+      .schema('seguranca')
+      .from('perfis_utilizadores')
+      .select('id', { count: 'exact', head: true });
+    if (!countRes.error) {
+      return countRes.count || 0;
+    }
+  } catch {
+    // Fallback para bridge RPC abaixo
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin.rpc('spark_count_perfis');
+    if (!error) return Number(data) || 0;
+  } catch {
+    // Ignore
+  }
+  return 0;
 }
 
 async function upsertDbProfile(supabaseAdmin, payload) {
@@ -119,28 +178,84 @@ async function upsertDbProfile(supabaseAdmin, payload) {
       .select()
       .maybeSingle();
 
+    if (!error) {
+      return { data, synced: true, dbError: null };
+    }
+  } catch {
+    // Fallback para bridge RPC abaixo
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin.rpc('spark_upsert_perfil', { p_payload: payload });
     if (error) {
       return { data: null, synced: false, dbError: error.message };
     }
-    return { data, synced: true, dbError: null };
+    return { data: data || payload, synced: true, dbError: null };
   } catch (err) {
     return { data: null, synced: false, dbError: err.message };
   }
 }
 
-async function writeAuditLog(supabaseAdmin, entry) {
+async function touchDbLogin(supabaseAdmin, userId) {
   try {
-    await supabaseAdmin
+    const { error } = await supabaseAdmin
+      .schema('seguranca')
+      .from('perfis_utilizadores')
+      .update({ ultimo_login_em: new Date().toISOString() })
+      .eq('id', userId);
+    if (!error) return;
+  } catch {
+    // Fallback para bridge RPC abaixo
+  }
+
+  try {
+    await supabaseAdmin.rpc('spark_touch_login', { p_user_id: userId });
+  } catch {
+    // Non-blocking
+  }
+}
+
+async function deleteDbProfile(supabaseAdmin, userId) {
+  try {
+    const { error } = await supabaseAdmin
+      .schema('seguranca')
+      .from('perfis_utilizadores')
+      .delete()
+      .eq('id', userId);
+    if (!error) return;
+  } catch {
+    // Fallback para bridge RPC abaixo
+  }
+
+  try {
+    await supabaseAdmin.rpc('spark_delete_perfil', { p_user_id: userId });
+  } catch {
+    // Cascade on auth.users already removes DB row
+  }
+}
+
+async function writeAuditLog(supabaseAdmin, entry) {
+  const payload = {
+    utilizador_id: entry.userId || null,
+    utilizador_email: entry.userEmail || null,
+    modulo: entry.modulo || 'seguranca.utilizadores',
+    acao: entry.acao,
+    entidade_id: entry.entidadeId || null,
+    detalhes: entry.detalhes || {},
+  };
+
+  try {
+    const { error } = await supabaseAdmin
       .schema('seguranca')
       .from('registos_auditoria')
-      .insert({
-        utilizador_id: entry.userId || null,
-        utilizador_email: entry.userEmail || null,
-        modulo: entry.modulo || 'seguranca.utilizadores',
-        acao: entry.acao,
-        entidade_id: entry.entidadeId || null,
-        detalhes: entry.detalhes || {},
-      });
+      .insert(payload);
+    if (!error) return;
+  } catch {
+    // Fallback para bridge RPC abaixo
+  }
+
+  try {
+    await supabaseAdmin.rpc('spark_write_auditoria', { p_payload: payload });
   } catch {
     // Non-blocking audit log
   }
@@ -197,18 +312,9 @@ async function resolveCallerContext(req, supabaseAdmin) {
   const { data: existingRow } = await fetchDbProfile(supabaseAdmin, authUser.id);
   let profile = buildEffectiveProfile(authUser, existingRow);
 
-  // Bootstrap inicial: se ainda não existe perfil para este utilizador criado previamente no Supabase
+  // Bootstrap inicial: se ainda não existe perfil para este utilizador criado previamente
   if (!existingRow && !authUser.app_metadata?.nivel_acesso) {
-    let count = 0;
-    try {
-      const countRes = await supabaseAdmin
-        .schema('seguranca')
-        .from('perfis_utilizadores')
-        .select('id', { count: 'exact', head: true });
-      count = countRes?.count || 0;
-    } catch {
-      count = 0;
-    }
+    const count = await countDbProfiles(supabaseAdmin);
 
     const initialRole = !count || count === 0 ? 'administrador' : 'operador';
     const initialPerms = defaultPermissionsForRole(initialRole);
@@ -310,16 +416,7 @@ exports.api = onRequest(
           return;
         }
 
-        // Atualiza timestamp de último login em background
-        try {
-          await supabaseAdmin
-            .schema('seguranca')
-            .from('perfis_utilizadores')
-            .update({ ultimo_login_em: new Date().toISOString() })
-            .eq('id', ctx.authUser.id);
-        } catch {
-          // Non-blocking last login update
-        }
+        await touchDbLogin(supabaseAdmin, ctx.authUser.id);
 
         res.status(200).json({
           authenticated: true,
@@ -427,21 +524,7 @@ exports.api = onRequest(
           return;
         }
 
-        let dbProfiles = [];
-        let dbWarning = null;
-        try {
-          const { data: rows, error: dbErr } = await supabaseAdmin
-            .schema('seguranca')
-            .from('perfis_utilizadores')
-            .select('*');
-          if (dbErr) {
-            dbWarning = dbErr.message;
-          } else {
-            dbProfiles = rows || [];
-          }
-        } catch (err) {
-          dbWarning = err.message;
-        }
+        const { rows: dbProfiles, dbWarning } = await listDbProfiles(supabaseAdmin);
 
         const dbMap = new Map(dbProfiles.map((r) => [r.id, r]));
         const users = (authList?.users || []).map((authUser) => {
@@ -619,6 +702,17 @@ exports.api = onRequest(
             return;
           }
 
+          if (
+            targetUserId === ctx.authUser.id &&
+            (!permissoes.admin_utilizadores?.ver || !permissoes.admin_utilizadores?.editar)
+          ) {
+            res.status(400).json({
+              error: 'CANNOT_LOCK_SELF_ADMIN_TAB',
+              message: 'Por segurança, não pode remover da sua própria conta o acesso à gestão de utilizadores.',
+            });
+            return;
+          }
+
           const newProvisionalPassword = String(body.provisionalPassword || '').trim();
           if (newProvisionalPassword && newProvisionalPassword.length < 8) {
             res.status(400).json({
@@ -730,15 +824,7 @@ exports.api = onRequest(
           return;
         }
 
-        try {
-          await supabaseAdmin
-            .schema('seguranca')
-            .from('perfis_utilizadores')
-            .delete()
-            .eq('id', targetUserId);
-        } catch {
-          // Cascade on auth.users already cleans DB row when schema is ready
-        }
+        await deleteDbProfile(supabaseAdmin, targetUserId);
 
         await writeAuditLog(supabaseAdmin, {
           userId: ctx.authUser.id,

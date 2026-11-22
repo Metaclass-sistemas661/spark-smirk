@@ -118,9 +118,11 @@ export function normalizePermissions(rawPerms, nivelAcesso = 'operador') {
 
 export function hasPermission(profile, moduleKey, actionKey = 'ver') {
   if (!profile) return false;
-  if (profile.nivel_acesso === 'administrador') return true;
   const mod = profile.permissoes?.[moduleKey];
-  return Boolean(mod && mod[actionKey] === true);
+  if (!mod || typeof mod !== 'object') {
+    return false;
+  }
+  return mod[actionKey] === true;
 }
 
 export function countGrantedPermissions(perms) {
