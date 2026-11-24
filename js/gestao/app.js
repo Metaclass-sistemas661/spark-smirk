@@ -213,23 +213,6 @@ class ErpApp {
       });
     }
 
-    const resetBtn = document.getElementById('btnResetDemo');
-    if (resetBtn) {
-      if (this.currentProfile && !hasPermission(this.currentProfile, 'admin_utilizadores', 'editar')) {
-        resetBtn.style.display = 'none';
-      }
-      resetBtn.addEventListener('click', () => {
-        confirmAction({
-          title: 'Repor Dados de Demonstração',
-          message: 'Pretende restaurar os funcionários, presenças, recibos e obras iniciais de demonstração?',
-          confirmLabel: 'Repor Dados',
-          onConfirm: () => {
-            store.resetDemo();
-          },
-        });
-      });
-    }
-
     const logoutBtn = document.getElementById('btnLogout');
     if (logoutBtn) {
       if (this.currentUser?.email) {

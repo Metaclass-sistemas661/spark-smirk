@@ -1,11 +1,10 @@
 /* ═══════════════════════════════════════════════════════════
    SPARK & SMIRK ERP — Cloud-Synced Store (PostgreSQL + Storage)
-   Sem dados sensíveis em localStorage; sincronizado ao vivo com
-   a base de dados central e armazenamento privado de anexos.
+   Sem dados mock nem persistência sensível em localStorage;
+   sincronizado ao vivo com a base de dados central.
    ═══════════════════════════════════════════════════════════ */
 
 import { authenticatedApiFetch } from '../../shared/supabase-client.js';
-import { createSeedData } from '../data/seed.js';
 import { showToast } from './ui.js';
 
 const pendingAttachmentPayloads = new Map();
@@ -87,10 +86,11 @@ class ErpStore {
     this.initialized = false;
   }
 
-  async init(profile = null) {
+  async init() {
     try {
       // Remove qualquer cache antigo legado em localStorage por segurança
       window.localStorage.removeItem('spark_smirk_erp_v1');
+      window.sessionStorage.removeItem('spark_erp_initial_seed_checked');
     } catch {
       // Ignore storage cleanup
     }
@@ -98,31 +98,6 @@ class ErpStore {
     const snapshot = await authenticatedApiFetch('/api/erp/bootstrap', { method: 'GET' });
     this.state = this._normalizeSnapshot(snapshot);
     this.initialized = true;
-
-    // Seed inicial automático uma única vez se a base estiver completamente vazia e o utilizador for admin
-    const isCompletelyEmpty =
-      this.state.employees.length === 0 &&
-      this.state.projects.length === 0 &&
-      this.state.payslips.length === 0;
-    const isAdminEditor = profile?.permissoes?.admin_utilizadores?.editar === true;
-
-    if (isCompletelyEmpty && isAdminEditor) {
-      const seedKey = 'spark_erp_initial_seed_checked';
-      const alreadyChecked = window.sessionStorage.getItem(seedKey) === '1';
-      if (!alreadyChecked) {
-        window.sessionStorage.setItem(seedKey, '1');
-        try {
-          const seeded = await authenticatedApiFetch('/api/erp/bootstrap-seed', {
-            method: 'POST',
-            body: createSeedData(),
-          });
-          this.state = this._normalizeSnapshot(seeded);
-        } catch {
-          // Segue com estado vazio se não aplicável
-        }
-      }
-    }
-
     this._notify();
     return this.state;
   }
@@ -172,20 +147,6 @@ class ErpStore {
 
   getState() {
     return this.state;
-  }
-
-  async resetDemo() {
-    const seeded = await this._syncMutation(
-      '/api/erp/bootstrap-seed',
-      'POST',
-      createSeedData(),
-      'Erro ao repor dados de demonstração na base de dados.'
-    );
-    if (seeded) {
-      this.state = this._normalizeSnapshot(seeded);
-      this._notify();
-      showToast('Dados de demonstração gravados na base de dados.');
-    }
   }
 
   /* ── Funcionários ── */
