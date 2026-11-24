@@ -6,6 +6,7 @@
 import { store } from '../core/store.js';
 import {
   computeProjectFinancials,
+  computeProjectInvoiceSummary,
   escapeHtml,
   formatCurrency,
   formatDatePT,
@@ -57,13 +58,18 @@ export class DashboardModule {
     let totalContracted = 0;
     let totalPaid = 0;
     let totalOpen = 0;
+    let totalInvoicedCosts = 0;
+    let totalBudgetPool = 0;
     const openInstallments = [];
 
     const projectStats = state.projects.map((proj) => {
       const fin = computeProjectFinancials(proj);
+      const invSum = computeProjectInvoiceSummary(proj, state.projectInvoices);
       totalContracted += fin.contractTotal;
       totalPaid += fin.paidAmount;
       totalOpen += fin.balanceOpen;
+      totalInvoicedCosts += invSum.spentOnInvoices;
+      totalBudgetPool += invSum.budgetTotal;
 
       (proj.payments || []).forEach((pay) => {
         if (pay.status !== 'pago') {
@@ -81,8 +87,11 @@ export class DashboardModule {
         }
       });
 
-      return { proj, fin };
+      return { proj, fin, invSum };
     });
+
+    const totalBudgetRemaining = totalBudgetPool - totalInvoicedCosts;
+    const totalInvoicesCount = (state.projectInvoices || []).length;
 
     openInstallments.sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
     const overdueInstallments = openInstallments.filter((i) => i.overdue);
@@ -103,10 +112,6 @@ export class DashboardModule {
     const yearStr = month.slice(0, 4);
     const yearPayslips = state.payslips.filter((p) => String(p.month || '').startsWith(yearStr));
     const yearNetTotal = yearPayslips.reduce((s, p) => s + (Number(p.netSalary) || 0), 0);
-    const yearAttachmentsCount = (state.attachedReceipts || []).filter((r) =>
-      String(r.month || '').startsWith(yearStr)
-    ).length;
-    const pendingPayslipsCount = state.payslips.filter((p) => p.status !== 'pago').length;
 
     // Filtered projects for Bar Chart
     const chartProjects = projectStats.filter(
@@ -168,11 +173,11 @@ export class DashboardModule {
 
         <div class="erp-kpi-card">
           <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Vencimentos (${escapeHtml(yearStr)})</span>
+            <span class="erp-kpi-card__label">Faturas &amp; Saldo de Obras</span>
             <span class="erp-kpi-card__icon">${ICONS.receipt}</span>
           </div>
-          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(yearNetTotal))}</div>
-          <div class="erp-kpi-card__meta">${yearAttachmentsCount} anexo(s) · ${pendingPayslipsCount} pendente(s)</div>
+          <div class="erp-kpi-card__value" style="color:${totalBudgetRemaining < 0 ? 'var(--erp-danger)' : 'var(--erp-success)'};">${escapeHtml(formatCurrency(totalBudgetRemaining))}</div>
+          <div class="erp-kpi-card__meta">${totalInvoicesCount} fatura(s) · ${escapeHtml(formatCurrency(totalInvoicedCosts))} gasto em materiais (${escapeHtml(yearStr)}: ${escapeHtml(formatCurrency(yearNetTotal))} RH)</div>
         </div>
       </div>
 
@@ -283,7 +288,7 @@ export class DashboardModule {
     const barW = Math.min(26, Math.max(14, groupW * 0.24));
 
     let barsHtml = '';
-    items.forEach(({ proj, fin }, idx) => {
+    items.forEach(({ proj, fin, invSum }, idx) => {
       const cx = padL + idx * groupW + groupW / 2;
       const hTotal = Math.max(4, (fin.contractTotal / niceMax) * plotH);
       const hPaid = fin.paidAmount > 0 ? Math.max(3, (fin.paidAmount / niceMax) * plotH) : 0;
@@ -296,9 +301,11 @@ export class DashboardModule {
       const yOpen = padT + plotH - hPaid - hOpen;
 
       const tipTitle = escapeHtml(`${proj.code} — ${proj.name}`);
-      const tipContract = escapeHtml(formatCurrency(fin.contractTotal));
+      const tipContract = escapeHtml(formatCurrency(invSum?.budgetTotal ?? fin.contractTotal));
       const tipPaid = escapeHtml(formatCurrency(fin.paidAmount));
       const tipOpen = escapeHtml(formatCurrency(fin.balanceOpen));
+      const tipSpentInv = escapeHtml(formatCurrency(invSum?.spentOnInvoices ?? 0));
+      const tipRemInv = escapeHtml(formatCurrency(invSum?.remainingBudget ?? fin.contractTotal));
       const tipNext = escapeHtml(fin.nextDueDate ? formatDatePT(fin.nextDueDate) : 'Liquidada');
 
       barsHtml += `
@@ -309,6 +316,8 @@ export class DashboardModule {
            data-tip-contract="${tipContract}"
            data-tip-paid="${tipPaid}"
            data-tip-open="${tipOpen}"
+           data-tip-spent="${tipSpentInv}"
+           data-tip-rem="${tipRemInv}"
            data-tip-next="${tipNext}">
           <rect class="erp-bar-rect" x="${x1}" y="${yTotal}" width="${barW}" height="${hTotal}" rx="4" fill="url(#gradNavy)" />
           ${hPaid > 0 ? `<rect class="erp-bar-rect" x="${x2}" y="${yPaid}" width="${barW}" height="${hPaid}" rx="4" fill="url(#gradGreen)" />` : ''}
@@ -570,10 +579,11 @@ export class DashboardModule {
         if (!tooltip) return;
         tooltip.innerHTML = `
           <div style="font-weight:700;margin-bottom:4px;color:#ff8534;">${grp.dataset.tipTitle}</div>
-          <div>Orçamentado: <strong>${grp.dataset.tipContract}</strong></div>
-          <div>Pago: <strong style="color:#4ade80;">${grp.dataset.tipPaid}</strong></div>
-          <div>Em Aberto: <strong style="color:#fbbf24;">${grp.dataset.tipOpen}</strong></div>
-          <div style="margin-top:3px;opacity:0.8;">Próx. Pagamento: ${grp.dataset.tipNext}</div>
+          <div>Orçamento Geral: <strong>${grp.dataset.tipContract}</strong></div>
+          <div>Faturas Materiais: <strong style="color:#fda4af;">${grp.dataset.tipSpent}</strong></div>
+          <div>Saldo Obra: <strong style="color:#4ade80;">${grp.dataset.tipRem}</strong></div>
+          <div style="margin-top:3px;opacity:0.8;">Cliente Pago: ${grp.dataset.tipPaid} · Aberto: ${grp.dataset.tipOpen}</div>
+          <div style="opacity:0.8;">Próx. Recebimento: ${grp.dataset.tipNext}</div>
         `;
         tooltip.style.left = `${Math.min(window.innerWidth - 230, e.clientX + 14)}px`;
         tooltip.style.top = `${Math.max(12, e.clientY - 24)}px`;

@@ -70,6 +70,7 @@ const QUICK_ACTION_PERMS = {
   'attendance-report': ['rh_funcionarios', 'ver'],
   'new-payslip': ['rh_recibos', 'emitir'],
   'new-project': ['op_obras', 'criar'],
+  'new-invoice': ['op_obras', 'faturas'],
   'view-ongoing': ['op_obras', 'ver'],
   'new-user': ['admin_utilizadores', 'criar'],
 };
@@ -423,6 +424,12 @@ class ErpApp {
       }
       this.render();
       this.opObras.openNewProject(targetStatus);
+    } else if (action === 'new-invoice') {
+      if (!ROUTES[this.activeRoute]?.status) {
+        this.activeRoute = 'op-andamento';
+      }
+      this.render();
+      this.opObras.openLaunchInvoiceModal();
     } else if (action === 'view-ongoing') {
       this.activeRoute = 'op-andamento';
       this.render();

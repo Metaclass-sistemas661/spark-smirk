@@ -8,6 +8,7 @@ import { authenticatedApiFetch } from '../../shared/supabase-client.js';
 import { showToast } from './ui.js';
 
 const pendingAttachmentPayloads = new Map();
+const pendingInvoicePayloads = new Map();
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -71,12 +72,48 @@ export async function deleteAttachmentFile(_id) {
   // Eliminado de forma transacional em deleteAttachedReceipt() no servidor
 }
 
+export async function saveInvoiceFile(id, file) {
+  if (!id || !file) throw new Error('Ficheiro inválido.');
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error('O ficheiro da fatura excede o limite máximo de 10 MB.');
+  }
+  const base64 = await fileToBase64(file);
+  pendingInvoicePayloads.set(id, {
+    name: file.name,
+    type: file.type || 'application/pdf',
+    size: file.size,
+    base64,
+  });
+  return { id, name: file.name, type: file.type || 'application/pdf', size: file.size };
+}
+
+export async function getProjectInvoiceFile(id) {
+  if (!id) return null;
+  try {
+    const res = await authenticatedApiFetch(`/api/erp/project-invoices/${encodeURIComponent(id)}/file`, {
+      method: 'GET',
+    });
+    if (!res?.base64) return null;
+    return {
+      id: res.id,
+      name: res.name,
+      type: res.type || 'application/pdf',
+      size: res.size || 0,
+      data: base64ToArrayBuffer(res.base64),
+    };
+  } catch (err) {
+    showToast(err?.message || 'Não foi possível transferir o PDF da fatura.', 'error');
+    return null;
+  }
+}
+
 const EMPTY_STATE = {
   employees: [],
   attendance: {},
   payslips: [],
   attachedReceipts: [],
   projects: [],
+  projectInvoices: [],
 };
 
 class ErpStore {
@@ -109,6 +146,7 @@ class ErpStore {
       payslips: Array.isArray(snapshot?.payslips) ? snapshot.payslips : [],
       attachedReceipts: Array.isArray(snapshot?.attachedReceipts) ? snapshot.attachedReceipts : [],
       projects: Array.isArray(snapshot?.projects) ? snapshot.projects : [],
+      projectInvoices: Array.isArray(snapshot?.projectInvoices) ? snapshot.projectInvoices : [],
     };
   }
 
@@ -319,12 +357,51 @@ class ErpStore {
     const target = this.state.projects.find((p) => p.id === id);
     const code = target?.code || id;
     this.state.projects = this.state.projects.filter((p) => p.id !== id);
+    this.state.projectInvoices = (this.state.projectInvoices || []).filter(
+      (inv) => inv.projectId !== id && inv.projectId !== code
+    );
     this._notify();
     this._syncMutation(
       `/api/erp/projects/${encodeURIComponent(code)}`,
       'DELETE',
       null,
       'Erro ao excluir obra na base de dados.'
+    );
+  }
+
+  /* ── Faturas de Compra & Materiais por Obra ── */
+  addProjectInvoice(invoice) {
+    if (!Array.isArray(this.state.projectInvoices)) {
+      this.state.projectInvoices = [];
+    }
+    this.state.projectInvoices.unshift(invoice);
+    this._notify();
+
+    const pending = pendingInvoicePayloads.get(invoice.id);
+    pendingInvoicePayloads.delete(invoice.id);
+
+    this._syncMutation(
+      '/api/erp/project-invoices',
+      'POST',
+      {
+        ...invoice,
+        fileBase64: pending?.base64 || '',
+        fileName: pending?.name || invoice.fileName || '',
+        fileType: pending?.type || invoice.fileType || '',
+        fileSize: pending?.size || invoice.fileSize || 0,
+      },
+      'Erro ao registar a fatura da obra na base de dados.'
+    );
+  }
+
+  deleteProjectInvoice(id) {
+    this.state.projectInvoices = (this.state.projectInvoices || []).filter((inv) => inv.id !== id);
+    this._notify();
+    this._syncMutation(
+      `/api/erp/project-invoices/${encodeURIComponent(id)}`,
+      'DELETE',
+      null,
+      'Erro ao eliminar a fatura da base de dados.'
     );
   }
 }

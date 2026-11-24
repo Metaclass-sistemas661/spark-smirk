@@ -284,6 +284,79 @@
   color: var(--erp-danger);
 }
 
+.erp-summary-item__val--warning {
+  color: var(--erp-warning);
+}
+
+/* ── Live Budget / Invoices Consumption Meter ── */
+.erp-budget-meter {
+  padding: 14px 16px;
+  border-radius: var(--erp-radius-md);
+  border: 1px solid var(--erp-border);
+  background: var(--erp-surface-alt);
+  margin-bottom: 14px;
+}
+
+.erp-budget-meter__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.erp-budget-meter__label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--erp-heading);
+}
+
+.erp-budget-meter__nums {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--erp-text-secondary);
+}
+
+.erp-budget-meter__track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--erp-border);
+  overflow: hidden;
+}
+
+.erp-budget-meter__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--erp-success), #10b981);
+  transition: width 0.25s ease;
+}
+
+.erp-budget-meter__fill--warning {
+  background: linear-gradient(90deg, var(--erp-warning), #f59e0b);
+}
+
+.erp-budget-meter__fill--danger {
+  background: linear-gradient(90deg, var(--erp-danger), #ef4444);
+}
+
+.erp-invoice-sim {
+  padding: 14px 16px;
+  border-radius: var(--erp-radius-md);
+  border: 1px solid var(--erp-primary-border);
+  background: var(--erp-primary-soft);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+@media (width <= 760px) {
+  .erp-invoice-sim {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* ── Dynamic Line Items (Orçamento & Pagamentos) ── */
 .erp-line-list {
   display: flex;

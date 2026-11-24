@@ -171,3 +171,32 @@ export function computeProjectFinancials(project) {
     nextDueDate,
   };
 }
+
+export function computeProjectInvoiceSummary(project, projectInvoices = []) {
+  const fin = computeProjectFinancials(project || {});
+  const manualCap = Math.max(0, Number(project?.manualBudgetCap) || 0);
+  const budgetTotal = manualCap > 0 ? manualCap : fin.contractTotal;
+
+  const projRefSet = new Set([project?.id, project?.code].filter(Boolean));
+  const invoices = (Array.isArray(projectInvoices) ? projectInvoices : []).filter((inv) =>
+    projRefSet.has(inv.projectId)
+  );
+
+  const spentOnInvoices = invoices.reduce((sum, inv) => sum + Math.max(0, Number(inv.amount) || 0), 0);
+  const remainingBudget = budgetTotal - spentOnInvoices;
+  const spentPct = budgetTotal > 0 ? Math.round((spentOnInvoices / budgetTotal) * 100) : 0;
+  const isOverBudget = budgetTotal > 0 && remainingBudget < -0.009;
+  const isWarningBudget = budgetTotal > 0 && !isOverBudget && spentPct >= 80;
+
+  return {
+    invoices,
+    invoiceCount: invoices.length,
+    budgetTotal,
+    isManualCap: manualCap > 0,
+    spentOnInvoices,
+    remainingBudget,
+    spentPct,
+    isOverBudget,
+    isWarningBudget,
+  };
+}

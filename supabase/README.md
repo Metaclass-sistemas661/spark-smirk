@@ -23,6 +23,7 @@ Os scripts SQL estão separados por **schemas PostgreSQL distintos** e organizad
 - [`01-obras.sql`](./03-operacional/01-obras.sql) — Tabela `operacional.obras` (obras em andamento, a iniciar e concluídas).
 - [`02-orcamentos.sql`](./03-operacional/02-orcamentos.sql) — Tabelas `operacional.orcamentos` e `operacional.orcamento_itens` (orçamentos e rubricas unitárias).
 - [`03-pagamentos-obras.sql`](./03-operacional/03-pagamentos-obras.sql) — Tabela `operacional.pagamentos_obras` (prestações, faturas, datas de vencimento/pagamento e valores em aberto).
+- [`04-faturas-obras.sql`](./03-operacional/04-faturas-obras.sql) — Tabela `operacional.faturas_obras`, bucket privado `faturas-obras`, plafond geral da obra e RPCs de cálculo em tempo real de materiais/faturas lançadas.
 
 ## Ordem de Execução no SQL Editor do Supabase
 
@@ -37,6 +38,7 @@ Execute exatamente pela numeração das pastas e ficheiros:
 8. `03-operacional/01-obras.sql`
 9. `03-operacional/02-orcamentos.sql`
 10. `03-operacional/03-pagamentos-obras.sql`
+11. `03-operacional/04-faturas-obras.sql`
 
 ## Expor os Schemas na API do Supabase
 

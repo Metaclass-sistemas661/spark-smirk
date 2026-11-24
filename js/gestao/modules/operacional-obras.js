@@ -2,10 +2,11 @@
    SPARK & SMIRK ERP — Operacional: Obras, Orçamentos & Pagamentos
    ═══════════════════════════════════════════════════════════ */
 
-import { store } from '../core/store.js';
+import { store, saveInvoiceFile, getProjectInvoiceFile } from '../core/store.js';
 import {
   computeBudgetTotals,
   computeProjectFinancials,
+  computeProjectInvoiceSummary,
   escapeHtml,
   formatCurrency,
   formatDatePT,
@@ -14,6 +15,16 @@ import {
   todayISO,
 } from '../core/formatters.js';
 import { ICONS, openModal, closeModal, confirmAction, showToast } from '../core/ui.js';
+
+const INVOICE_CATEGORIES = [
+  'Materiais de Construção',
+  'Elétrico & Iluminação',
+  'Canalização & AVAC',
+  'Pladur & Tectos',
+  'Aluguer de Equipamentos',
+  'Subempreitada',
+  'Outros Custos',
+];
 
 const PROJECT_TYPES = [
   'Construção Civil',
@@ -54,6 +65,7 @@ const STATUS_META = {
 export class OperacionalObrasModule {
   constructor() {
     this.typeFilter = 'all';
+    this.invoiceCatFilter = 'all';
   }
 
   render(container, ctx) {
@@ -72,23 +84,23 @@ export class OperacionalObrasModule {
       return true;
     });
 
-    // Global & filtered financial KPIs
-    let totalContracted = 0;
-    let totalPaid = 0;
-    let totalOpen = 0;
-    let overdueProjects = 0;
+    // Global & filtered financial + material invoice KPIs
+    let totalBudgetPool = 0;
+    let totalInvoiced = 0;
+    let totalInvoicesCount = 0;
+    let overBudgetCount = 0;
 
     filtered.forEach((proj) => {
-      const fin = computeProjectFinancials(proj);
-      totalContracted += fin.contractTotal;
-      totalPaid += fin.paidAmount;
-      totalOpen += fin.balanceOpen;
-      if (fin.overdueCount > 0) overdueProjects += 1;
+      const invSum = computeProjectInvoiceSummary(proj, state.projectInvoices);
+      totalBudgetPool += invSum.budgetTotal;
+      totalInvoiced += invSum.spentOnInvoices;
+      totalInvoicesCount += invSum.invoiceCount;
+      if (invSum.isOverBudget) overBudgetCount += 1;
     });
 
+    const totalBudgetRemaining = totalBudgetPool - totalInvoiced;
     const empMap = new Map(state.employees.map((e) => [e.id, e]));
     const statusInfo = STATUS_META[statusFilter] || STATUS_META.em_andamento;
-    const today = todayISO();
 
     container.innerHTML = `
       <div class="erp-kpi-grid">
@@ -103,29 +115,29 @@ export class OperacionalObrasModule {
 
         <div class="erp-kpi-card">
           <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Total Orçamentado c/ IVA</span>
+            <span class="erp-kpi-card__label">Orçamento Geral das Obras</span>
             <span class="erp-kpi-card__icon">${ICONS.euro}</span>
           </div>
-          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalContracted))}</div>
-          <div class="erp-kpi-card__meta">Valor contratual desta vista</div>
+          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalBudgetPool))}</div>
+          <div class="erp-kpi-card__meta">Plafond global orçamentado</div>
         </div>
 
-        <div class="erp-kpi-card erp-kpi-card--success">
+        <div class="erp-kpi-card erp-kpi-card--warning">
           <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Total Recebido / Pago</span>
+            <span class="erp-kpi-card__label">Faturas de Compra Lançadas</span>
+            <span class="erp-kpi-card__icon">${ICONS.receipt}</span>
+          </div>
+          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalInvoiced))}</div>
+          <div class="erp-kpi-card__meta">${totalInvoicesCount} fatura(s) de materiais imputadas</div>
+        </div>
+
+        <div class="erp-kpi-card ${overBudgetCount > 0 || totalBudgetRemaining < 0 ? 'erp-kpi-card--danger' : 'erp-kpi-card--success'}">
+          <div class="erp-kpi-card__head">
+            <span class="erp-kpi-card__label">Saldo Disponível nas Obras</span>
             <span class="erp-kpi-card__icon">${ICONS.checkCircle}</span>
           </div>
-          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalPaid))}</div>
-          <div class="erp-kpi-card__meta">Parcelas liquidadas pelos clientes</div>
-        </div>
-
-        <div class="erp-kpi-card ${overdueProjects > 0 ? 'erp-kpi-card--danger' : 'erp-kpi-card--warning'}">
-          <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Valor Total em Aberto</span>
-            <span class="erp-kpi-card__icon">${ICONS.clock}</span>
-          </div>
-          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalOpen))}</div>
-          <div class="erp-kpi-card__meta">${overdueProjects > 0 ? `${overdueProjects} obra(s) com pagamento vencido` : 'Sem pagamentos em atraso'}</div>
+          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalBudgetRemaining))}</div>
+          <div class="erp-kpi-card__meta">${overBudgetCount > 0 ? `${overBudgetCount} obra(s) acima do orçamento` : 'Calculado em tempo real após faturas'}</div>
         </div>
       </div>
 
@@ -133,13 +145,21 @@ export class OperacionalObrasModule {
         <div class="erp-panel__header">
           <div class="erp-panel__title-group">
             <h2 class="erp-panel__title">Gestão Operacional — Obras ${escapeHtml(statusInfo.label)}</h2>
-            <p class="erp-panel__desc">Acompanhamento técnico, orçamentação detalhada, datas de pagamento e saldos em aberto.</p>
+            <p class="erp-panel__desc">Orçamentos, faturas de compra de materiais (PDF), saldo restante em tempo real e recebimentos.</p>
           </div>
           <div class="erp-panel__actions">
             <select class="erp-select-sm" id="filterProjectType">
               <option value="all">Todas as Tipologias</option>
               ${PROJECT_TYPES.map((t) => `<option value="${escapeHtml(t)}" ${this.typeFilter === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
             </select>
+            ${
+              (ctx.can ? ctx.can('op_obras', 'faturas') : true) && state.projects.length > 0
+                ? `<button type="button" class="erp-btn erp-btn--outline" id="btnQuickLaunchInvoice">
+                    ${ICONS.receipt}
+                    <span>Lançar Fatura de Material</span>
+                  </button>`
+                : ''
+            }
             ${
               (ctx.can ? ctx.can('op_obras', 'criar') : true)
                 ? `<button type="button" class="erp-btn erp-btn--primary" id="btnNewProject">
@@ -162,9 +182,9 @@ export class OperacionalObrasModule {
                   <th>Obra &amp; Localização</th>
                   <th>Cliente &amp; Responsável</th>
                   <th>Prazos &amp; Progresso</th>
-                  <th>Orçamento c/ IVA</th>
-                  <th>Liquidado / Em Aberto</th>
-                  <th>Próx. Data Pagamento</th>
+                  <th>Orçamento Geral</th>
+                  <th>Faturas / Materiais</th>
+                  <th>Saldo Disponível (Real Time)</th>
                   <th style="text-align:right">Ações</th>
                 </tr>
               </thead>
@@ -172,8 +192,14 @@ export class OperacionalObrasModule {
                 ${filtered
                   .map((proj) => {
                     const fin = computeProjectFinancials(proj);
+                    const invSum = computeProjectInvoiceSummary(proj, state.projectInvoices);
                     const mgr = empMap.get(proj.managerId);
-                    const isOverdue = fin.nextDueDate && fin.nextDueDate < today;
+                    const barWidth = Math.min(100, Math.max(0, invSum.spentPct));
+                    const barClass = invSum.isOverBudget
+                      ? 'erp-budget-meter__fill--danger'
+                      : invSum.isWarningBudget
+                        ? 'erp-budget-meter__fill--warning'
+                        : '';
                     return `
                     <tr>
                       <td>
@@ -194,29 +220,28 @@ export class OperacionalObrasModule {
                         </div>
                       </td>
                       <td>
-                        <div class="erp-cell-title">${escapeHtml(formatCurrency(fin.contractTotal))}</div>
-                        <div class="erp-cell-sub">IVA ${fin.vatRate}% · ${proj.budget?.items?.length || 0} artigos</div>
+                        <div class="erp-cell-title">${escapeHtml(formatCurrency(invSum.budgetTotal))}</div>
+                        <div class="erp-cell-sub">${invSum.isManualCap ? 'Plafond direto da obra' : `IVA ${fin.vatRate}% · ${proj.budget?.items?.length || 0} artigo(s)`}</div>
                       </td>
                       <td>
-                        <div class="erp-cell-title" style="color:var(--erp-success);">${escapeHtml(formatCurrency(fin.paidAmount))} pago</div>
-                        <div class="erp-cell-sub" style="color:${fin.balanceOpen > 0 ? 'var(--erp-danger)' : 'var(--erp-text-muted)'};font-weight:600;">
-                          Em aberto: ${escapeHtml(formatCurrency(fin.balanceOpen))}
+                        <div class="erp-cell-title" style="color:var(--erp-heading);">${escapeHtml(formatCurrency(invSum.spentOnInvoices))}</div>
+                        <div class="erp-cell-sub" style="margin-bottom:4px;">${invSum.invoiceCount} fatura(s) · ${invSum.spentPct}% consumido</div>
+                        <div class="erp-budget-meter__track" style="height:6px;width:130px;">
+                          <div class="erp-budget-meter__fill ${barClass}" style="width:${barWidth}%"></div>
                         </div>
                       </td>
                       <td>
-                        ${
-                          fin.balanceOpen <= 0.01
-                            ? '<span class="erp-badge erp-badge--success">100% Liquidada</span>'
-                            : fin.nextDueDate
-                              ? `<span class="erp-badge ${isOverdue ? 'erp-badge--danger' : 'erp-badge--warning'}">
-                                   ${isOverdue ? 'Em Atraso · ' : ''}${escapeHtml(formatDatePT(fin.nextDueDate))}
-                                 </span>`
-                              : '<span class="erp-badge erp-badge--neutral">Sem data definida</span>'
-                        }
+                        <div class="erp-cell-title" style="color:${invSum.isOverBudget ? 'var(--erp-danger)' : invSum.isWarningBudget ? 'var(--erp-warning)' : 'var(--erp-success)'};font-size:14px;">
+                          ${escapeHtml(formatCurrency(invSum.remainingBudget))}
+                        </div>
+                        <span class="erp-badge ${invSum.isOverBudget ? 'erp-badge--danger' : invSum.isWarningBudget ? 'erp-badge--warning' : 'erp-badge--success'}">
+                          ${invSum.isOverBudget ? 'Orçamento Excedido' : invSum.isWarningBudget ? 'Atenção (>80%)' : 'Saldo Disponível'}
+                        </span>
                       </td>
                       <td>
                         <div class="erp-row-actions">
-                          <button type="button" class="erp-icon-btn" title="Ver Orçamento &amp; Pagamentos" data-proj-view="${escapeHtml(proj.id)}">${ICONS.eye}</button>
+                          ${!ctx.can || ctx.can('op_obras', 'faturas') ? `<button type="button" class="erp-icon-btn" title="Lançar Fatura de Compra (PDF)" data-proj-invoice="${escapeHtml(proj.id)}">${ICONS.receipt}</button>` : ''}
+                          <button type="button" class="erp-icon-btn" title="Ver Faturas, Orçamento &amp; Saldo" data-proj-view="${escapeHtml(proj.id)}">${ICONS.eye}</button>
                           ${!ctx.can || ctx.can('op_obras', 'editar') ? `<button type="button" class="erp-icon-btn" title="Editar Obra Completa" data-proj-edit="${escapeHtml(proj.id)}">${ICONS.edit}</button>` : ''}
                           ${!ctx.can || ctx.can('op_obras', 'excluir') ? `<button type="button" class="erp-icon-btn erp-icon-btn--danger" title="Excluir Obra" data-proj-del="${escapeHtml(proj.id)}">${ICONS.trash}</button>` : ''}
                         </div>
@@ -236,12 +261,20 @@ export class OperacionalObrasModule {
       store._commit();
     });
 
+    container.querySelector('#btnQuickLaunchInvoice')?.addEventListener('click', () => {
+      this.openLaunchInvoiceModal(filtered[0]?.id || state.projects[0]?.id || null);
+    });
+
     container.querySelector('#btnNewProject')?.addEventListener('click', () => {
       this._openProjectFormModal(null, statusFilter);
     });
 
+    container.querySelectorAll('[data-proj-invoice]').forEach((btn) => {
+      btn.addEventListener('click', () => this.openLaunchInvoiceModal(btn.dataset.projInvoice));
+    });
+
     container.querySelectorAll('[data-proj-view]').forEach((btn) => {
-      btn.addEventListener('click', () => this._openProjectDetailModal(btn.dataset.projView));
+      btn.addEventListener('click', () => this._openProjectDetailModal(btn.dataset.projView, 'invoices'));
     });
 
     container.querySelectorAll('[data-proj-edit]').forEach((btn) => {
@@ -257,7 +290,7 @@ export class OperacionalObrasModule {
         if (!proj) return;
         confirmAction({
           title: 'Excluir Obra',
-          message: `Tem a certeza de que pretende eliminar a obra "${proj.name}" (${proj.code}) e todo o respetivo orçamento e histórico de pagamentos?`,
+          message: `Tem a certeza de que pretende eliminar a obra "${proj.name}" (${proj.code}), todas as faturas lançadas e o respetivo orçamento?`,
           onConfirm: () => {
             store.deleteProject(proj.id);
             showToast(`Obra ${proj.code} eliminada.`);
@@ -267,47 +300,74 @@ export class OperacionalObrasModule {
     });
   }
 
-  openProjectDetail(projectId) {
-    this._openProjectDetailModal(projectId);
+  openProjectDetail(projectId, initialTab = 'invoices') {
+    this._openProjectDetailModal(projectId, initialTab);
   }
 
-  _openProjectDetailModal(projectId) {
+  _openProjectDetailModal(projectId, initialTab = 'overview') {
     const state = store.getState();
     const proj = state.projects.find((p) => p.id === projectId);
     if (!proj) return;
 
     const empMap = new Map(state.employees.map((e) => [e.id, e]));
     const fin = computeProjectFinancials(proj);
+    const invSum = computeProjectInvoiceSummary(proj, state.projectInvoices);
     const statusInfo = STATUS_META[proj.status] || STATUS_META.em_andamento;
     const today = todayISO();
+
+    const canBudget = !this._can || this._can('op_obras', 'orcamentos');
+    const canPayments = !this._can || this._can('op_obras', 'pagamentos');
+    const canInvoices = !this._can || this._can('op_obras', 'faturas');
+    const canDeleteInvoice = !this._can || this._can('op_obras', 'excluir') || canInvoices;
+
+    const activeTab =
+      initialTab === 'budget' && !canBudget
+        ? 'overview'
+        : initialTab === 'payments' && !canPayments
+          ? 'overview'
+          : initialTab;
+
+    const meterPct = Math.min(100, Math.max(0, invSum.spentPct));
+    const meterClass = invSum.isOverBudget
+      ? 'erp-budget-meter__fill--danger'
+      : invSum.isWarningBudget
+        ? 'erp-budget-meter__fill--warning'
+        : '';
+
+    const filteredInvoices = invSum.invoices.filter(
+      (inv) => this.invoiceCatFilter === 'all' || inv.category === this.invoiceCatFilter
+    );
 
     const bodyHtml = `
       <div class="erp-summary-box" style="margin-bottom:18px;">
         <div>
-          <div class="erp-summary-item__label">Orçamentado c/ IVA</div>
-          <div class="erp-summary-item__val">${escapeHtml(formatCurrency(fin.contractTotal))}</div>
+          <div class="erp-summary-item__label">Orçamento Geral da Obra</div>
+          <div class="erp-summary-item__val">${escapeHtml(formatCurrency(invSum.budgetTotal))}</div>
         </div>
         <div>
-          <div class="erp-summary-item__label">Total Pago</div>
-          <div class="erp-summary-item__val erp-summary-item__val--success">${escapeHtml(formatCurrency(fin.paidAmount))} (${fin.paidPct}%)</div>
+          <div class="erp-summary-item__label">Gasto em Faturas (${invSum.invoiceCount})</div>
+          <div class="erp-summary-item__val erp-summary-item__val--warning">${escapeHtml(formatCurrency(invSum.spentOnInvoices))} (${invSum.spentPct}%)</div>
         </div>
         <div>
-          <div class="erp-summary-item__label">Valor em Aberto</div>
-          <div class="erp-summary-item__val ${fin.balanceOpen > 0 ? 'erp-summary-item__val--danger' : ''}">${escapeHtml(formatCurrency(fin.balanceOpen))}</div>
+          <div class="erp-summary-item__label">Saldo Disponível (Real Time)</div>
+          <div class="erp-summary-item__val ${invSum.isOverBudget ? 'erp-summary-item__val--danger' : 'erp-summary-item__val--success'}">
+            ${escapeHtml(formatCurrency(invSum.remainingBudget))}
+          </div>
         </div>
         <div>
-          <div class="erp-summary-item__label">Próximo Pagamento</div>
-          <div class="erp-summary-item__val erp-summary-item__val--accent">${fin.nextDueDate ? escapeHtml(formatDatePT(fin.nextDueDate)) : 'Liquidado'}</div>
+          <div class="erp-summary-item__label">Recebido Cliente</div>
+          <div class="erp-summary-item__val erp-summary-item__val--accent">${escapeHtml(formatCurrency(fin.paidAmount))} (${fin.paidPct}%)</div>
         </div>
       </div>
 
       <div class="erp-detail-tabs">
-        <button type="button" class="erp-detail-tab is-active" data-det-tab="overview">Dados Técnicos &amp; Equipa</button>
-        ${!this._can || this._can('op_obras', 'orcamentos') ? `<button type="button" class="erp-detail-tab" data-det-tab="budget">Orçamento Detalhado (${proj.budget?.items?.length || 0})</button>` : ''}
-        ${!this._can || this._can('op_obras', 'pagamentos') ? `<button type="button" class="erp-detail-tab" data-det-tab="payments">Plano &amp; Datas de Pagamento (${proj.payments?.length || 0})</button>` : ''}
+        <button type="button" class="erp-detail-tab ${activeTab === 'overview' ? 'is-active' : ''}" data-det-tab="overview">Dados Técnicos &amp; Equipa</button>
+        <button type="button" class="erp-detail-tab ${activeTab === 'invoices' ? 'is-active' : ''}" data-det-tab="invoices">Faturas &amp; Materiais (${invSum.invoiceCount})</button>
+        ${canBudget ? `<button type="button" class="erp-detail-tab ${activeTab === 'budget' ? 'is-active' : ''}" data-det-tab="budget">Orçamento Detalhado (${proj.budget?.items?.length || 0})</button>` : ''}
+        ${canPayments ? `<button type="button" class="erp-detail-tab ${activeTab === 'payments' ? 'is-active' : ''}" data-det-tab="payments">Recebimentos Cliente (${proj.payments?.length || 0})</button>` : ''}
       </div>
 
-      <div id="detPaneOverview">
+      <div id="detPaneOverview" style="display:${activeTab === 'overview' ? 'block' : 'none'};">
         <div class="erp-form-grid" style="margin-bottom:14px;">
           <div>
             <div class="erp-cell-sub">Cliente</div>
@@ -346,7 +406,91 @@ export class OperacionalObrasModule {
         </div>
       </div>
 
-      <div id="detPaneBudget" style="display:none;">
+      <div id="detPaneInvoices" style="display:${activeTab === 'invoices' ? 'block' : 'none'};">
+        <div class="erp-budget-meter">
+          <div class="erp-budget-meter__top">
+            <span class="erp-budget-meter__label">Controlo de Materiais &amp; Faturas de Compra (${invSum.spentPct}% utilizado)</span>
+            <span class="erp-budget-meter__nums">
+              Gasto: <strong style="color:var(--erp-heading);">${escapeHtml(formatCurrency(invSum.spentOnInvoices))}</strong>
+              de ${escapeHtml(formatCurrency(invSum.budgetTotal))} ·
+              Saldo Restante: <strong style="color:${invSum.isOverBudget ? 'var(--erp-danger)' : 'var(--erp-success)'};">${escapeHtml(formatCurrency(invSum.remainingBudget))}</strong>
+            </span>
+          </div>
+          <div class="erp-budget-meter__track">
+            <div class="erp-budget-meter__fill ${meterClass}" style="width:${meterPct}%"></div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+          <select class="erp-select-sm" id="detInvCatFilter" title="Filtrar por Categoria">
+            <option value="all" ${this.invoiceCatFilter === 'all' ? 'selected' : ''}>Todas as Categorias (${invSum.invoiceCount})</option>
+            ${INVOICE_CATEGORIES.map((c) => `<option value="${escapeHtml(c)}" ${this.invoiceCatFilter === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+          </select>
+          ${
+            canInvoices
+              ? `<button type="button" class="erp-btn erp-btn--primary erp-btn--sm" id="btnDetAddInvoice">
+                  ${ICONS.plus}<span>Lançar Fatura de Compra (PDF)</span>
+                </button>`
+              : ''
+          }
+        </div>
+
+        ${
+          filteredInvoices.length === 0
+            ? `<div class="erp-empty" style="padding:28px 16px;">${ICONS.receipt}<div class="erp-empty__title">Sem faturas lançadas nesta vista</div><p>Lance as faturas de materiais ou fornecedores (com PDF) para abater em tempo real no orçamento de ${escapeHtml(formatCurrency(invSum.budgetTotal))}.</p></div>`
+            : `
+          <div class="erp-table-wrap">
+            <table class="erp-table">
+              <thead>
+                <tr>
+                  <th>Data / Fatura</th>
+                  <th>Fornecedor &amp; Categoria</th>
+                  <th>PDF / Documento</th>
+                  <th style="text-align:right">Valor (€)</th>
+                  <th style="text-align:right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredInvoices
+                  .map(
+                    (inv) => `
+                  <tr>
+                    <td>
+                      <div class="erp-cell-title">${escapeHtml(inv.invoiceNumber)}</div>
+                      <div class="erp-cell-sub">${escapeHtml(formatDatePT(inv.invoiceDate))} · ${escapeHtml(inv.id)}</div>
+                    </td>
+                    <td>
+                      <div class="erp-cell-title">${escapeHtml(inv.supplier)}</div>
+                      <div class="erp-cell-sub">${escapeHtml(inv.category)}${inv.supplierNif ? ` · NIF ${escapeHtml(inv.supplierNif)}` : ''}</div>
+                    </td>
+                    <td>
+                      ${
+                        inv.hasFile
+                          ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                              <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-inv-view="${escapeHtml(inv.id)}" title="Pré-visualizar PDF/Imagem">${ICONS.eye}<span>Ver PDF</span></button>
+                              <button type="button" class="erp-icon-btn" data-inv-dl="${escapeHtml(inv.id)}" title="Descarregar Fatura">${ICONS.download}</button>
+                            </div>`
+                          : '<span class="erp-badge erp-badge--neutral">Sem PDF anexo</span>'
+                      }
+                    </td>
+                    <td style="text-align:right;font-weight:800;color:var(--erp-heading);">
+                      ${escapeHtml(formatCurrency(inv.amount))}
+                    </td>
+                    <td style="text-align:right">
+                      <div class="erp-row-actions">
+                        ${canDeleteInvoice ? `<button type="button" class="erp-icon-btn erp-icon-btn--danger" title="Eliminar Fatura e Repor Saldo" data-inv-del="${escapeHtml(inv.id)}">${ICONS.trash}</button>` : '<span style="font-size:11px;color:var(--erp-text-muted);">—</span>'}
+                      </div>
+                    </td>
+                  </tr>`
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+          </div>`
+        }
+      </div>
+
+      <div id="detPaneBudget" style="display:${activeTab === 'budget' ? 'block' : 'none'};">
         <div class="erp-table-wrap">
           <table class="erp-table">
             <thead>
@@ -445,6 +589,7 @@ export class OperacionalObrasModule {
       onMount: (modal) => {
         const panes = {
           overview: modal.querySelector('#detPaneOverview'),
+          invoices: modal.querySelector('#detPaneInvoices'),
           budget: modal.querySelector('#detPaneBudget'),
           payments: modal.querySelector('#detPanePayments'),
         };
@@ -453,7 +598,40 @@ export class OperacionalObrasModule {
             modal.querySelectorAll('[data-det-tab]').forEach((t) => t.classList.remove('is-active'));
             tab.classList.add('is-active');
             Object.entries(panes).forEach(([k, el]) => {
-              el.style.display = k === tab.dataset.detTab ? 'block' : 'none';
+              if (el) el.style.display = k === tab.dataset.detTab ? 'block' : 'none';
+            });
+          });
+        });
+
+        modal.querySelector('#detInvCatFilter')?.addEventListener('change', (e) => {
+          this.invoiceCatFilter = e.target.value;
+          this._openProjectDetailModal(proj.id, 'invoices');
+        });
+
+        modal.querySelector('#btnDetAddInvoice')?.addEventListener('click', () => {
+          this.openLaunchInvoiceModal(proj.id, proj.id);
+        });
+
+        modal.querySelectorAll('[data-inv-view]').forEach((btn) => {
+          btn.addEventListener('click', () => this._previewInvoiceFileById(btn.dataset.invView));
+        });
+
+        modal.querySelectorAll('[data-inv-dl]').forEach((btn) => {
+          btn.addEventListener('click', () => this._downloadInvoiceFileById(btn.dataset.invDl));
+        });
+
+        modal.querySelectorAll('[data-inv-del]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const inv = invSum.invoices.find((x) => x.id === btn.dataset.invDel);
+            if (!inv) return;
+            confirmAction({
+              title: 'Remover Fatura da Obra',
+              message: `Eliminar a fatura "${inv.invoiceNumber}" (${inv.supplier}, ${formatCurrency(inv.amount)})? O saldo disponível da obra será recalculado automaticamente.`,
+              onConfirm: () => {
+                store.deleteProjectInvoice(inv.id);
+                showToast('Fatura removida e saldo atualizado em tempo real.');
+                this._openProjectDetailModal(proj.id, 'invoices');
+              },
             });
           });
         });
@@ -472,7 +650,7 @@ export class OperacionalObrasModule {
             });
             store.updateProject(proj.id, { payments: updatedPayments });
             showToast('Estado da parcela atualizado.');
-            this._openProjectDetailModal(proj.id);
+            this._openProjectDetailModal(proj.id, 'payments');
           });
         });
 
@@ -482,6 +660,277 @@ export class OperacionalObrasModule {
         });
       },
     });
+  }
+
+  openLaunchInvoiceModal(defaultProjectId = null, returnToDetailId = null) {
+    const state = store.getState();
+    if (!state.projects || state.projects.length === 0) {
+      showToast('Cadastre primeiro uma obra antes de lançar faturas.', 'warning');
+      return;
+    }
+
+    const selectedProjId =
+      defaultProjectId && state.projects.some((p) => p.id === defaultProjectId || p.code === defaultProjectId)
+        ? state.projects.find((p) => p.id === defaultProjectId || p.code === defaultProjectId).id
+        : state.projects[0].id;
+
+    let selectedFile = null;
+
+    const bodyHtml = `
+      <form id="projectInvoiceForm">
+        <div class="erp-form-section">
+          <div class="erp-form-section__title">1. Obra &amp; Dados da Fatura de Compra</div>
+          <div class="erp-form-grid erp-form-grid--3">
+            <div class="erp-field" style="grid-column:span 2;">
+              <label for="invProject">Obra Associada *</label>
+              <select id="invProject" required>
+                ${state.projects
+                  .map((p) => {
+                    const s = computeProjectInvoiceSummary(p, state.projectInvoices);
+                    return `<option value="${escapeHtml(p.id)}" ${p.id === selectedProjId ? 'selected' : ''}>${escapeHtml(p.code)} — ${escapeHtml(p.name)} (Saldo: ${escapeHtml(formatCurrency(s.remainingBudget))})</option>`;
+                  })
+                  .join('')}
+              </select>
+            </div>
+            <div class="erp-field">
+              <label for="invDate">Data da Fatura *</label>
+              <input type="date" id="invDate" required value="${todayISO()}">
+            </div>
+
+            <div class="erp-field">
+              <label for="invNumber">N.º Fatura / Documento *</label>
+              <input type="text" id="invNumber" required placeholder="Ex.: FT 2026/00458">
+            </div>
+            <div class="erp-field">
+              <label for="invSupplier">Fornecedor / Armazém *</label>
+              <input type="text" id="invSupplier" required placeholder="Ex.: Maxmat, Leroy Merlin, Cimpor">
+            </div>
+            <div class="erp-field">
+              <label for="invSupplierNif">NIF Fornecedor (Opcional)</label>
+              <input type="text" id="invSupplierNif" maxlength="9" placeholder="9 dígitos">
+            </div>
+
+            <div class="erp-field">
+              <label for="invCategory">Categoria de Custo *</label>
+              <select id="invCategory" required>
+                ${INVOICE_CATEGORIES.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="erp-field">
+              <label for="invAmount">Valor da Fatura c/ IVA (€) *</label>
+              <input type="number" step="0.01" min="0" id="invAmount" required placeholder="Ex.: 2000.00">
+            </div>
+            <div class="erp-field">
+              <label for="invNotes">Descrição / Material Comprado</label>
+              <input type="text" id="invNotes" placeholder="Ex.: Cimento, aço, cablagem...">
+            </div>
+          </div>
+
+          <div class="erp-invoice-sim">
+            <div>
+              <div class="erp-summary-item__label">Orçamento Geral</div>
+              <div class="erp-summary-item__val" id="simBudget">€0,00</div>
+            </div>
+            <div>
+              <div class="erp-summary-item__label">Já Gasto (<span id="simCount">0</span> fat.)</div>
+              <div class="erp-summary-item__val erp-summary-item__val--warning" id="simSpent">€0,00</div>
+            </div>
+            <div>
+              <div class="erp-summary-item__label">Nova Fatura</div>
+              <div class="erp-summary-item__val" id="simNew">+ €0,00</div>
+            </div>
+            <div>
+              <div class="erp-summary-item__label">Saldo Restante Após Fatura</div>
+              <div class="erp-summary-item__val erp-summary-item__val--success" id="simRemaining">€0,00</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="erp-form-section">
+          <div class="erp-form-section__title">2. Anexar PDF ou Comprovativo da Fatura</div>
+          <div class="erp-dropzone" id="invDropzone">
+            <input type="file" id="invFileInput" accept=".pdf,image/*" style="display:none;">
+            <div class="erp-dropzone__title" id="invDropTitle">Clique para selecionar ou arraste o PDF / foto da fatura (até 10 MB)</div>
+            <div class="erp-dropzone__hint">Formatos aceites: PDF, PNG, JPG, WEBP · Fica arquivado na obra para consulta a qualquer momento</div>
+          </div>
+        </div>
+      </form>
+    `;
+
+    openModal({
+      title: 'Lançar Fatura de Material / Compra em Obra',
+      subtitle: 'O saldo disponível da obra é recalculado automaticamente ao lançar cada fatura.',
+      size: 'wide',
+      bodyHtml,
+      footerHtml: `
+        <button type="button" class="erp-btn erp-btn--outline" id="btnCancelInvoice">Cancelar</button>
+        <button type="submit" form="projectInvoiceForm" class="erp-btn erp-btn--primary" id="btnSubmitInvoice">${ICONS.plus}<span>Registar Fatura &amp; Atualizar Saldo</span></button>
+      `,
+      onMount: (modal) => {
+        const projSelect = modal.querySelector('#invProject');
+        const amountInput = modal.querySelector('#invAmount');
+        const dropzone = modal.querySelector('#invDropzone');
+        const fileInput = modal.querySelector('#invFileInput');
+        const dropTitle = modal.querySelector('#invDropTitle');
+
+        const updateSimulator = () => {
+          const latestState = store.getState();
+          const proj = latestState.projects.find((p) => p.id === projSelect.value);
+          const sum = computeProjectInvoiceSummary(proj, latestState.projectInvoices);
+          const newAmt = Math.max(0, Number(amountInput.value) || 0);
+          const nextRemaining = sum.remainingBudget - newAmt;
+
+          modal.querySelector('#simBudget').textContent = formatCurrency(sum.budgetTotal);
+          modal.querySelector('#simCount').textContent = String(sum.invoiceCount);
+          modal.querySelector('#simSpent').textContent = formatCurrency(sum.spentOnInvoices);
+          modal.querySelector('#simNew').textContent = `+ ${formatCurrency(newAmt)}`;
+
+          const remEl = modal.querySelector('#simRemaining');
+          remEl.textContent = formatCurrency(nextRemaining);
+          remEl.className = `erp-summary-item__val ${nextRemaining < 0 ? 'erp-summary-item__val--danger' : 'erp-summary-item__val--success'}`;
+        };
+
+        projSelect.addEventListener('change', updateSimulator);
+        amountInput.addEventListener('input', updateSimulator);
+        updateSimulator();
+
+        const handleSelectedFile = (file) => {
+          if (!file) return;
+          if (file.size > 10 * 1024 * 1024) {
+            showToast('O ficheiro da fatura ultrapassa o limite de 10 MB.', 'danger');
+            return;
+          }
+          selectedFile = file;
+          dropTitle.textContent = `Ficheiro selecionado: ${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB)`;
+        };
+
+        dropzone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => handleSelectedFile(e.target.files?.[0]));
+        dropzone.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          dropzone.classList.add('is-dragover');
+        });
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('is-dragover'));
+        dropzone.addEventListener('drop', (e) => {
+          e.preventDefault();
+          dropzone.classList.remove('is-dragover');
+          handleSelectedFile(e.dataTransfer?.files?.[0]);
+        });
+
+        modal.querySelector('#btnCancelInvoice').addEventListener('click', () => {
+          if (returnToDetailId) {
+            this._openProjectDetailModal(returnToDetailId, 'invoices');
+          } else {
+            closeModal();
+          }
+        });
+
+        modal.querySelector('#projectInvoiceForm').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const proj = store.getState().projects.find((p) => p.id === projSelect.value);
+          if (!proj) {
+            showToast('Selecione uma obra válida.', 'danger');
+            return;
+          }
+
+          const nif = modal.querySelector('#invSupplierNif').value.replace(/\D/g, '');
+          if (nif && !isValidNIF(nif)) {
+            showToast('NIF do fornecedor inválido. Verifique os 9 dígitos.', 'danger');
+            return;
+          }
+
+          const amountVal = Number(amountInput.value);
+          if (Number.isNaN(amountVal) || amountVal < 0) {
+            showToast('Indique um valor válido para a fatura.', 'danger');
+            return;
+          }
+
+          const submitBtn = modal.querySelector('#btnSubmitInvoice');
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'A guardar...';
+
+          const invoiceId = generateId('FAT');
+          let fileMeta = { name: '', type: '', size: 0 };
+          try {
+            if (selectedFile) {
+              fileMeta = await saveInvoiceFile(invoiceId, selectedFile);
+            }
+          } catch (err) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Registar Fatura & Atualizar Saldo';
+            showToast(err?.message || 'Erro ao preparar o ficheiro PDF.', 'danger');
+            return;
+          }
+
+          const record = {
+            id: invoiceId,
+            projectId: proj.code || proj.id,
+            invoiceNumber: modal.querySelector('#invNumber').value.trim(),
+            supplier: modal.querySelector('#invSupplier').value.trim(),
+            supplierNif: nif,
+            category: modal.querySelector('#invCategory').value,
+            invoiceDate: modal.querySelector('#invDate').value,
+            amount: Number(amountVal.toFixed(2)),
+            notes: modal.querySelector('#invNotes').value.trim(),
+            fileName: fileMeta.name,
+            fileType: fileMeta.type,
+            fileSize: fileMeta.size,
+            hasFile: Boolean(selectedFile),
+            createdAt: todayISO(),
+          };
+
+          store.addProjectInvoice(record);
+
+          const updatedSum = computeProjectInvoiceSummary(proj, store.getState().projectInvoices);
+          showToast(
+            `Fatura ${record.invoiceNumber} registada! Saldo disponível em ${proj.code}: ${formatCurrency(updatedSum.remainingBudget)}`
+          );
+
+          if (returnToDetailId) {
+            this._openProjectDetailModal(returnToDetailId, 'invoices');
+          } else {
+            closeModal();
+          }
+        });
+      },
+    });
+  }
+
+  async _previewInvoiceFileById(invoiceId) {
+    const record = await getProjectInvoiceFile(invoiceId);
+    if (!record) return;
+
+    const blob = new window.Blob([record.data], { type: record.type });
+    const url = window.URL.createObjectURL(blob);
+    const isPdf = (record.type || '').includes('pdf') || record.name.toLowerCase().endsWith('.pdf');
+
+    openModal({
+      title: `Fatura Anexada — ${record.name}`,
+      subtitle: `${Math.max(1, Math.round(record.size / 1024))} KB`,
+      size: 'wide',
+      bodyHtml: isPdf
+        ? `<iframe class="erp-attachment-preview" src="${url}" title="Pré-visualização da fatura"></iframe>`
+        : `<img class="erp-attachment-img" src="${url}" alt="Fatura de obra">`,
+      footerHtml: `
+        <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Fechar</button>
+        <a href="${url}" download="${escapeHtml(record.name)}" class="erp-btn erp-btn--primary">${ICONS.download}<span>Descarregar</span></a>
+      `,
+    });
+  }
+
+  async _downloadInvoiceFileById(invoiceId) {
+    const record = await getProjectInvoiceFile(invoiceId);
+    if (!record) return;
+
+    const blob = new window.Blob([record.data], { type: record.type });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = record.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
   }
 
   openNewProject(defaultStatus) {
@@ -511,6 +960,7 @@ export class OperacionalObrasModule {
           expectedEndDate: '',
           actualEndDate: '',
           progress: defaultStatus === 'concluida' ? 100 : 0,
+          manualBudgetCap: 0,
           description: '',
           budget: {
             vatRate: 23,
@@ -710,7 +1160,12 @@ export class OperacionalObrasModule {
             <div class="erp-form-section__title" style="margin-bottom:0;">3. Orçamento Detalhado da Obra</div>
             <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" id="btnAddBudgetLine">${ICONS.plus}<span>Adicionar Artigo</span></button>
           </div>
-          <div class="erp-form-grid" style="margin-bottom:12px;">
+          <div class="erp-form-grid erp-form-grid--3" style="margin-bottom:12px;">
+            <div class="erp-field">
+              <label for="projManualCap">Orçamento Geral / Plafond (€)</label>
+              <input type="number" step="0.01" min="0" id="projManualCap" name="manualBudgetCap" value="${escapeHtml(proj.manualBudgetCap || '')}" placeholder="Ex.: 100000 (opcional)">
+              <span class="erp-field__hint">Se preenchido, define o teto global para abate das faturas. Caso contrário usa os artigos abaixo.</span>
+            </div>
             <div class="erp-field">
               <label for="projVat">Regime de IVA (Portugal)</label>
               <select id="projVat" name="vatRate">
@@ -763,6 +1218,7 @@ export class OperacionalObrasModule {
         const payWrap = modal.querySelector('#paymentLinesContainer');
         const vatSelect = modal.querySelector('#projVat');
         const contInput = modal.querySelector('#projCont');
+        const capInput = modal.querySelector('#projManualCap');
 
         const syncBudgetFromDOM = () => {
           const rows = [...budWrap.querySelectorAll('[data-b-idx]')];
@@ -795,20 +1251,24 @@ export class OperacionalObrasModule {
           syncBudgetFromDOM();
           syncPaymentsFromDOM();
           const t = computeBudgetTotals(proj.budget);
+          const manualCap = Math.max(0, Number(capInput?.value) || 0);
           const paid = proj.payments.filter((p) => p.status === 'pago').reduce((s, p) => s + (Number(p.amount) || 0), 0);
-          const contract = t.grossTotal > 0 ? t.grossTotal : proj.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+          const effectiveBudget = manualCap > 0 ? manualCap : t.grossTotal;
+          const contract = effectiveBudget > 0 ? effectiveBudget : proj.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
           const open = Math.max(0, contract - paid);
 
           modal.querySelector('#formBudSub').textContent = formatCurrency(t.subtotal);
           modal.querySelector('#formBudCont').textContent = formatCurrency(t.contingencyVal);
           modal.querySelector('#formBudVat').textContent = formatCurrency(t.vatVal);
-          modal.querySelector('#formBudGross').textContent = formatCurrency(t.grossTotal);
+          modal.querySelector('#formBudGross').textContent = formatCurrency(manualCap > 0 ? manualCap : t.grossTotal);
 
           modal.querySelector('#formPayContract').textContent = formatCurrency(contract);
           modal.querySelector('#formPayPaid').textContent = formatCurrency(paid);
           modal.querySelector('#formPayOpen').textContent = formatCurrency(open);
           modal.querySelector('#formPayCount').textContent = String(proj.payments.length);
         };
+
+        capInput?.addEventListener('input', updateSummaries);
 
         const bindBudgetEvents = () => {
           budWrap.querySelectorAll('input, select').forEach((el) => {
@@ -911,6 +1371,7 @@ export class OperacionalObrasModule {
             clientEmail: modal.querySelector('#projClientEmail').value.trim(),
             managerId: modal.querySelector('#projManager').value,
             teamIds: checkedTeam,
+            manualBudgetCap: Math.max(0, Number(modal.querySelector('#projManualCap').value) || 0),
             budget: proj.budget,
             payments: proj.payments,
           };

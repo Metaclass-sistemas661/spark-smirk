@@ -39,6 +39,7 @@ export const PERMISSION_MODULES = [
       { key: 'excluir', label: 'Excluir Obra' },
       { key: 'orcamentos', label: 'Gerir Orçamentos' },
       { key: 'pagamentos', label: 'Registar Pagamentos' },
+      { key: 'faturas', label: 'Lançar Faturas & Materiais' },
     ],
   },
   {
@@ -66,7 +67,7 @@ export function createRolePermissions(nivelAcesso = 'operador') {
       dashboard: { ver: true },
       rh_funcionarios: { ver: true, criar: true, editar: true, excluir: true, assiduidade: true },
       rh_recibos: { ver: true, emitir: true, anexar: true, excluir: true },
-      op_obras: { ver: true, criar: true, editar: true, excluir: true, orcamentos: true, pagamentos: true },
+      op_obras: { ver: true, criar: true, editar: true, excluir: true, orcamentos: true, pagamentos: true, faturas: true },
       admin_utilizadores: { ver: true, criar: true, editar: true, excluir: true },
     };
   }
@@ -76,7 +77,7 @@ export function createRolePermissions(nivelAcesso = 'operador') {
       dashboard: { ver: true },
       rh_funcionarios: { ver: true, criar: true, editar: true, excluir: false, assiduidade: true },
       rh_recibos: { ver: true, emitir: true, anexar: true, excluir: false },
-      op_obras: { ver: false, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false },
+      op_obras: { ver: false, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false, faturas: false },
       admin_utilizadores: { ver: false, criar: false, editar: false, excluir: false },
     };
   }
@@ -86,7 +87,7 @@ export function createRolePermissions(nivelAcesso = 'operador') {
       dashboard: { ver: true },
       rh_funcionarios: { ver: true, criar: false, editar: false, excluir: false, assiduidade: true },
       rh_recibos: { ver: false, emitir: false, anexar: false, excluir: false },
-      op_obras: { ver: true, criar: true, editar: true, excluir: false, orcamentos: true, pagamentos: true },
+      op_obras: { ver: true, criar: true, editar: true, excluir: false, orcamentos: true, pagamentos: true, faturas: true },
       admin_utilizadores: { ver: false, criar: false, editar: false, excluir: false },
     };
   }
@@ -95,7 +96,7 @@ export function createRolePermissions(nivelAcesso = 'operador') {
     dashboard: { ver: true },
     rh_funcionarios: { ver: true, criar: false, editar: false, excluir: false, assiduidade: false },
     rh_recibos: { ver: false, emitir: false, anexar: false, excluir: false },
-    op_obras: { ver: true, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false },
+    op_obras: { ver: true, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false, faturas: false },
     admin_utilizadores: { ver: false, criar: false, editar: false, excluir: false },
   };
 }

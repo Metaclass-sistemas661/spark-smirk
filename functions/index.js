@@ -42,7 +42,7 @@ function defaultPermissionsForRole(role = 'operador') {
       dashboard: { ver: true },
       rh_funcionarios: { ver: true, criar: true, editar: true, excluir: true, assiduidade: true },
       rh_recibos: { ver: true, emitir: true, anexar: true, excluir: true },
-      op_obras: { ver: true, criar: true, editar: true, excluir: true, orcamentos: true, pagamentos: true },
+      op_obras: { ver: true, criar: true, editar: true, excluir: true, orcamentos: true, pagamentos: true, faturas: true },
       admin_utilizadores: { ver: true, criar: true, editar: true, excluir: true },
     };
   }
@@ -51,7 +51,7 @@ function defaultPermissionsForRole(role = 'operador') {
       dashboard: { ver: true },
       rh_funcionarios: { ver: true, criar: true, editar: true, excluir: false, assiduidade: true },
       rh_recibos: { ver: true, emitir: true, anexar: true, excluir: false },
-      op_obras: { ver: false, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false },
+      op_obras: { ver: false, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false, faturas: false },
       admin_utilizadores: { ver: false, criar: false, editar: false, excluir: false },
     };
   }
@@ -60,7 +60,7 @@ function defaultPermissionsForRole(role = 'operador') {
       dashboard: { ver: true },
       rh_funcionarios: { ver: true, criar: false, editar: false, excluir: false, assiduidade: true },
       rh_recibos: { ver: false, emitir: false, anexar: false, excluir: false },
-      op_obras: { ver: true, criar: true, editar: true, excluir: false, orcamentos: true, pagamentos: true },
+      op_obras: { ver: true, criar: true, editar: true, excluir: false, orcamentos: true, pagamentos: true, faturas: true },
       admin_utilizadores: { ver: false, criar: false, editar: false, excluir: false },
     };
   }
@@ -68,7 +68,7 @@ function defaultPermissionsForRole(role = 'operador') {
     dashboard: { ver: true },
     rh_funcionarios: { ver: true, criar: false, editar: false, excluir: false, assiduidade: false },
     rh_recibos: { ver: false, emitir: false, anexar: false, excluir: false },
-    op_obras: { ver: true, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false },
+    op_obras: { ver: true, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false, faturas: false },
     admin_utilizadores: { ver: false, criar: false, editar: false, excluir: false },
   };
 }
@@ -902,6 +902,7 @@ exports.api = onRequest(
               payslips: [],
               attachedReceipts: [],
               projects: [],
+              projectInvoices: [],
             }
           );
           return;
@@ -1282,6 +1283,174 @@ exports.api = onRequest(
             modulo: 'operacional.obras',
             acao: 'EXCLUIR_OBRA',
             entidadeId: projCode,
+          });
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        // ── FATURAS DE COMPRA & MATERIAIS POR OBRA ────────────────────────────
+        if (req.method === 'POST' && requestPath === '/api/erp/project-invoices') {
+          if (!hasModuleAction(ctx.profile, 'op_obras', 'faturas')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para lançar faturas de obra.' });
+            return;
+          }
+
+          const body = req.body && typeof req.body === 'object' ? req.body : {};
+          const projectId = String(body.projectId || '').trim();
+          const supplier = String(body.supplier || '').trim();
+          const invoiceNumber = String(body.invoiceNumber || '').trim();
+          const amount = Number(body.amount);
+
+          if (!projectId || !supplier || !invoiceNumber || Number.isNaN(amount) || amount < 0) {
+            res.status(400).json({
+              error: 'INVALID_INVOICE_PAYLOAD',
+              message: 'Preencha obra, fornecedor, número da fatura e valor válido.',
+            });
+            return;
+          }
+
+          const invCode = String(body.id || `FAT-${Date.now()}`);
+          let storagePath = null;
+          let uploadedBucketPath = null;
+          let fileName = null;
+          let mime = null;
+          let fileSize = 0;
+
+          const rawB64 = String(body.fileBase64 || '');
+          if (rawB64) {
+            const fileBuffer = Buffer.from(rawB64, 'base64');
+            if (fileBuffer.length > 10 * 1024 * 1024) {
+              res.status(400).json({ error: 'FILE_TOO_LARGE', message: 'O PDF/ficheiro excede o limite de 10 MB.' });
+              return;
+            }
+            mime = String(body.fileType || 'application/pdf');
+            const allowedMime = mime === 'application/pdf' || mime.startsWith('image/');
+            if (!allowedMime) {
+              res.status(400).json({ error: 'INVALID_MIME', message: 'Apenas ficheiros PDF ou imagem são permitidos.' });
+              return;
+            }
+
+            const safeProj = projectId.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const safeName = String(body.fileName || `${invoiceNumber}.pdf`).replace(/[^a-zA-Z0-9._-]/g, '_');
+            storagePath = `${safeProj}/${invCode}_${safeName}`;
+            fileName = String(body.fileName || safeName);
+            fileSize = fileBuffer.length;
+
+            const { error: uploadErr } = await supabaseAdmin.storage
+              .from('faturas-obras')
+              .upload(storagePath, fileBuffer, { contentType: mime, upsert: true });
+
+            if (uploadErr) {
+              res.status(400).json({ error: 'STORAGE_UPLOAD_ERROR', message: uploadErr.message });
+              return;
+            }
+            uploadedBucketPath = storagePath;
+          }
+
+          const { data: metaRow, error: dbErr } = await supabaseAdmin.rpc('spark_erp_upsert_invoice', {
+            p_payload: {
+              id: invCode,
+              projectId,
+              invoiceNumber,
+              supplier,
+              supplierNif: body.supplierNif || '',
+              category: body.category || 'Materiais de Construção',
+              invoiceDate: body.invoiceDate || null,
+              amount,
+              notes: body.notes || '',
+              fileName,
+              fileType: mime,
+              fileSize,
+              storagePath,
+            },
+            p_actor: ctx.authUser.id,
+          });
+
+          if (dbErr) {
+            if (uploadedBucketPath) {
+              await supabaseAdmin.storage.from('faturas-obras').remove([uploadedBucketPath]).catch(() => {});
+            }
+            res.status(400).json({ error: 'INVOICE_SAVE_ERROR', message: dbErr.message });
+            return;
+          }
+
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'operacional.faturas_obras',
+            acao: 'LANCAR_FATURA_OBRA',
+            entidadeId: metaRow?.id || invCode,
+            detalhes: {
+              projectId,
+              invoiceNumber,
+              supplier,
+              amount,
+              hasFile: Boolean(storagePath),
+            },
+          });
+
+          res.status(201).json(metaRow);
+          return;
+        }
+
+        const invFileMatch = requestPath.match(/^\/api\/erp\/project-invoices\/([^/]+)\/file$/);
+        if (invFileMatch && req.method === 'GET') {
+          if (!canOpVer) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para visualizar faturas de obras.' });
+            return;
+          }
+          const invCode = decodeURIComponent(invFileMatch[1]);
+          const { data: meta, error: metaErr } = await supabaseAdmin.rpc('spark_erp_get_invoice_file', {
+            p_code: invCode,
+          });
+          if (metaErr || !meta?.storagePath) {
+            res.status(404).json({ error: 'INVOICE_FILE_NOT_FOUND', message: 'PDF da fatura não encontrado.' });
+            return;
+          }
+          const { data: fileBlob, error: dlErr } = await supabaseAdmin.storage
+            .from('faturas-obras')
+            .download(meta.storagePath);
+          if (dlErr || !fileBlob) {
+            res.status(404).json({ error: 'STORAGE_READ_ERROR', message: 'Não foi possível transferir o ficheiro da fatura.' });
+            return;
+          }
+          const arrayBuf = await fileBlob.arrayBuffer();
+          res.status(200).json({
+            id: meta.id,
+            name: meta.fileName,
+            type: meta.fileType,
+            size: meta.fileSize || arrayBuf.byteLength,
+            base64: Buffer.from(arrayBuf).toString('base64'),
+          });
+          return;
+        }
+
+        const invMatch = requestPath.match(/^\/api\/erp\/project-invoices\/([^/]+)$/);
+        if (invMatch && req.method === 'DELETE') {
+          const canDeleteInv =
+            hasModuleAction(ctx.profile, 'op_obras', 'excluir') ||
+            hasModuleAction(ctx.profile, 'op_obras', 'faturas');
+          if (!canDeleteInv) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para remover faturas da obra.' });
+            return;
+          }
+          const invCode = decodeURIComponent(invMatch[1]);
+          const { data: removedPath, error: delErr } = await supabaseAdmin.rpc('spark_erp_delete_invoice', {
+            p_code: invCode,
+          });
+          if (delErr) {
+            res.status(400).json({ error: 'INVOICE_DELETE_ERROR', message: delErr.message });
+            return;
+          }
+          if (removedPath) {
+            await supabaseAdmin.storage.from('faturas-obras').remove([removedPath]).catch(() => {});
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'operacional.faturas_obras',
+            acao: 'EXCLUIR_FATURA_OBRA',
+            entidadeId: invCode,
           });
           res.status(200).json({ ok: true });
           return;
