@@ -34,7 +34,7 @@ export default defineConfig(({ mode }) => {
       },
       proxy: {
         '/api': {
-          target: 'https://spark-smirk.web.app',
+          target: 'https://sparksmirk.pt',
           changeOrigin: true,
           secure: true,
         },

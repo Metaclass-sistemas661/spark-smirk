@@ -33,7 +33,8 @@ permissions:
 env:
   NODE_VERSION: '22'
   FIREBASE_PROJECT_ID: spark-smirk
-  PRODUCTION_URL: https://spark-smirk.web.app
+  PRODUCTION_URL: https://sparksmirk.pt
+  WWW_PRODUCTION_URL: https://www.sparksmirk.pt
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
@@ -163,7 +164,7 @@ jobs:
     timeout-minutes: 15
     environment:
       name: production
-      url: https://spark-smirk.web.app
+      url: https://sparksmirk.pt
 
     steps:
       - name: Checkout do Repositório
@@ -217,38 +218,47 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "A validar endpoints em ${{ env.PRODUCTION_URL }}..."
+          for base_url in "${{ env.PRODUCTION_URL }}" "${{ env.WWW_PRODUCTION_URL }}"; do
+            echo "A validar rotas em ${base_url}..."
 
-          for route in "/" "/login" "/gestao"; do
-            code=$(curl -sS -L -o /dev/null -w "%{http_code}" "${{ env.PRODUCTION_URL }}${route}")
-            echo "GET ${route} -> HTTP ${code}"
-            if [ "$code" != "200" ]; then
-              echo "::error::Rota ${route} devolveu HTTP ${code} em produção!"
+            for route in "/" "/login" "/gestao"; do
+              code=$(curl -sS -L -o /dev/null -w "%{http_code}" "${base_url}${route}")
+              echo "GET ${base_url}${route} -> HTTP ${code}"
+              if [ "$code" != "200" ]; then
+                echo "::error::Rota ${base_url}${route} devolveu HTTP ${code} em produção!"
+                exit 1
+              fi
+            done
+
+            cfg_code=$(curl -sS -o /tmp/auth_cfg.json -w "%{http_code}" "${base_url}/api/auth/config")
+            echo "GET ${base_url}/api/auth/config -> HTTP ${cfg_code}"
+            if [ "$cfg_code" != "200" ]; then
+              echo "::error::${base_url}/api/auth/config falhou com HTTP ${cfg_code}"
+              exit 1
+            fi
+
+            node -e "
+              const fs = require('fs');
+              const cfg = JSON.parse(fs.readFileSync('/tmp/auth_cfg.json', 'utf8'));
+              if (!cfg.url || !cfg.anonKey) {
+                throw new Error('Resposta inválida de /api/auth/config');
+              }
+              console.log('OK: Secret Manager respondeu em ${base_url}.');
+            "
+
+            verify_code=$(curl -sS -X POST -H "Origin: ${base_url}" -o /dev/null -w "%{http_code}" "${base_url}/api/auth/verify")
+            echo "POST ${base_url}/api/auth/verify (Origin: ${base_url}, sem token) -> HTTP ${verify_code}"
+            if [ "$verify_code" != "401" ]; then
+              echo "::error::Barreira ${base_url}/api/auth/verify deveria devolver 401 sem token, mas devolveu ${verify_code}!"
+              exit 1
+            fi
+
+            preflight_code=$(curl -sS -X OPTIONS -H "Origin: ${base_url}" -H "Access-Control-Request-Method: POST" -o /dev/null -w "%{http_code}" "${base_url}/api/erp/bootstrap")
+            echo "OPTIONS ${base_url}/api/erp/bootstrap (Origin: ${base_url}) -> HTTP ${preflight_code}"
+            if [ "$preflight_code" != "204" ]; then
+              echo "::error::Preflight CORS em ${base_url}/api/erp/bootstrap deveria devolver 204, mas devolveu ${preflight_code}!"
               exit 1
             fi
           done
 
-          cfg_code=$(curl -sS -o /tmp/auth_cfg.json -w "%{http_code}" "${{ env.PRODUCTION_URL }}/api/auth/config")
-          echo "GET /api/auth/config -> HTTP ${cfg_code}"
-          if [ "$cfg_code" != "200" ]; then
-            echo "::error::/api/auth/config falhou com HTTP ${cfg_code}"
-            exit 1
-          fi
-
-          node -e "
-            const fs = require('fs');
-            const cfg = JSON.parse(fs.readFileSync('/tmp/auth_cfg.json', 'utf8'));
-            if (!cfg.url || !cfg.anonKey) {
-              throw new Error('Resposta inválida de /api/auth/config');
-            }
-            console.log('OK: Firebase Secret Manager respondeu corretamente.');
-          "
-
-          verify_code=$(curl -sS -X POST -o /dev/null -w "%{http_code}" "${{ env.PRODUCTION_URL }}/api/auth/verify")
-          echo "POST /api/auth/verify (sem token) -> HTTP ${verify_code}"
-          if [ "$verify_code" != "401" ]; then
-            echo "::error::Barreira /api/auth/verify deveria devolver 401 sem token, mas devolveu ${verify_code}!"
-            exit 1
-          fi
-
-          echo "✅ Todos os smoke tests em produção passaram com sucesso!"
+          echo "✅ Todos os smoke tests em produção (sparksmirk.pt e www.sparksmirk.pt) passaram com sucesso!"

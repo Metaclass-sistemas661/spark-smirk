@@ -7,6 +7,8 @@ const supabaseAnonKeySecret = defineSecret('SUPABASE_ANON_KEY');
 const supabaseServiceRoleSecret = defineSecret('SUPABASE_SERVICE_ROLE_KEY');
 
 const ALLOWED_ORIGINS = new Set([
+  'https://sparksmirk.pt',
+  'https://www.sparksmirk.pt',
   'https://spark-smirk.web.app',
   'https://spark-smirk.firebaseapp.com',
   'http://localhost:3000',

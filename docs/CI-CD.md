@@ -21,10 +21,10 @@ Este documento descreve o pipeline automatizado de Integração Contínua e Entr
 3. **Build Verificado (Vite MPA):** compila e valida a presença dos três entrypoints (`dist/index.html`, `dist/login/index.html`, `dist/gestao/index.html`) e passa o artefacto imutável ao job de deploy.
 4. **Preview Automático em Pull Requests:** cada PR gera um URL de pré-visualização efémero no Firebase Hosting sem afetar produção.
 5. **Deploy Unificado em Produção (`functions,hosting`):** publica Hosting + Cloud Function v2 `api` (`europe-west1`) utilizando a Service Account Google Cloud e sem expor credenciais no cliente.
-6. **Smoke Tests Pós-Deploy:** testa em produção (`https://spark-smirk.web.app`):
+6. **Smoke Tests Pós-Deploy:** testa em produção (`https://sparksmirk.pt` e `https://www.sparksmirk.pt`):
    - HTTP `200` em `/`, `/login/` e `/gestao/`
-   - HTTP `200` em `/api/auth/config` com JSON válido do Secret Manager
-   - HTTP `401` em `POST /api/auth/verify` sem token Bearer (confirma barreira ativa)
+   - HTTP `200` em `/api/auth/config` com JSON válido
+   - HTTP `401` em `POST /api/auth/verify` sem token Bearer (com `Origin: https://sparksmirk.pt` e `https://www.sparksmirk.pt`, confirmando CORS autorizado e barreira ativa)
 
 ---
 

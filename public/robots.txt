@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /gestao/
+Disallow: /login/
+Disallow: /api/
+
+Sitemap: https://sparksmirk.pt/sitemap.xml
