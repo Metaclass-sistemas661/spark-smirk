@@ -11,6 +11,7 @@ const pendingAttachmentPayloads = new Map();
 const pendingInvoicePayloads = new Map();
 const pendingContractPayloads = new Map();
 const pendingCertificatePayloads = new Map();
+const pendingEmployeeContractPayloads = new Map();
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -179,10 +180,46 @@ export async function getTechnicalCertificateFile(id) {
   }
 }
 
+export async function saveEmployeeContractFile(id, file) {
+  if (!id || !file) throw new Error('Ficheiro de contrato inválido.');
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error('O ficheiro do contrato excede o limite máximo de 10 MB.');
+  }
+  const base64 = await fileToBase64(file);
+  pendingEmployeeContractPayloads.set(id, {
+    name: file.name,
+    type: file.type || 'application/pdf',
+    size: file.size,
+    base64,
+  });
+  return { id, name: file.name, type: file.type || 'application/pdf', size: file.size };
+}
+
+export async function getEmployeeContractFile(id) {
+  if (!id) return null;
+  try {
+    const res = await authenticatedApiFetch(`/api/erp/employee-contracts/${encodeURIComponent(id)}/file`, {
+      method: 'GET',
+    });
+    if (!res?.base64) return null;
+    return {
+      id: res.id,
+      name: res.name,
+      type: res.type || 'application/pdf',
+      size: res.size || 0,
+      data: base64ToArrayBuffer(res.base64),
+    };
+  } catch (err) {
+    showToast(err?.message || 'Não foi possível transferir o PDF do contrato.', 'error');
+    return null;
+  }
+}
+
 const EMPTY_STATE = {
   employees: [],
   attendance: {},
   employeeAdvances: [],
+  employeeContracts: [],
   payslips: [],
   attachedReceipts: [],
   projects: [],
@@ -220,6 +257,7 @@ class ErpStore {
       employees: Array.isArray(snapshot?.employees) ? snapshot.employees : [],
       attendance: snapshot?.attendance && typeof snapshot.attendance === 'object' ? snapshot.attendance : {},
       employeeAdvances: Array.isArray(snapshot?.employeeAdvances) ? snapshot.employeeAdvances : [],
+      employeeContracts: Array.isArray(snapshot?.employeeContracts) ? snapshot.employeeContracts : [],
       payslips: Array.isArray(snapshot?.payslips) ? snapshot.payslips : [],
       attachedReceipts: Array.isArray(snapshot?.attachedReceipts) ? snapshot.attachedReceipts : [],
       projects: Array.isArray(snapshot?.projects) ? snapshot.projects : [],
@@ -271,16 +309,16 @@ class ErpStore {
   addEmployee(emp) {
     this.state.employees.unshift(emp);
     this._notify();
-    this._syncMutation('/api/erp/employees', 'POST', emp, 'Erro ao guardar funcionário na base de dados.');
+    return this._syncMutation('/api/erp/employees', 'POST', emp, 'Erro ao guardar funcionário na base de dados.');
   }
 
   updateEmployee(id, patch) {
     const idx = this.state.employees.findIndex((e) => e.id === id);
-    if (idx === -1) return;
+    if (idx === -1) return Promise.resolve(null);
     const updated = { ...this.state.employees[idx], ...patch };
     this.state.employees[idx] = updated;
     this._notify();
-    this._syncMutation(
+    return this._syncMutation(
       `/api/erp/employees/${encodeURIComponent(id)}`,
       'PUT',
       updated,
@@ -292,6 +330,7 @@ class ErpStore {
     this.state.employees = this.state.employees.filter((e) => e.id !== id);
     delete this.state.attendance[id];
     this.state.employeeAdvances = (this.state.employeeAdvances || []).filter((a) => a.employeeId !== id);
+    this.state.employeeContracts = (this.state.employeeContracts || []).filter((c) => c.employeeId !== id);
     this.state.payslips = this.state.payslips.filter((p) => p.employeeId !== id);
     this.state.attachedReceipts = (this.state.attachedReceipts || []).filter((r) => r.employeeId !== id);
     this._notify();
@@ -365,6 +404,42 @@ class ErpStore {
       'DELETE',
       null,
       'Erro ao eliminar adiantamento salarial da base de dados.'
+    );
+  }
+
+  /* ── Contratos de Trabalho dos Funcionários (PDF) ── */
+  addEmployeeContract(contract) {
+    if (!Array.isArray(this.state.employeeContracts)) {
+      this.state.employeeContracts = [];
+    }
+    this.state.employeeContracts.unshift(contract);
+    this._notify();
+
+    const pending = pendingEmployeeContractPayloads.get(contract.id);
+    pendingEmployeeContractPayloads.delete(contract.id);
+
+    return this._syncMutation(
+      '/api/erp/employee-contracts',
+      'POST',
+      {
+        ...contract,
+        fileBase64: pending?.base64 || '',
+        fileName: pending?.name || contract.fileName || '',
+        fileType: pending?.type || contract.fileType || '',
+        fileSize: pending?.size || contract.fileSize || 0,
+      },
+      'Erro ao anexar contrato do funcionário na base de dados.'
+    );
+  }
+
+  deleteEmployeeContract(id) {
+    this.state.employeeContracts = (this.state.employeeContracts || []).filter((c) => c.id !== id);
+    this._notify();
+    this._syncMutation(
+      `/api/erp/employee-contracts/${encodeURIComponent(id)}`,
+      'DELETE',
+      null,
+      'Erro ao remover o contrato do funcionário na base de dados.'
     );
   }
 

@@ -2,7 +2,7 @@
    SPARK & SMIRK ERP — RH: Funcionários, Presenças & Relatório
    ═══════════════════════════════════════════════════════════ */
 
-import { store } from '../core/store.js';
+import { store, saveEmployeeContractFile, getEmployeeContractFile } from '../core/store.js';
 import {
   computeEmployeeMonthlyPayroll,
   escapeHtml,
@@ -237,6 +237,9 @@ export class RhFuncionariosModule {
               ${employees
                 .map((emp) => {
                   const stats = computeMonthlyAttendance(emp, attendanceMap, month, store.getState().employeeAdvances);
+                  const empContractsCount = (store.getState().employeeContracts || []).filter(
+                    (c) => c.employeeId === emp.id
+                  ).length;
                   const remLabel = REMUNERATION_LABELS[stats.remunerationType] || 'Fixo Mensal';
                   const rateValue =
                     stats.remunerationType === 'diaria'
@@ -262,6 +265,7 @@ export class RhFuncionariosModule {
                     <td>
                       <div class="erp-cell-title">${escapeHtml(emp.department)}</div>
                       <div class="erp-cell-sub">${escapeHtml(emp.contractType)} · Adm. ${escapeHtml(formatDatePT(emp.admissionDate))}</div>
+                      ${empContractsCount > 0 ? `<div style="margin-top:4px;"><span class="erp-badge erp-badge--info">${empContractsCount} contrato(s) PDF</span></div>` : ''}
                     </td>
                     <td>
                       <div class="erp-cell-title">${escapeHtml(rateValue)}</div>
@@ -285,6 +289,7 @@ export class RhFuncionariosModule {
                     <td>
                       <div class="erp-row-actions">
                         <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" title="Fechar Mês e Ver Valor a Pagar" data-emp-close-month="${escapeHtml(emp.id)}">Fechar Mês</button>
+                        <button type="button" class="erp-icon-btn" title="Contratos de Trabalho (PDF)" data-emp-contracts="${escapeHtml(emp.id)}">${ICONS.paperclip}</button>
                         <button type="button" class="erp-icon-btn" title="Ver Recibos do Ano" data-emp-payslips="${escapeHtml(emp.id)}">${ICONS.receipt}</button>
                         <button type="button" class="erp-icon-btn" title="Calendário Mensal" data-emp-calendar="${escapeHtml(emp.id)}">${ICONS.calendar}</button>
                         ${!this._can || this._can('rh_funcionarios', 'editar') ? `<button type="button" class="erp-icon-btn" title="Editar Funcionário" data-emp-edit="${escapeHtml(emp.id)}">${ICONS.edit}</button>` : ''}
@@ -318,6 +323,10 @@ export class RhFuncionariosModule {
 
     target.querySelectorAll('[data-emp-close-month]').forEach((btn) => {
       btn.addEventListener('click', () => this._openCloseMonthModal(btn.dataset.empCloseMonth, month));
+    });
+
+    target.querySelectorAll('[data-emp-contracts]').forEach((btn) => {
+      btn.addEventListener('click', () => this._openEmployeeContractsModal(btn.dataset.empContracts));
     });
 
     target.querySelectorAll('[data-emp-payslips]').forEach((btn) => {
@@ -915,6 +924,239 @@ export class RhFuncionariosModule {
     });
   }
 
+  _openEmployeeContractsModal(empId) {
+    const state = store.getState();
+    const emp = state.employees.find((e) => e.id === empId);
+    if (!emp) return;
+
+    const contracts = (state.employeeContracts || []).filter((c) => c.employeeId === emp.id);
+    const canManage = !this._can || this._can('rh_funcionarios', 'editar') || this._can('rh_funcionarios', 'criar');
+    const canDelete = !this._can || this._can('rh_funcionarios', 'excluir') || this._can('rh_funcionarios', 'editar');
+    let selectedFile = null;
+
+    openModal({
+      title: `Contratos de Trabalho (PDF) — ${emp.name}`,
+      subtitle: `${emp.role} · ${emp.contractType}`,
+      size: 'wide',
+      bodyHtml: `
+        ${
+          canManage
+            ? `<form id="empContractQuickForm" class="erp-inline-invoice-box">
+                <div class="erp-form-section__title" style="margin-bottom:10px;">Anexar Novo Contrato / Adenda em PDF</div>
+                <div class="erp-form-grid erp-form-grid--3">
+                  <div class="erp-field">
+                    <label for="quickCtrTitle">Título do Documento *</label>
+                    <input type="text" id="quickCtrTitle" required value="Contrato de Trabalho" placeholder="Ex.: Contrato Sem Termo / Adenda">
+                  </div>
+                  <div class="erp-field">
+                    <label for="quickCtrType">Modalidade de Contrato</label>
+                    <select id="quickCtrType">
+                      ${CONTRACTS.map((c) => `<option value="${escapeHtml(c)}" ${emp.contractType === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div class="erp-field">
+                    <label for="quickCtrDate">Data de Início / Assinatura</label>
+                    <input type="date" id="quickCtrDate" value="${escapeHtml(emp.admissionDate || todayISO())}">
+                  </div>
+                  <div class="erp-field erp-field--full">
+                    <label>Ficheiro do Contrato (PDF ou Imagem até 10 MB) *</label>
+                    <div class="erp-dropzone" id="quickCtrDropzone">
+                      <input type="file" id="quickCtrFileInput" accept=".pdf,image/*" style="display:none;">
+                      <div class="erp-dropzone__title" id="quickCtrDropTitle">Clique para selecionar ou arraste o contrato PDF assinado</div>
+                      <div class="erp-dropzone__hint">Formatos aceites: PDF, PNG, JPG, WEBP</div>
+                    </div>
+                  </div>
+                </div>
+                <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+                  <button type="submit" class="erp-btn erp-btn--primary erp-btn--sm" id="btnSaveQuickEmpCtr">
+                    ${ICONS.plus}<span>Guardar Contrato PDF</span>
+                  </button>
+                </div>
+              </form>`
+            : ''
+        }
+
+        <div class="erp-form-section">
+          <div class="erp-form-section__title">Contratos Arquivados (${contracts.length})</div>
+          ${
+            contracts.length === 0
+              ? '<div class="erp-empty" style="padding:22px 14px;"><div class="erp-empty__title">Sem contratos PDF anexados</div><p>Anexe o contrato assinado acima ou na ficha do colaborador.</p></div>'
+              : `
+            <div class="erp-table-wrap">
+              <table class="erp-table">
+                <thead>
+                  <tr>
+                    <th>Data / Documento</th>
+                    <th>Tipo de Contrato</th>
+                    <th>Ficheiro PDF</th>
+                    <th style="text-align:right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${contracts
+                    .map(
+                      (ctr) => `
+                    <tr>
+                      <td>
+                        <div class="erp-cell-title">${escapeHtml(ctr.title)}</div>
+                        <div class="erp-cell-sub">${escapeHtml(formatDatePT(ctr.contractDate))}</div>
+                      </td>
+                      <td><span class="erp-badge erp-badge--neutral">${escapeHtml(ctr.contractType || emp.contractType)}</span></td>
+                      <td>
+                        ${
+                          ctr.hasFile
+                            ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                                <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-emp-ctr-view="${escapeHtml(ctr.id)}">${ICONS.eye}<span>Ver PDF</span></button>
+                                <button type="button" class="erp-icon-btn" data-emp-ctr-dl="${escapeHtml(ctr.id)}" title="Descarregar PDF">${ICONS.download}</button>
+                              </div>`
+                            : '<span class="erp-badge erp-badge--neutral">Sem PDF</span>'
+                        }
+                      </td>
+                      <td style="text-align:right">
+                        ${canDelete ? `<button type="button" class="erp-icon-btn erp-icon-btn--danger" data-emp-ctr-del="${escapeHtml(ctr.id)}" title="Remover Contrato">${ICONS.trash}</button>` : '—'}
+                      </td>
+                    </tr>`
+                    )
+                    .join('')}
+                </tbody>
+              </table>
+            </div>`
+          }
+        </div>
+      `,
+      footerHtml: `<button type="button" class="erp-btn erp-btn--outline" data-modal-close>Fechar</button>`,
+      onMount: (modal) => {
+        const dropzone = modal.querySelector('#quickCtrDropzone');
+        const fileInput = modal.querySelector('#quickCtrFileInput');
+        const dropTitle = modal.querySelector('#quickCtrDropTitle');
+
+        const handleFile = (f) => {
+          if (!f) return;
+          if (f.size > 10 * 1024 * 1024) {
+            showToast('O contrato excede o limite de 10 MB.', 'danger');
+            return;
+          }
+          selectedFile = f;
+          if (dropTitle) {
+            dropTitle.textContent = `Selecionado: ${f.name} (${Math.max(1, Math.round(f.size / 1024))} KB)`;
+          }
+        };
+
+        dropzone?.addEventListener('click', () => fileInput?.click());
+        fileInput?.addEventListener('change', (e) => handleFile(e.target.files?.[0]));
+        dropzone?.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          dropzone.classList.add('is-dragover');
+        });
+        dropzone?.addEventListener('dragleave', () => dropzone.classList.remove('is-dragover'));
+        dropzone?.addEventListener('drop', (e) => {
+          e.preventDefault();
+          dropzone.classList.remove('is-dragover');
+          handleFile(e.dataTransfer?.files?.[0]);
+        });
+
+        modal.querySelector('#empContractQuickForm')?.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          if (!selectedFile) {
+            showToast('Selecione ou arraste o ficheiro PDF do contrato.', 'danger');
+            return;
+          }
+          const btn = modal.querySelector('#btnSaveQuickEmpCtr');
+          if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'A guardar...';
+          }
+          const ctrId = generateId('CTRF');
+          let meta;
+          try {
+            meta = await saveEmployeeContractFile(ctrId, selectedFile);
+          } catch (err) {
+            if (btn) {
+              btn.disabled = false;
+              btn.textContent = 'Guardar Contrato PDF';
+            }
+            showToast(err?.message || 'Erro ao ler o ficheiro PDF.', 'danger');
+            return;
+          }
+
+          await store.addEmployeeContract({
+            id: ctrId,
+            employeeId: emp.id,
+            title: modal.querySelector('#quickCtrTitle').value.trim() || 'Contrato de Trabalho',
+            contractType: modal.querySelector('#quickCtrType').value,
+            contractDate: modal.querySelector('#quickCtrDate').value || todayISO(),
+            notes: '',
+            fileName: meta.name,
+            fileType: meta.type,
+            fileSize: meta.size,
+            hasFile: true,
+            createdAt: todayISO(),
+          });
+
+          showToast('Contrato PDF anexado ao funcionário.');
+          this._openEmployeeContractsModal(emp.id);
+        });
+
+        modal.querySelectorAll('[data-emp-ctr-view]').forEach((btn) => {
+          btn.addEventListener('click', () => this._previewEmployeeContractById(btn.dataset.empCtrView));
+        });
+        modal.querySelectorAll('[data-emp-ctr-dl]').forEach((btn) => {
+          btn.addEventListener('click', () => this._downloadEmployeeContractById(btn.dataset.empCtrDl));
+        });
+        modal.querySelectorAll('[data-emp-ctr-del]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            confirmAction({
+              title: 'Remover Contrato',
+              message: 'Tem a certeza de que pretende eliminar este contrato em PDF?',
+              onConfirm: () => {
+                store.deleteEmployeeContract(btn.dataset.empCtrDel);
+                showToast('Contrato removido.');
+                this._openEmployeeContractsModal(emp.id);
+              },
+            });
+          });
+        });
+      },
+    });
+  }
+
+  async _previewEmployeeContractById(contractId) {
+    const record = await getEmployeeContractFile(contractId);
+    if (!record) return;
+
+    const blob = new window.Blob([record.data], { type: record.type });
+    const url = window.URL.createObjectURL(blob);
+    const isPdf = (record.type || '').includes('pdf') || record.name.toLowerCase().endsWith('.pdf');
+
+    openModal({
+      title: `Contrato de Trabalho — ${record.name}`,
+      subtitle: `${Math.max(1, Math.round(record.size / 1024))} KB`,
+      size: 'wide',
+      bodyHtml: isPdf
+        ? `<iframe class="erp-attachment-preview" src="${url}" title="Pré-visualização do contrato"></iframe>`
+        : `<img class="erp-attachment-img" src="${url}" alt="Contrato do funcionário">`,
+      footerHtml: `
+        <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Fechar</button>
+        <a href="${url}" download="${escapeHtml(record.name)}" class="erp-btn erp-btn--primary">${ICONS.download}<span>Descarregar PDF</span></a>
+      `,
+    });
+  }
+
+  async _downloadEmployeeContractById(contractId) {
+    const record = await getEmployeeContractFile(contractId);
+    if (!record) return;
+
+    const blob = new window.Blob([record.data], { type: record.type });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = record.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }
+
   _openCloseMonthModal(empId, month) {
     const state = store.getState();
     const emp = state.employees.find((e) => e.id === empId);
@@ -1181,8 +1423,42 @@ export class RhFuncionariosModule {
             </div>
           </div>
         </div>
+
+        <div class="erp-form-section">
+          <div class="erp-form-section__title">4. Contrato de Trabalho em PDF</div>
+          <div class="erp-inline-invoice-box">
+            <div class="erp-form-grid erp-form-grid--3">
+              <div class="erp-field">
+                <label for="formEmpCtrTitle">Designação do Contrato</label>
+                <input type="text" id="formEmpCtrTitle" value="Contrato de Trabalho" placeholder="Ex.: Contrato Sem Termo">
+              </div>
+              <div class="erp-field">
+                <label for="formEmpCtrDate">Data do Contrato</label>
+                <input type="date" id="formEmpCtrDate" value="${escapeHtml(emp.admissionDate || todayISO())}">
+              </div>
+              <div class="erp-field">
+                <label for="formEmpCtrFile">Anexar PDF / Imagem (até 10 MB)</label>
+                <input type="file" id="formEmpCtrFile" accept=".pdf,image/*">
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;flex-wrap:wrap;">
+              <span class="erp-cell-sub" id="formEmpCtrFileLabel">Anexe o contrato assinado em PDF para ficar arquivado na ficha do colaborador.</span>
+              <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" id="btnAddFormEmpCtr">
+                ${ICONS.plus}<span>Anexar Contrato à Lista</span>
+              </button>
+            </div>
+          </div>
+          <div id="formEmpContractsList"></div>
+        </div>
       </form>
     `;
+
+    const formEmpContracts = isEdit
+      ? (store.getState().employeeContracts || [])
+          .filter((c) => c.employeeId === emp.id)
+          .map((c) => ({ ...c, isNew: false }))
+      : [];
+    const deletedEmpContractIds = [];
 
     openModal({
       title: isEdit ? `Editar Funcionário — ${emp.name}` : 'Adicionar Novo Funcionário',
@@ -1190,10 +1466,112 @@ export class RhFuncionariosModule {
       bodyHtml,
       footerHtml: `
         <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Cancelar</button>
-        <button type="submit" form="employeeForm" class="erp-btn erp-btn--primary">${isEdit ? 'Guardar Alterações' : 'Registar Funcionário'}</button>
+        <button type="submit" form="employeeForm" class="erp-btn erp-btn--primary" id="btnSubmitEmployee">${isEdit ? 'Guardar Alterações' : 'Registar Funcionário'}</button>
       `,
       onMount: (modal) => {
         const form = modal.querySelector('#employeeForm');
+        const ctrListEl = modal.querySelector('#formEmpContractsList');
+        const ctrFileInput = modal.querySelector('#formEmpCtrFile');
+        const ctrFileLabel = modal.querySelector('#formEmpCtrFileLabel');
+
+        const renderFormEmpContracts = () => {
+          if (!ctrListEl) return;
+          if (formEmpContracts.length === 0) {
+            ctrListEl.innerHTML = '<div class="erp-cell-sub" style="padding:6px 4px;">Ainda não existem contratos PDF anexados a este funcionário.</div>';
+            return;
+          }
+          ctrListEl.innerHTML = `
+            <div class="erp-table-wrap">
+              <table class="erp-table">
+                <thead>
+                  <tr>
+                    <th>Data / Título</th>
+                    <th>Ficheiro PDF</th>
+                    <th style="text-align:right">Remover</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${formEmpContracts
+                    .map(
+                      (ctr, idx) => `
+                    <tr>
+                      <td>
+                        <div class="erp-cell-title">${escapeHtml(ctr.title)}</div>
+                        <div class="erp-cell-sub">${escapeHtml(formatDatePT(ctr.contractDate))}</div>
+                      </td>
+                      <td><span class="erp-badge erp-badge--info">${escapeHtml(ctr.fileName || 'PDF Anexado')}</span></td>
+                      <td style="text-align:right">
+                        <button type="button" class="erp-icon-btn erp-icon-btn--danger" data-form-emp-ctr-del="${idx}" title="Remover contrato">${ICONS.trash}</button>
+                      </td>
+                    </tr>`
+                    )
+                    .join('')}
+                </tbody>
+              </table>
+            </div>
+          `;
+          ctrListEl.querySelectorAll('[data-form-emp-ctr-del]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+              const idx = Number(btn.dataset.formEmpCtrDel);
+              const removed = formEmpContracts.splice(idx, 1)[0];
+              if (removed && !removed.isNew && removed.id) {
+                deletedEmpContractIds.push(removed.id);
+              }
+              renderFormEmpContracts();
+            });
+          });
+        };
+
+        const stageContractFromInput = async () => {
+          const f = ctrFileInput?.files?.[0] || null;
+          if (!f) return false;
+          const ctrId = generateId('CTRF');
+          const meta = await saveEmployeeContractFile(ctrId, f);
+          formEmpContracts.unshift({
+            id: ctrId,
+            title: modal.querySelector('#formEmpCtrTitle')?.value.trim() || 'Contrato de Trabalho',
+            contractType: modal.querySelector('#empContract')?.value || emp.contractType || 'Sem Termo',
+            contractDate: modal.querySelector('#formEmpCtrDate')?.value || todayISO(),
+            notes: '',
+            fileName: meta.name,
+            fileType: meta.type,
+            fileSize: meta.size,
+            hasFile: true,
+            createdAt: todayISO(),
+            isNew: true,
+          });
+          if (ctrFileInput) ctrFileInput.value = '';
+          if (ctrFileLabel) {
+            ctrFileLabel.textContent = 'Anexe o contrato assinado em PDF para ficar arquivado na ficha do colaborador.';
+          }
+          renderFormEmpContracts();
+          return true;
+        };
+
+        if (ctrFileInput && ctrFileLabel) {
+          ctrFileInput.addEventListener('change', () => {
+            const f = ctrFileInput.files?.[0];
+            ctrFileLabel.textContent = f
+              ? `Ficheiro selecionado: ${f.name} (${Math.max(1, Math.round(f.size / 1024))} KB)`
+              : 'Anexe o contrato assinado em PDF para ficar arquivado na ficha do colaborador.';
+          });
+        }
+
+        modal.querySelector('#btnAddFormEmpCtr')?.addEventListener('click', async () => {
+          if (!ctrFileInput?.files?.[0]) {
+            showToast('Selecione o ficheiro PDF do contrato antes de anexar.', 'danger');
+            return;
+          }
+          try {
+            await stageContractFromInput();
+            showToast('Contrato adicionado à lista do funcionário.');
+          } catch (err) {
+            showToast(err?.message || 'Erro ao ler o ficheiro PDF do contrato.', 'danger');
+          }
+        });
+
+        renderFormEmpContracts();
+
         const syncRemUI = () => {
           const active = modal.querySelector('input[name="remunerationType"]:checked')?.value || 'mensal';
           modal.querySelectorAll('#empRemGroup .erp-regime-option').forEach((lbl) => {
@@ -1208,7 +1586,7 @@ export class RhFuncionariosModule {
         });
         syncRemUI();
 
-        form.addEventListener('submit', (e) => {
+        form.addEventListener('submit', async (e) => {
           e.preventDefault();
           const fd = new FormData(form);
           const data = Object.fromEntries(fd.entries());
@@ -1235,6 +1613,21 @@ export class RhFuncionariosModule {
             return;
           }
 
+          if (ctrFileInput?.files?.[0]) {
+            try {
+              await stageContractFromInput();
+            } catch (err) {
+              showToast(err?.message || 'Erro ao preparar o contrato PDF.', 'danger');
+              return;
+            }
+          }
+
+          const submitBtn = modal.querySelector('#btnSubmitEmployee');
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'A guardar...';
+          }
+
           const payload = {
             ...data,
             nif: cleanNif,
@@ -1245,13 +1638,30 @@ export class RhFuncionariosModule {
             ssPercentage: Math.min(100, Math.max(0, Number(data.ssPercentage ?? 11) || 0)),
             mealAllowance: parseCurrencyInput(data.mealAllowance),
           };
+          const empId = isEdit ? emp.id : generateId('FUNC');
           if (isEdit) {
-            store.updateEmployee(emp.id, payload);
-            showToast(`Dados de ${payload.name} atualizados.`);
+            await store.updateEmployee(emp.id, payload);
           } else {
-            store.addEmployee({ id: generateId('FUNC'), ...payload });
-            showToast(`Funcionário ${payload.name} registado com sucesso.`);
+            await store.addEmployee({ id: empId, ...payload });
           }
+
+          for (const delId of deletedEmpContractIds) {
+            store.deleteEmployeeContract(delId);
+          }
+
+          const newContracts = formEmpContracts.filter((c) => c.isNew);
+          for (const ctr of newContracts) {
+            await store.addEmployeeContract({
+              ...ctr,
+              employeeId: empId,
+            });
+          }
+
+          showToast(
+            isEdit
+              ? `Dados de ${payload.name} atualizados.`
+              : `Funcionário ${payload.name} registado com sucesso.`
+          );
           closeModal();
         });
       },

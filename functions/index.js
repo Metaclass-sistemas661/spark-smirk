@@ -900,6 +900,7 @@ exports.api = onRequest(
               employees: [],
               attendance: {},
               employeeAdvances: [],
+              employeeContracts: [],
               payslips: [],
               attachedReceipts: [],
               projects: [],
@@ -968,10 +969,13 @@ exports.api = onRequest(
             res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para excluir funcionários.' });
             return;
           }
-          const { error } = await supabaseAdmin.rpc('spark_erp_delete_employee', { p_code: empCode });
+          const { data: contractPaths, error } = await supabaseAdmin.rpc('spark_erp_delete_employee', { p_code: empCode });
           if (error) {
             res.status(400).json({ error: 'EMPLOYEE_DELETE_ERROR', message: error.message });
             return;
+          }
+          if (Array.isArray(contractPaths) && contractPaths.length > 0) {
+            await supabaseAdmin.storage.from('contratos-funcionarios').remove(contractPaths).catch(() => {});
           }
           await writeAuditLog(supabaseAdmin, {
             userId: ctx.authUser.id,
@@ -1079,6 +1083,161 @@ exports.api = onRequest(
             modulo: 'rh.adiantamentos',
             acao: 'EXCLUIR_ADIANTAMENTO',
             entidadeId: advCode,
+          });
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        // ── CONTRATOS DE TRABALHO EM PDF (rh.funcionarios_contratos) ────────
+        if (req.method === 'POST' && requestPath === '/api/erp/employee-contracts') {
+          const canManageEmpContract =
+            hasModuleAction(ctx.profile, 'rh_funcionarios', 'criar') ||
+            hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar');
+          if (!canManageEmpContract) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para anexar contratos de funcionários.' });
+            return;
+          }
+          const body = req.body && typeof req.body === 'object' ? req.body : {};
+          const employeeId = String(body.employeeId || '').trim();
+          const title = String(body.title || 'Contrato de Trabalho').trim();
+          if (!employeeId) {
+            res.status(400).json({ error: 'MISSING_EMPLOYEE', message: 'Indique o funcionário associado ao contrato.' });
+            return;
+          }
+
+          const ctrCode = String(body.id || `CTRF-${Date.now()}`);
+          let storagePath = null;
+          let uploadedBucketPath = null;
+          let fileName = null;
+          let mime = null;
+          let fileSize = 0;
+
+          const rawB64 = String(body.fileBase64 || '');
+          if (rawB64) {
+            const fileBuffer = Buffer.from(rawB64, 'base64');
+            if (fileBuffer.length > 10 * 1024 * 1024) {
+              res.status(400).json({ error: 'FILE_TOO_LARGE', message: 'O PDF/ficheiro do contrato excede o limite de 10 MB.' });
+              return;
+            }
+            mime = String(body.fileType || 'application/pdf');
+            const allowedMime = mime === 'application/pdf' || mime.startsWith('image/');
+            if (!allowedMime) {
+              res.status(400).json({ error: 'INVALID_MIME', message: 'Apenas ficheiros PDF ou imagem são permitidos.' });
+              return;
+            }
+
+            const safeEmp = employeeId.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const safeName = String(body.fileName || `${ctrCode}.pdf`).replace(/[^a-zA-Z0-9._-]/g, '_');
+            storagePath = `${safeEmp}/${ctrCode}_${safeName}`;
+            fileName = String(body.fileName || safeName);
+            fileSize = fileBuffer.length;
+
+            const { error: uploadErr } = await supabaseAdmin.storage
+              .from('contratos-funcionarios')
+              .upload(storagePath, fileBuffer, { contentType: mime, upsert: true });
+
+            if (uploadErr) {
+              res.status(400).json({ error: 'STORAGE_UPLOAD_ERROR', message: uploadErr.message });
+              return;
+            }
+            uploadedBucketPath = storagePath;
+          }
+
+          const { data: metaRow, error: dbErr } = await supabaseAdmin.rpc('spark_erp_upsert_employee_contract', {
+            p_payload: {
+              id: ctrCode,
+              employeeId,
+              title,
+              contractType: body.contractType || 'Sem Termo',
+              contractDate: body.contractDate || null,
+              notes: body.notes || '',
+              fileName,
+              fileType: mime,
+              fileSize,
+              storagePath,
+            },
+            p_actor: ctx.authUser.id,
+          });
+
+          if (dbErr) {
+            if (uploadedBucketPath) {
+              await supabaseAdmin.storage.from('contratos-funcionarios').remove([uploadedBucketPath]).catch(() => {});
+            }
+            res.status(400).json({ error: 'EMP_CONTRACT_SAVE_ERROR', message: dbErr.message });
+            return;
+          }
+
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'rh.contratos',
+            acao: 'ANEXAR_CONTRATO_FUNCIONARIO',
+            entidadeId: metaRow?.id || ctrCode,
+            detalhes: { employeeId, title, hasFile: Boolean(storagePath) },
+          });
+
+          res.status(201).json(metaRow);
+          return;
+        }
+
+        const empCtrFileMatch = requestPath.match(/^\/api\/erp\/employee-contracts\/([^/]+)\/file$/);
+        if (empCtrFileMatch && req.method === 'GET') {
+          if (!canRhVer) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para visualizar contratos de funcionários.' });
+            return;
+          }
+          const ctrCode = decodeURIComponent(empCtrFileMatch[1]);
+          const { data: meta, error: metaErr } = await supabaseAdmin.rpc('spark_erp_get_employee_contract_file', {
+            p_code: ctrCode,
+          });
+          if (metaErr || !meta?.storagePath) {
+            res.status(404).json({ error: 'CONTRACT_FILE_NOT_FOUND', message: 'PDF do contrato não encontrado.' });
+            return;
+          }
+          const { data: fileBlob, error: dlErr } = await supabaseAdmin.storage
+            .from('contratos-funcionarios')
+            .download(meta.storagePath);
+          if (dlErr || !fileBlob) {
+            res.status(404).json({ error: 'STORAGE_READ_ERROR', message: 'Não foi possível transferir o contrato.' });
+            return;
+          }
+          const arrayBuf = await fileBlob.arrayBuffer();
+          res.status(200).json({
+            id: meta.id,
+            name: meta.fileName,
+            type: meta.fileType,
+            size: meta.fileSize || arrayBuf.byteLength,
+            base64: Buffer.from(arrayBuf).toString('base64'),
+          });
+          return;
+        }
+
+        const empCtrMatch = requestPath.match(/^\/api\/erp\/employee-contracts\/([^/]+)$/);
+        if (empCtrMatch && req.method === 'DELETE') {
+          const canDeleteEmpCtr =
+            hasModuleAction(ctx.profile, 'rh_funcionarios', 'excluir') ||
+            hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar');
+          if (!canDeleteEmpCtr) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para remover contratos de funcionários.' });
+            return;
+          }
+          const ctrCode = decodeURIComponent(empCtrMatch[1]);
+          const { data: removedPath, error: delErr } = await supabaseAdmin.rpc('spark_erp_delete_employee_contract', {
+            p_code: ctrCode,
+          });
+          if (delErr) {
+            res.status(400).json({ error: 'EMP_CONTRACT_DELETE_ERROR', message: delErr.message });
+            return;
+          }
+          if (removedPath) {
+            await supabaseAdmin.storage.from('contratos-funcionarios').remove([removedPath]).catch(() => {});
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'rh.contratos',
+            acao: 'EXCLUIR_CONTRATO_FUNCIONARIO',
+            entidadeId: ctrCode,
           });
           res.status(200).json({ ok: true });
           return;

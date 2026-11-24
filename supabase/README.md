@@ -19,6 +19,7 @@ Os scripts SQL estão separados por **schemas PostgreSQL distintos** e organizad
 - [`03-recibos-vencimento.sql`](./02-recursos-humanos/03-recibos-vencimento.sql) — Tabela `rh.recibos_vencimento` (cálculo mensal de vencimentos, IRS, Segurança Social e líquido).
 - [`04-recibos-anexados.sql`](./02-recursos-humanos/04-recibos-anexados.sql) — Tabela `rh.recibos_anexados` (histórico de recibos anexados filtrados por funcionário, ano e mês).
 - [`05-remuneracao-e-adiantamentos.sql`](./02-recursos-humanos/05-remuneracao-e-adiantamentos.sql) — Modalidade salarial (`mensal`, `diaria`, `hora`), SS%, horas diárias e tabela `rh.adiantamentos` (vales).
+- [`06-contratos-funcionarios.sql`](./02-recursos-humanos/06-contratos-funcionarios.sql) — Tabela `rh.funcionarios_contratos`, bucket privado `contratos-funcionarios` e RPCs para anexo/leitura de contratos de trabalho em PDF.
 
 ### `03-operacional/` — Schema `operacional`
 - [`01-obras.sql`](./03-operacional/01-obras.sql) — Tabela `operacional.obras` (obras em andamento, a iniciar e concluídas).
@@ -45,6 +46,7 @@ Execute exatamente pela numeração das pastas e ficheiros:
 12. `03-operacional/04-faturas-obras.sql`
 13. `03-operacional/05-regime-obra-e-contratos.sql`
 14. `03-operacional/06-responsaveis-tecnicos.sql`
+15. `02-recursos-humanos/06-contratos-funcionarios.sql`
 
 ## Expor os Schemas na API do Supabase
 
