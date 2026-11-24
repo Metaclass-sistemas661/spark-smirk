@@ -429,105 +429,112 @@ export class AdminUtilizadoresModule {
         : 'Defina as permissões de acesso e uma senha provisória. No 1.º acesso o sistema solicitará uma nova palavra-passe.',
       size: 'wide',
       bodyHtml: `
-        <form id="erpUserForm" class="erp-form-grid">
-          <div class="erp-form-section-title">1. Dados do Utilizador</div>
+        <form id="erpUserForm">
+          <div class="erp-form-section">
+            <div class="erp-form-section__title">1. Dados do Utilizador</div>
+            <div class="erp-form-grid">
+              <div class="erp-field">
+                <label for="usrName">Nome Completo <span class="req">*</span></label>
+                <input type="text" id="usrName" required value="${escapeHtml(existingUser?.nome_completo || '')}" placeholder="Ex.: Maria João Pereira">
+              </div>
 
-          <div class="erp-field">
-            <label for="usrName">Nome Completo <span class="req">*</span></label>
-            <input type="text" id="usrName" required value="${escapeHtml(existingUser?.nome_completo || '')}" placeholder="Ex.: Maria João Pereira">
-          </div>
+              <div class="erp-field">
+                <label for="usrEmail">Email Corporativo (Login) <span class="req">*</span></label>
+                <input type="email" id="usrEmail" required value="${escapeHtml(existingUser?.email || '')}" placeholder="nome@sparksmirk.pt">
+              </div>
 
-          <div class="erp-field">
-            <label for="usrEmail">Email Corporativo (Login) <span class="req">*</span></label>
-            <input type="email" id="usrEmail" required value="${escapeHtml(existingUser?.email || '')}" placeholder="nome@sparksmirk.pt">
-          </div>
+              <div class="erp-field">
+                <label for="usrCargo">Cargo / Função</label>
+                <input type="text" id="usrCargo" value="${escapeHtml(existingUser?.cargo || '')}" placeholder="Ex.: Gestor de Obra, Técnica RH">
+              </div>
 
-          <div class="erp-field">
-            <label for="usrCargo">Cargo / Função</label>
-            <input type="text" id="usrCargo" value="${escapeHtml(existingUser?.cargo || '')}" placeholder="Ex.: Gestor de Obra, Técnica RH">
-          </div>
+              <div class="erp-field">
+                <label for="usrDepto">Departamento</label>
+                <select id="usrDepto">
+                  ${['Administração', 'Recursos Humanos', 'Operacional / Obras', 'Financeiro & Orçamentos', 'Geral']
+                    .map(
+                      (d) =>
+                        `<option value="${escapeHtml(d)}" ${(existingUser?.departamento || 'Geral') === d ? 'selected' : ''}>${escapeHtml(d)}</option>`
+                    )
+                    .join('')}
+                </select>
+              </div>
 
-          <div class="erp-field">
-            <label for="usrDepto">Departamento</label>
-            <select id="usrDepto">
-              ${['Administração', 'Recursos Humanos', 'Operacional / Obras', 'Financeiro & Orçamentos', 'Geral']
-                .map(
-                  (d) =>
-                    `<option value="${escapeHtml(d)}" ${(existingUser?.departamento || 'Geral') === d ? 'selected' : ''}>${escapeHtml(d)}</option>`
-                )
-                .join('')}
-            </select>
-          </div>
+              <div class="erp-field">
+                <label for="usrPhone">Telemóvel</label>
+                <input type="text" id="usrPhone" value="${escapeHtml(existingUser?.telefone || '')}" placeholder="+351 910 000 000">
+              </div>
 
-          <div class="erp-field">
-            <label for="usrPhone">Telemóvel</label>
-            <input type="text" id="usrPhone" value="${escapeHtml(existingUser?.telefone || '')}" placeholder="+351 910 000 000">
-          </div>
-
-          <div class="erp-field">
-            <label for="usrStatus">Estado da Conta</label>
-            <select id="usrStatus" ${isSelf ? 'disabled' : ''}>
-              <option value="true" ${existingUser?.ativo !== false ? 'selected' : ''}>Ativa (Acesso Permitido)</option>
-              <option value="false" ${existingUser?.ativo === false ? 'selected' : ''}>Bloqueada / Suspensa</option>
-            </select>
-          </div>
-
-          <div class="erp-form-section-title">2. Senha Provisória &amp; Segurança</div>
-
-          <div class="erp-field erp-field--full">
-            <label for="usrTempPassword">
-              ${isEdit ? 'Redefinir Palavra-passe Provisória (deixe em branco para manter a atual)' : 'Palavra-passe Provisória Inicial'}
-              ${!isEdit ? '<span class="req">*</span>' : ''}
-            </label>
-            <div class="erp-pw-generator">
-              <input type="text" id="usrTempPassword" ${!isEdit ? 'required minlength="8"' : 'minlength="8"'} value="${escapeHtml(initialProvPassword)}" placeholder="${isEdit ? 'Opcional: introduza nova senha provisória (mín. 8 car.)' : 'Mínimo 8 caracteres'}">
-              <button type="button" class="erp-btn erp-btn--ghost" id="btnGenProvPw">Gerar Senha</button>
-              <button type="button" class="erp-btn erp-btn--ghost" id="btnCopyProvPw">Copiar</button>
+              <div class="erp-field">
+                <label for="usrStatus">Estado da Conta</label>
+                <select id="usrStatus" ${isSelf ? 'disabled' : ''}>
+                  <option value="true" ${existingUser?.ativo !== false ? 'selected' : ''}>Ativa (Acesso Permitido)</option>
+                  <option value="false" ${existingUser?.ativo === false ? 'selected' : ''}>Bloqueada / Suspensa</option>
+                </select>
+              </div>
             </div>
-            <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12.5px;color:var(--erp-text-secondary);cursor:pointer;">
-              <input type="checkbox" id="usrForceChange" style="width:auto;accent-color:var(--erp-primary);" ${!isEdit || existingUser?.senha_provisoria ? 'checked' : ''}>
-              <span>Exigir que o utilizador crie uma nova palavra-passe definitiva ao iniciar sessão</span>
-            </label>
           </div>
 
-          <div class="erp-form-section-title">3. Perfil &amp; O que este Utilizador Pode Fazer no Sistema</div>
-
-          <div class="erp-field erp-field--full">
-            <label for="usrRole">Perfil Base de Acesso</label>
-            <div class="erp-role-templates" style="margin-top:4px;">
-              <select id="usrRole" style="min-width:220px;" ${isSelf ? 'disabled' : ''}>
-                <option value="administrador" ${initialRole === 'administrador' ? 'selected' : ''}>Administrador (Acesso Total)</option>
-                <option value="rh" ${initialRole === 'rh' ? 'selected' : ''}>Gestor de Recursos Humanos</option>
-                <option value="operacional" ${initialRole === 'operacional' ? 'selected' : ''}>Gestor Operacional &amp; Obras</option>
-                <option value="operador" ${initialRole === 'operador' ? 'selected' : ''}>Operador / Personalizado</option>
-              </select>
-              <button type="button" class="erp-btn erp-btn--ghost" data-apply-template="administrador">Aplicar: Admin Total</button>
-              <button type="button" class="erp-btn erp-btn--ghost" data-apply-template="rh">Aplicar: Equipa RH</button>
-              <button type="button" class="erp-btn erp-btn--ghost" data-apply-template="operacional">Aplicar: Obras</button>
-              <button type="button" class="erp-btn erp-btn--ghost" data-apply-template="operador">Aplicar: Consulta</button>
+          <div class="erp-form-section">
+            <div class="erp-form-section__title">2. Senha Provisória &amp; Segurança</div>
+            <div class="erp-form-grid">
+              <div class="erp-field erp-field--full">
+                <label for="usrTempPassword">
+                  ${isEdit ? 'Redefinir Palavra-passe Provisória (deixe em branco para manter a atual)' : 'Palavra-passe Provisória Inicial'}
+                  ${!isEdit ? '<span class="req">*</span>' : ''}
+                </label>
+                <div class="erp-pw-generator">
+                  <input type="text" id="usrTempPassword" ${!isEdit ? 'required minlength="8"' : 'minlength="8"'} value="${escapeHtml(initialProvPassword)}" placeholder="${isEdit ? 'Opcional: introduza nova senha provisória (mín. 8 car.)' : 'Mínimo 8 caracteres'}">
+                  <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" id="btnGenProvPw">Gerar Senha</button>
+                  <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" id="btnCopyProvPw">Copiar</button>
+                </div>
+                <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12.5px;color:var(--erp-text-secondary);cursor:pointer;">
+                  <input type="checkbox" id="usrForceChange" style="width:auto;accent-color:var(--erp-primary);" ${!isEdit || existingUser?.senha_provisoria ? 'checked' : ''}>
+                  <span>Exigir que o utilizador crie uma nova palavra-passe definitiva ao iniciar sessão</span>
+                </label>
+              </div>
             </div>
+          </div>
 
-            <div class="erp-inline-invoice-box" style="margin:12px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-left:4px solid var(--erp-danger);">
-              <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;flex:1;min-width:240px;">
-                <input type="checkbox" id="usrBlockAllFinancial" style="width:16px;height:16px;margin-top:2px;accent-color:var(--erp-danger);" ${areAllFinancialValuesBlocked(workingPerms) ? 'checked' : ''} ${isSelf ? 'disabled' : ''}>
-                <span>
-                  <strong style="display:block;color:var(--erp-heading);font-size:13px;">Bloquear TODOS os valores financeiros, ordenados e saldos (€)</strong>
-                  <span class="erp-cell-sub">Oculta valores no Dashboard, ordenados/diárias de funcionários, valores a pagar (fecho do mês/vales), recibos, orçamentos e faturas (€) tanto na interface como nas respostas do servidor.</span>
+          <div class="erp-form-section">
+            <div class="erp-form-section__title">3. Perfil &amp; Permissões de Acesso no Sistema</div>
+            <div class="erp-field erp-field--full">
+              <label for="usrRole">Perfil Base de Acesso</label>
+              <div class="erp-role-templates" style="margin-top:6px;">
+                <select id="usrRole" style="min-width:220px;" ${isSelf ? 'disabled' : ''}>
+                  <option value="administrador" ${initialRole === 'administrador' ? 'selected' : ''}>Administrador (Acesso Total)</option>
+                  <option value="rh" ${initialRole === 'rh' ? 'selected' : ''}>Gestor de Recursos Humanos</option>
+                  <option value="operacional" ${initialRole === 'operacional' ? 'selected' : ''}>Gestor Operacional &amp; Obras</option>
+                  <option value="operador" ${initialRole === 'operador' ? 'selected' : ''}>Operador / Personalizado</option>
+                </select>
+                <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-apply-template="administrador">Admin Total</button>
+                <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-apply-template="rh">Equipa RH</button>
+                <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-apply-template="operacional">Obras</button>
+                <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-apply-template="operador">Consulta</button>
+              </div>
+
+              <div class="erp-inline-invoice-box" style="margin:12px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-left:4px solid var(--erp-danger);">
+                <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;flex:1;min-width:240px;">
+                  <input type="checkbox" id="usrBlockAllFinancial" style="width:16px;height:16px;margin-top:2px;accent-color:var(--erp-danger);" ${areAllFinancialValuesBlocked(workingPerms) ? 'checked' : ''} ${isSelf ? 'disabled' : ''}>
+                  <span>
+                    <strong style="display:block;color:var(--erp-heading);font-size:13px;">Bloquear TODOS os valores financeiros, ordenados e saldos (€)</strong>
+                    <span class="erp-cell-sub">Oculta valores no Dashboard, ordenados/diárias de funcionários, valores a pagar (fecho do mês/vales), recibos, orçamentos e faturas (€) tanto na interface como nas respostas do servidor.</span>
+                  </span>
+                </label>
+                <span class="erp-badge ${areAllFinancialValuesBlocked(workingPerms) ? 'erp-badge--danger' : 'erp-badge--success'}" id="usrFinancialLockBadge">
+                  ${areAllFinancialValuesBlocked(workingPerms) ? 'Valores € Bloqueados' : 'Personalizável por Módulo'}
                 </span>
-              </label>
-              <span class="erp-badge ${areAllFinancialValuesBlocked(workingPerms) ? 'erp-badge--danger' : 'erp-badge--success'}" id="usrFinancialLockBadge">
-                ${areAllFinancialValuesBlocked(workingPerms) ? 'Valores € Bloqueados' : 'Personalizável por Módulo'}
-              </span>
-            </div>
+              </div>
 
-            <div id="usrPermMatrix" class="erp-perm-matrix">
-              ${renderMatrixHtml(workingPerms)}
+              <div id="usrPermMatrix" class="erp-perm-matrix">
+                ${renderMatrixHtml(workingPerms)}
+              </div>
             </div>
           </div>
         </form>
       `,
       footerHtml: `
-        <button type="button" class="erp-btn erp-btn--ghost" data-modal-close>Cancelar</button>
+        <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Cancelar</button>
         <button type="submit" form="erpUserForm" class="erp-btn erp-btn--primary" id="btnSubmitUserForm">
           ${isEdit ? 'Guardar Alterações' : 'Criar Utilizador'}
         </button>
