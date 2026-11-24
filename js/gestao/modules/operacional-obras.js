@@ -115,6 +115,7 @@ export class OperacionalObrasModule {
 
     const totalBudgetRemaining = totalBudgetPool - totalInvoiced;
     const empMap = new Map(state.employees.map((e) => [e.id, e]));
+    const techMap = new Map((state.technicalManagers || []).map((t) => [t.id, t]));
     const statusInfo = STATUS_META[statusFilter] || STATUS_META.em_andamento;
 
     container.innerHTML = `
@@ -212,7 +213,7 @@ export class OperacionalObrasModule {
                     const contractsCount = (state.projectContracts || []).filter((c) => projRefs.has(c.projectId)).length;
                     const isLaborOnly = proj.costRegime === 'somente_funcionarios';
                     const dailyRate = Number(proj.dailyRatePerWorker) || 0;
-                    const mgr = empMap.get(proj.managerId);
+                    const mgr = techMap.get(proj.managerId) || empMap.get(proj.managerId);
                     const barWidth = Math.min(100, Math.max(0, invSum.spentPct));
                     const barClass = invSum.isOverBudget
                       ? 'erp-budget-meter__fill--danger'
@@ -410,6 +411,7 @@ export class OperacionalObrasModule {
     if (!proj) return;
 
     const empMap = new Map(state.employees.map((e) => [e.id, e]));
+    const techMap = new Map((state.technicalManagers || []).map((t) => [t.id, t]));
     const fin = computeProjectFinancials(proj);
     const invSum = computeProjectInvoiceSummary(proj, state.projectInvoices);
     const projRefs = new Set([proj.id, proj.code].filter(Boolean));
@@ -494,7 +496,7 @@ export class OperacionalObrasModule {
           </div>
           <div>
             <div class="erp-cell-sub">Responsável Técnico</div>
-            <div class="erp-cell-title">${escapeHtml(empMap.get(proj.managerId)?.name || 'Não atribuído')}</div>
+            <div class="erp-cell-title">${escapeHtml((techMap.get(proj.managerId) || empMap.get(proj.managerId))?.name || 'Não atribuído')}</div>
           </div>
           <div>
             <div class="erp-cell-sub">Cronograma</div>
@@ -1328,7 +1330,7 @@ export class OperacionalObrasModule {
           clientNif: '',
           clientPhone: '+351 ',
           clientEmail: '',
-          managerId: state.employees[0]?.id || '',
+          managerId: (state.technicalManagers || []).find((t) => t.status === 'ativo')?.id || '',
           teamIds: state.employees[0] ? [state.employees[0].id] : [],
           startDate: todayISO(),
           expectedEndDate: '',
@@ -1508,11 +1510,29 @@ export class OperacionalObrasModule {
               <input type="email" id="projClientEmail" name="clientEmail" value="${escapeHtml(proj.clientEmail)}">
             </div>
             <div class="erp-field">
-              <label for="projManager">Responsável Técnico</label>
+              <label for="projManager">Responsável Técnico da Obra</label>
               <select id="projManager" name="managerId">
-                <option value="">Selecionar responsável...</option>
-                ${state.employees.map((e) => `<option value="${escapeHtml(e.id)}" ${proj.managerId === e.id ? 'selected' : ''}>${escapeHtml(e.name)}</option>`).join('')}
+                <option value="">Selecionar responsável técnico...</option>
+                ${(state.technicalManagers || [])
+                  .filter((t) => t.status === 'ativo' || t.id === proj.managerId)
+                  .map(
+                    (t) =>
+                      `<option value="${escapeHtml(t.id)}" ${proj.managerId === t.id ? 'selected' : ''}>${escapeHtml(t.name)} — ${escapeHtml(t.professionalTitle)}${t.licenseNumber ? ` (${escapeHtml(t.licenseNumber)})` : ''}</option>`
+                  )
+                  .join('')}
+                ${
+                  proj.managerId &&
+                  !(state.technicalManagers || []).some((t) => t.id === proj.managerId) &&
+                  state.employees.some((e) => e.id === proj.managerId)
+                    ? `<option value="${escapeHtml(proj.managerId)}" selected>${escapeHtml(state.employees.find((e) => e.id === proj.managerId).name)} (Registo anterior)</option>`
+                    : ''
+                }
               </select>
+              ${
+                (state.technicalManagers || []).length === 0
+                  ? '<span class="erp-field__hint">Ainda não existem técnicos registados. Cadastre na aba "Responsáveis Técnicos".</span>'
+                  : ''
+              }
             </div>
             <div class="erp-field erp-field--full">
               <label>Equipa Alocada à Obra</label>

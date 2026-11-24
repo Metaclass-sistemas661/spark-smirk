@@ -42,7 +42,7 @@ function defaultPermissionsForRole(role = 'operador') {
       dashboard: { ver: true },
       rh_funcionarios: { ver: true, criar: true, editar: true, excluir: true, assiduidade: true },
       rh_recibos: { ver: true, emitir: true, anexar: true, excluir: true },
-      op_obras: { ver: true, criar: true, editar: true, excluir: true, orcamentos: true, pagamentos: true, faturas: true },
+      op_obras: { ver: true, criar: true, editar: true, excluir: true, orcamentos: true, pagamentos: true, faturas: true, responsaveis: true },
       admin_utilizadores: { ver: true, criar: true, editar: true, excluir: true },
     };
   }
@@ -51,7 +51,7 @@ function defaultPermissionsForRole(role = 'operador') {
       dashboard: { ver: true },
       rh_funcionarios: { ver: true, criar: true, editar: true, excluir: false, assiduidade: true },
       rh_recibos: { ver: true, emitir: true, anexar: true, excluir: false },
-      op_obras: { ver: false, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false, faturas: false },
+      op_obras: { ver: false, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false, faturas: false, responsaveis: false },
       admin_utilizadores: { ver: false, criar: false, editar: false, excluir: false },
     };
   }
@@ -60,7 +60,7 @@ function defaultPermissionsForRole(role = 'operador') {
       dashboard: { ver: true },
       rh_funcionarios: { ver: true, criar: false, editar: false, excluir: false, assiduidade: true },
       rh_recibos: { ver: false, emitir: false, anexar: false, excluir: false },
-      op_obras: { ver: true, criar: true, editar: true, excluir: false, orcamentos: true, pagamentos: true, faturas: true },
+      op_obras: { ver: true, criar: true, editar: true, excluir: false, orcamentos: true, pagamentos: true, faturas: true, responsaveis: true },
       admin_utilizadores: { ver: false, criar: false, editar: false, excluir: false },
     };
   }
@@ -68,7 +68,7 @@ function defaultPermissionsForRole(role = 'operador') {
     dashboard: { ver: true },
     rh_funcionarios: { ver: true, criar: false, editar: false, excluir: false, assiduidade: false },
     rh_recibos: { ver: false, emitir: false, anexar: false, excluir: false },
-    op_obras: { ver: true, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false, faturas: false },
+    op_obras: { ver: true, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false, faturas: false, responsaveis: false },
     admin_utilizadores: { ver: false, criar: false, editar: false, excluir: false },
   };
 }
@@ -904,6 +904,8 @@ exports.api = onRequest(
               projects: [],
               projectInvoices: [],
               projectContracts: [],
+              technicalManagers: [],
+              technicalCertificates: [],
             }
           );
           return;
@@ -1611,6 +1613,243 @@ exports.api = onRequest(
             modulo: 'operacional.contratos_obras',
             acao: 'EXCLUIR_CONTRATO_OBRA',
             entidadeId: ctrCode,
+          });
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        // ── RESPONSÁVEIS TÉCNICOS & CERTIFICADOS PDF ─────────────────────────
+        const canManageResp =
+          hasModuleAction(ctx.profile, 'op_obras', 'responsaveis') ||
+          hasModuleAction(ctx.profile, 'op_obras', 'editar') ||
+          hasModuleAction(ctx.profile, 'op_obras', 'criar');
+
+        if (req.method === 'POST' && requestPath === '/api/erp/technical-managers') {
+          if (!canManageResp) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para cadastrar responsáveis técnicos.' });
+            return;
+          }
+          const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_technical_manager', {
+            p_payload: req.body || {},
+            p_actor: ctx.authUser.id,
+          });
+          if (error) {
+            res.status(400).json({ error: 'TECH_MANAGER_SAVE_ERROR', message: error.message });
+            return;
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'operacional.responsaveis_tecnicos',
+            acao: 'CRIAR_RESPONSAVEL_TECNICO',
+            entidadeId: data?.id,
+            detalhes: { name: data?.name, professionalTitle: data?.professionalTitle },
+          });
+          res.status(201).json(data);
+          return;
+        }
+
+        const techMatch = requestPath.match(/^\/api\/erp\/technical-managers\/([^/]+)$/);
+        if (techMatch && (req.method === 'PUT' || req.method === 'DELETE')) {
+          const techCode = decodeURIComponent(techMatch[1]);
+          if (req.method === 'PUT') {
+            if (!canManageResp) {
+              res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para editar responsáveis técnicos.' });
+              return;
+            }
+            const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_technical_manager', {
+              p_payload: { ...(req.body || {}), id: techCode, code: techCode },
+              p_actor: ctx.authUser.id,
+            });
+            if (error) {
+              res.status(400).json({ error: 'TECH_MANAGER_UPDATE_ERROR', message: error.message });
+              return;
+            }
+            await writeAuditLog(supabaseAdmin, {
+              userId: ctx.authUser.id,
+              userEmail: ctx.authUser.email,
+              modulo: 'operacional.responsaveis_tecnicos',
+              acao: 'EDITAR_RESPONSAVEL_TECNICO',
+              entidadeId: techCode,
+            });
+            res.status(200).json(data);
+            return;
+          }
+
+          if (!hasModuleAction(ctx.profile, 'op_obras', 'excluir') && !hasModuleAction(ctx.profile, 'op_obras', 'responsaveis')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para eliminar responsáveis técnicos.' });
+            return;
+          }
+          const { data: certPaths, error: delErr } = await supabaseAdmin.rpc('spark_erp_delete_technical_manager', {
+            p_code: techCode,
+          });
+          if (delErr) {
+            res.status(400).json({ error: 'TECH_MANAGER_DELETE_ERROR', message: delErr.message });
+            return;
+          }
+          if (Array.isArray(certPaths) && certPaths.length > 0) {
+            await supabaseAdmin.storage.from('certificados-tecnicos').remove(certPaths).catch(() => {});
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'operacional.responsaveis_tecnicos',
+            acao: 'EXCLUIR_RESPONSAVEL_TECNICO',
+            entidadeId: techCode,
+          });
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        if (req.method === 'POST' && requestPath === '/api/erp/technical-certificates') {
+          if (!canManageResp) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para anexar certificados técnicos.' });
+            return;
+          }
+          const body = req.body && typeof req.body === 'object' ? req.body : {};
+          const managerId = String(body.managerId || '').trim();
+          const certificateType = String(body.certificateType || '').trim();
+          if (!managerId || !certificateType) {
+            res.status(400).json({
+              error: 'INVALID_CERTIFICATE_PAYLOAD',
+              message: 'Indique o responsável técnico e o tipo de certificado.',
+            });
+            return;
+          }
+
+          const certCode = String(body.id || `CERT-${Date.now()}`);
+          let storagePath = null;
+          let uploadedBucketPath = null;
+          let fileName = null;
+          let mime = null;
+          let fileSize = 0;
+
+          const rawB64 = String(body.fileBase64 || '');
+          if (rawB64) {
+            const fileBuffer = Buffer.from(rawB64, 'base64');
+            if (fileBuffer.length > 10 * 1024 * 1024) {
+              res.status(400).json({ error: 'FILE_TOO_LARGE', message: 'O PDF/ficheiro excede o limite de 10 MB.' });
+              return;
+            }
+            mime = String(body.fileType || 'application/pdf');
+            const allowedMime = mime === 'application/pdf' || mime.startsWith('image/');
+            if (!allowedMime) {
+              res.status(400).json({ error: 'INVALID_MIME', message: 'Apenas ficheiros PDF ou imagem são permitidos.' });
+              return;
+            }
+
+            const safeMgr = managerId.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const safeName = String(body.fileName || `${certCode}.pdf`).replace(/[^a-zA-Z0-9._-]/g, '_');
+            storagePath = `${safeMgr}/${certCode}_${safeName}`;
+            fileName = String(body.fileName || safeName);
+            fileSize = fileBuffer.length;
+
+            const { error: uploadErr } = await supabaseAdmin.storage
+              .from('certificados-tecnicos')
+              .upload(storagePath, fileBuffer, { contentType: mime, upsert: true });
+
+            if (uploadErr) {
+              res.status(400).json({ error: 'STORAGE_UPLOAD_ERROR', message: uploadErr.message });
+              return;
+            }
+            uploadedBucketPath = storagePath;
+          }
+
+          const { data: metaRow, error: dbErr } = await supabaseAdmin.rpc('spark_erp_upsert_technical_certificate', {
+            p_payload: {
+              id: certCode,
+              managerId,
+              certificateType,
+              category: body.category || 'Construção Civil',
+              certificateNumber: body.certificateNumber || '',
+              issuer: body.issuer || '',
+              issueDate: body.issueDate || null,
+              expiryDate: body.expiryDate || null,
+              notes: body.notes || '',
+              fileName,
+              fileType: mime,
+              fileSize,
+              storagePath,
+            },
+            p_actor: ctx.authUser.id,
+          });
+
+          if (dbErr) {
+            if (uploadedBucketPath) {
+              await supabaseAdmin.storage.from('certificados-tecnicos').remove([uploadedBucketPath]).catch(() => {});
+            }
+            res.status(400).json({ error: 'CERTIFICATE_SAVE_ERROR', message: dbErr.message });
+            return;
+          }
+
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'operacional.responsaveis_certificados',
+            acao: 'ANEXAR_CERTIFICADO_TECNICO',
+            entidadeId: metaRow?.id || certCode,
+            detalhes: { managerId, certificateType, hasFile: Boolean(storagePath) },
+          });
+
+          res.status(201).json(metaRow);
+          return;
+        }
+
+        const certFileMatch = requestPath.match(/^\/api\/erp\/technical-certificates\/([^/]+)\/file$/);
+        if (certFileMatch && req.method === 'GET') {
+          if (!canOpVer) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para visualizar certificados técnicos.' });
+            return;
+          }
+          const certCode = decodeURIComponent(certFileMatch[1]);
+          const { data: meta, error: metaErr } = await supabaseAdmin.rpc('spark_erp_get_technical_certificate_file', {
+            p_code: certCode,
+          });
+          if (metaErr || !meta?.storagePath) {
+            res.status(404).json({ error: 'CERT_FILE_NOT_FOUND', message: 'PDF do certificado não encontrado.' });
+            return;
+          }
+          const { data: fileBlob, error: dlErr } = await supabaseAdmin.storage
+            .from('certificados-tecnicos')
+            .download(meta.storagePath);
+          if (dlErr || !fileBlob) {
+            res.status(404).json({ error: 'STORAGE_READ_ERROR', message: 'Não foi possível transferir o certificado.' });
+            return;
+          }
+          const arrayBuf = await fileBlob.arrayBuffer();
+          res.status(200).json({
+            id: meta.id,
+            name: meta.fileName,
+            type: meta.fileType,
+            size: meta.fileSize || arrayBuf.byteLength,
+            base64: Buffer.from(arrayBuf).toString('base64'),
+          });
+          return;
+        }
+
+        const certMatch = requestPath.match(/^\/api\/erp\/technical-certificates\/([^/]+)$/);
+        if (certMatch && req.method === 'DELETE') {
+          if (!canManageResp && !hasModuleAction(ctx.profile, 'op_obras', 'excluir')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para remover certificados técnicos.' });
+            return;
+          }
+          const certCode = decodeURIComponent(certMatch[1]);
+          const { data: removedPath, error: delErr } = await supabaseAdmin.rpc('spark_erp_delete_technical_certificate', {
+            p_code: certCode,
+          });
+          if (delErr) {
+            res.status(400).json({ error: 'CERT_DELETE_ERROR', message: delErr.message });
+            return;
+          }
+          if (removedPath) {
+            await supabaseAdmin.storage.from('certificados-tecnicos').remove([removedPath]).catch(() => {});
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'operacional.responsaveis_certificados',
+            acao: 'EXCLUIR_CERTIFICADO_TECNICO',
+            entidadeId: certCode,
           });
           res.status(200).json({ ok: true });
           return;

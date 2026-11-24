@@ -9,6 +9,7 @@ import { DashboardModule } from './modules/dashboard.js';
 import { RhFuncionariosModule } from './modules/rh-funcionarios.js';
 import { RhRecibosModule } from './modules/rh-recibos.js';
 import { OperacionalObrasModule } from './modules/operacional-obras.js';
+import { OperacionalResponsaveisModule } from './modules/operacional-responsaveis.js';
 import { AdminUtilizadoresModule } from './modules/admin-utilizadores.js';
 import { hasPermission, ROLE_LABELS } from '../shared/permissions.js';
 import {
@@ -57,6 +58,11 @@ const ROUTES = {
     status: 'concluida',
     perm: ['op_obras', 'ver'],
   },
+  'op-responsaveis': {
+    kicker: 'Operacional',
+    title: 'Responsáveis Técnicos',
+    perm: ['op_obras', 'ver'],
+  },
   'admin-utilizadores': {
     kicker: 'Administração',
     title: 'Utilizadores & Acessos',
@@ -71,6 +77,7 @@ const QUICK_ACTION_PERMS = {
   'new-payslip': ['rh_recibos', 'emitir'],
   'new-project': ['op_obras', 'criar'],
   'new-invoice': ['op_obras', 'faturas'],
+  'new-tech-manager': ['op_obras', 'responsaveis'],
   'view-ongoing': ['op_obras', 'ver'],
   'new-user': ['admin_utilizadores', 'criar'],
 };
@@ -110,6 +117,7 @@ class ErpApp {
       },
     });
     this.opObras = new OperacionalObrasModule();
+    this.opResponsaveis = new OperacionalResponsaveisModule();
     this.adminUtilizadores = new AdminUtilizadoresModule({
       onUsersUpdated: (count) => {
         const el = document.getElementById('cntUsers');
@@ -430,6 +438,10 @@ class ErpApp {
       }
       this.render();
       this.opObras.openLaunchInvoiceModal();
+    } else if (action === 'new-tech-manager') {
+      this.activeRoute = 'op-responsaveis';
+      this.render();
+      this.opResponsaveis.openNewTechnicalManager();
     } else if (action === 'view-ongoing') {
       this.activeRoute = 'op-andamento';
       this.render();
@@ -456,6 +468,7 @@ class ErpApp {
     setBadge('cntAndamento', state.projects.filter((p) => p.status === 'em_andamento').length);
     setBadge('cntIniciar', state.projects.filter((p) => p.status === 'a_iniciar').length);
     setBadge('cntConcluidas', state.projects.filter((p) => p.status === 'concluida').length);
+    setBadge('cntResponsaveis', (state.technicalManagers || []).length);
     setBadge('cntUsers', this.adminUtilizadores.getUsersCount());
   }
 
@@ -503,6 +516,8 @@ class ErpApp {
       this.rhRecibos.render(this.workspace, ctx);
     } else if (this.activeRoute === 'admin-utilizadores') {
       this.adminUtilizadores.render(this.workspace, ctx);
+    } else if (this.activeRoute === 'op-responsaveis') {
+      this.opResponsaveis.render(this.workspace, ctx);
     } else {
       this.opObras.render(this.workspace, { ...ctx, statusFilter: route.status });
     }

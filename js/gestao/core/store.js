@@ -10,6 +10,7 @@ import { showToast } from './ui.js';
 const pendingAttachmentPayloads = new Map();
 const pendingInvoicePayloads = new Map();
 const pendingContractPayloads = new Map();
+const pendingCertificatePayloads = new Map();
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -143,6 +144,41 @@ export async function getProjectContractFile(id) {
   }
 }
 
+export async function saveCertificateFile(id, file) {
+  if (!id || !file) throw new Error('Ficheiro de certificado inválido.');
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error('O ficheiro do certificado excede o limite máximo de 10 MB.');
+  }
+  const base64 = await fileToBase64(file);
+  pendingCertificatePayloads.set(id, {
+    name: file.name,
+    type: file.type || 'application/pdf',
+    size: file.size,
+    base64,
+  });
+  return { id, name: file.name, type: file.type || 'application/pdf', size: file.size };
+}
+
+export async function getTechnicalCertificateFile(id) {
+  if (!id) return null;
+  try {
+    const res = await authenticatedApiFetch(`/api/erp/technical-certificates/${encodeURIComponent(id)}/file`, {
+      method: 'GET',
+    });
+    if (!res?.base64) return null;
+    return {
+      id: res.id,
+      name: res.name,
+      type: res.type || 'application/pdf',
+      size: res.size || 0,
+      data: base64ToArrayBuffer(res.base64),
+    };
+  } catch (err) {
+    showToast(err?.message || 'Não foi possível transferir o PDF do certificado.', 'error');
+    return null;
+  }
+}
+
 const EMPTY_STATE = {
   employees: [],
   attendance: {},
@@ -151,6 +187,8 @@ const EMPTY_STATE = {
   projects: [],
   projectInvoices: [],
   projectContracts: [],
+  technicalManagers: [],
+  technicalCertificates: [],
 };
 
 class ErpStore {
@@ -185,6 +223,8 @@ class ErpStore {
       projects: Array.isArray(snapshot?.projects) ? snapshot.projects : [],
       projectInvoices: Array.isArray(snapshot?.projectInvoices) ? snapshot.projectInvoices : [],
       projectContracts: Array.isArray(snapshot?.projectContracts) ? snapshot.projectContracts : [],
+      technicalManagers: Array.isArray(snapshot?.technicalManagers) ? snapshot.technicalManagers : [],
+      technicalCertificates: Array.isArray(snapshot?.technicalCertificates) ? snapshot.technicalCertificates : [],
     };
   }
 
@@ -479,6 +519,87 @@ class ErpStore {
       'DELETE',
       null,
       'Erro ao eliminar o contrato da base de dados.'
+    );
+  }
+
+  /* ── Responsáveis Técnicos & Certificados PDF ── */
+  addTechnicalManager(manager) {
+    if (!Array.isArray(this.state.technicalManagers)) {
+      this.state.technicalManagers = [];
+    }
+    this.state.technicalManagers.unshift(manager);
+    this._notify();
+    return this._syncMutation(
+      '/api/erp/technical-managers',
+      'POST',
+      manager,
+      'Erro ao guardar responsável técnico na base de dados.'
+    );
+  }
+
+  updateTechnicalManager(id, patch) {
+    const idx = (this.state.technicalManagers || []).findIndex((m) => m.id === id);
+    if (idx === -1) return Promise.resolve(null);
+    const current = this.state.technicalManagers[idx];
+    const updated = { ...current, ...patch };
+    this.state.technicalManagers[idx] = updated;
+    this._notify();
+    return this._syncMutation(
+      `/api/erp/technical-managers/${encodeURIComponent(current.code || id)}`,
+      'PUT',
+      updated,
+      'Erro ao atualizar responsável técnico na base de dados.'
+    );
+  }
+
+  deleteTechnicalManager(id) {
+    const target = (this.state.technicalManagers || []).find((m) => m.id === id);
+    const code = target?.code || id;
+    this.state.technicalManagers = (this.state.technicalManagers || []).filter((m) => m.id !== id);
+    this.state.technicalCertificates = (this.state.technicalCertificates || []).filter(
+      (c) => c.managerId !== id && c.managerId !== code
+    );
+    this._notify();
+    this._syncMutation(
+      `/api/erp/technical-managers/${encodeURIComponent(code)}`,
+      'DELETE',
+      null,
+      'Erro ao remover responsável técnico da base de dados.'
+    );
+  }
+
+  addTechnicalCertificate(cert) {
+    if (!Array.isArray(this.state.technicalCertificates)) {
+      this.state.technicalCertificates = [];
+    }
+    this.state.technicalCertificates.unshift(cert);
+    this._notify();
+
+    const pending = pendingCertificatePayloads.get(cert.id);
+    pendingCertificatePayloads.delete(cert.id);
+
+    return this._syncMutation(
+      '/api/erp/technical-certificates',
+      'POST',
+      {
+        ...cert,
+        fileBase64: pending?.base64 || '',
+        fileName: pending?.name || cert.fileName || '',
+        fileType: pending?.type || cert.fileType || '',
+        fileSize: pending?.size || cert.fileSize || 0,
+      },
+      'Erro ao anexar certificado técnico na base de dados.'
+    );
+  }
+
+  deleteTechnicalCertificate(id) {
+    this.state.technicalCertificates = (this.state.technicalCertificates || []).filter((c) => c.id !== id);
+    this._notify();
+    this._syncMutation(
+      `/api/erp/technical-certificates/${encodeURIComponent(id)}`,
+      'DELETE',
+      null,
+      'Erro ao eliminar o certificado da base de dados.'
     );
   }
 }
