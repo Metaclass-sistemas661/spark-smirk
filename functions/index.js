@@ -289,36 +289,108 @@ async function sendCustomRecoveryEmail({ toEmail, subject, html, text }) {
 function defaultPermissionsForRole(role = 'operador') {
   if (role === 'administrador') {
     return {
-      dashboard: { ver: true },
-      rh_funcionarios: { ver: true, criar: true, editar: true, excluir: true, assiduidade: true },
+      dashboard: { ver: true, valores: true },
+      rh_funcionarios: {
+        ver: true,
+        criar: true,
+        editar: true,
+        excluir: true,
+        assiduidade: true,
+        ordenados: true,
+        pagamentos: true,
+      },
       rh_recibos: { ver: true, emitir: true, anexar: true, excluir: true },
-      op_obras: { ver: true, criar: true, editar: true, excluir: true, orcamentos: true, pagamentos: true, faturas: true, responsaveis: true },
+      op_obras: {
+        ver: true,
+        criar: true,
+        editar: true,
+        excluir: true,
+        valores: true,
+        orcamentos: true,
+        pagamentos: true,
+        faturas: true,
+        responsaveis: true,
+      },
       admin_utilizadores: { ver: true, criar: true, editar: true, excluir: true },
     };
   }
   if (role === 'rh') {
     return {
-      dashboard: { ver: true },
-      rh_funcionarios: { ver: true, criar: true, editar: true, excluir: false, assiduidade: true },
+      dashboard: { ver: true, valores: true },
+      rh_funcionarios: {
+        ver: true,
+        criar: true,
+        editar: true,
+        excluir: false,
+        assiduidade: true,
+        ordenados: true,
+        pagamentos: true,
+      },
       rh_recibos: { ver: true, emitir: true, anexar: true, excluir: false },
-      op_obras: { ver: false, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false, faturas: false, responsaveis: false },
+      op_obras: {
+        ver: false,
+        criar: false,
+        editar: false,
+        excluir: false,
+        valores: false,
+        orcamentos: false,
+        pagamentos: false,
+        faturas: false,
+        responsaveis: false,
+      },
       admin_utilizadores: { ver: false, criar: false, editar: false, excluir: false },
     };
   }
   if (role === 'operacional') {
     return {
-      dashboard: { ver: true },
-      rh_funcionarios: { ver: true, criar: false, editar: false, excluir: false, assiduidade: true },
+      dashboard: { ver: true, valores: true },
+      rh_funcionarios: {
+        ver: true,
+        criar: false,
+        editar: false,
+        excluir: false,
+        assiduidade: true,
+        ordenados: false,
+        pagamentos: false,
+      },
       rh_recibos: { ver: false, emitir: false, anexar: false, excluir: false },
-      op_obras: { ver: true, criar: true, editar: true, excluir: false, orcamentos: true, pagamentos: true, faturas: true, responsaveis: true },
+      op_obras: {
+        ver: true,
+        criar: true,
+        editar: true,
+        excluir: false,
+        valores: true,
+        orcamentos: true,
+        pagamentos: true,
+        faturas: true,
+        responsaveis: true,
+      },
       admin_utilizadores: { ver: false, criar: false, editar: false, excluir: false },
     };
   }
   return {
-    dashboard: { ver: true },
-    rh_funcionarios: { ver: true, criar: false, editar: false, excluir: false, assiduidade: false },
+    dashboard: { ver: true, valores: false },
+    rh_funcionarios: {
+      ver: true,
+      criar: false,
+      editar: false,
+      excluir: false,
+      assiduidade: false,
+      ordenados: false,
+      pagamentos: false,
+    },
     rh_recibos: { ver: false, emitir: false, anexar: false, excluir: false },
-    op_obras: { ver: true, criar: false, editar: false, excluir: false, orcamentos: false, pagamentos: false, faturas: false, responsaveis: false },
+    op_obras: {
+      ver: true,
+      criar: false,
+      editar: false,
+      excluir: false,
+      valores: false,
+      orcamentos: false,
+      pagamentos: false,
+      faturas: false,
+      responsaveis: false,
+    },
     admin_utilizadores: { ver: false, criar: false, editar: false, excluir: false },
   };
 }
@@ -356,6 +428,58 @@ function hasAdminUserAction(profile, actionKey) {
 function hasModuleAction(profile, moduleKey, actionKey = 'ver') {
   if (!profile || profile.ativo === false) return false;
   return profile.permissoes?.[moduleKey]?.[actionKey] === true;
+}
+
+function redactSnapshotForProfile(rawSnapshot, profile) {
+  const snap = rawSnapshot && typeof rawSnapshot === 'object' ? { ...rawSnapshot } : {};
+  const canSeeEmpSalary = hasModuleAction(profile, 'rh_funcionarios', 'ordenados');
+  const canSeeEmpPayable = hasModuleAction(profile, 'rh_funcionarios', 'pagamentos');
+  const canSeeRecibos = hasModuleAction(profile, 'rh_recibos', 'ver');
+  const canSeeOpValues = hasModuleAction(profile, 'op_obras', 'valores');
+
+  if (!canSeeEmpSalary && Array.isArray(snap.employees)) {
+    snap.employees = snap.employees.map((emp) => ({
+      ...emp,
+      baseSalary: 0,
+      dailyRate: 0,
+      hourlyRate: 0,
+      mealAllowance: 0,
+      ssPercentage: 0,
+      iban: '',
+      _salaryRestricted: true,
+    }));
+  }
+
+  if (!canSeeEmpPayable) {
+    snap.employeeAdvances = [];
+  }
+
+  if (!canSeeRecibos) {
+    snap.payslips = [];
+    snap.attachedReceipts = [];
+  }
+
+  if (!canSeeOpValues) {
+    if (Array.isArray(snap.projects)) {
+      snap.projects = snap.projects.map((proj) => ({
+        ...proj,
+        manualBudgetCap: 0,
+        dailyRatePerWorker: 0,
+        budget: { vatRate: 0, contingencyPct: 0, items: [] },
+        payments: [],
+        _valuesRestricted: true,
+      }));
+    }
+    if (Array.isArray(snap.projectInvoices)) {
+      snap.projectInvoices = snap.projectInvoices.map((inv) => ({
+        ...inv,
+        amount: 0,
+        _valuesRestricted: true,
+      }));
+    }
+  }
+
+  return snap;
 }
 
 async function fetchDbProfile(supabaseAdmin, userId) {
@@ -1468,7 +1592,7 @@ exports.api = onRequest(
             return;
           }
 
-          res.status(200).json(
+          const safePayload = redactSnapshotForProfile(
             snapshot || {
               employees: [],
               attendance: {},
@@ -1481,8 +1605,10 @@ exports.api = onRequest(
               projectContracts: [],
               technicalManagers: [],
               technicalCertificates: [],
-            }
+            },
+            ctx.profile
           );
+          res.status(200).json(safePayload);
           return;
         }
 
@@ -1492,8 +1618,16 @@ exports.api = onRequest(
             res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para adicionar funcionários.' });
             return;
           }
+          const rawEmp = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+          if (!hasModuleAction(ctx.profile, 'rh_funcionarios', 'ordenados')) {
+            rawEmp.baseSalary = 0;
+            rawEmp.dailyRate = 0;
+            rawEmp.hourlyRate = 0;
+            rawEmp.mealAllowance = 0;
+            rawEmp.ssPercentage = 11;
+          }
           const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_employee', {
-            p_payload: req.body || {},
+            p_payload: rawEmp,
             p_actor: ctx.authUser.id,
           });
           if (error) {
@@ -1507,7 +1641,11 @@ exports.api = onRequest(
             acao: 'CRIAR_FUNCIONARIO',
             entidadeId: data?.id,
           });
-          res.status(201).json(data);
+          res.status(201).json(
+            hasModuleAction(ctx.profile, 'rh_funcionarios', 'ordenados')
+              ? data
+              : { ...(data || {}), baseSalary: 0, dailyRate: 0, hourlyRate: 0, mealAllowance: 0, ssPercentage: 0, iban: '', _salaryRestricted: true }
+          );
           return;
         }
 
@@ -1519,8 +1657,31 @@ exports.api = onRequest(
               res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para editar funcionários.' });
               return;
             }
+            let empPayload = { ...(req.body || {}), id: empCode };
+            const canEditSalary = hasModuleAction(ctx.profile, 'rh_funcionarios', 'ordenados');
+            if (!canEditSalary) {
+              const { data: rhSnap } = await supabaseAdmin.rpc('spark_erp_snapshot', {
+                p_include_rh: true,
+                p_include_payslips: false,
+                p_include_projects: false,
+              });
+              const existingEmp = (rhSnap?.employees || []).find((e) => e.id === empCode);
+              if (existingEmp) {
+                empPayload = {
+                  ...empPayload,
+                  remunerationType: existingEmp.remunerationType || 'mensal',
+                  baseSalary: existingEmp.baseSalary ?? 0,
+                  dailyRate: existingEmp.dailyRate ?? 0,
+                  hourlyRate: existingEmp.hourlyRate ?? 0,
+                  ssPercentage: existingEmp.ssPercentage ?? 11,
+                  mealAllowance: existingEmp.mealAllowance ?? 0,
+                  iban: existingEmp.iban || '',
+                  twelfths: existingEmp.twelfths || 'Não',
+                };
+              }
+            }
             const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_employee', {
-              p_payload: { ...(req.body || {}), id: empCode },
+              p_payload: empPayload,
               p_actor: ctx.authUser.id,
             });
             if (error) {
@@ -1534,7 +1695,11 @@ exports.api = onRequest(
               acao: 'EDITAR_FUNCIONARIO',
               entidadeId: empCode,
             });
-            res.status(200).json(data);
+            res.status(200).json(
+              canEditSalary
+                ? data
+                : { ...(data || {}), baseSalary: 0, dailyRate: 0, hourlyRate: 0, mealAllowance: 0, ssPercentage: 0, iban: '', _salaryRestricted: true }
+            );
             return;
           }
 
@@ -1598,10 +1763,11 @@ exports.api = onRequest(
         // ── ADIANTAMENTOS DE ORDENADO (POST / DELETE) ────────────────────────
         if (req.method === 'POST' && requestPath === '/api/erp/employee-advances') {
           const canAdvance =
-            hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar') ||
-            hasModuleAction(ctx.profile, 'rh_funcionarios', 'assiduidade');
+            hasModuleAction(ctx.profile, 'rh_funcionarios', 'pagamentos') &&
+            (hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar') ||
+              hasModuleAction(ctx.profile, 'rh_funcionarios', 'assiduidade'));
           if (!canAdvance) {
-            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para registar adiantamentos salariais.' });
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para consultar ou registar adiantamentos salariais.' });
             return;
           }
           const body = req.body && typeof req.body === 'object' ? req.body : {};
@@ -1637,9 +1803,10 @@ exports.api = onRequest(
         const advMatch = requestPath.match(/^\/api\/erp\/employee-advances\/([^/]+)$/);
         if (advMatch && req.method === 'DELETE') {
           const canDelAdv =
-            hasModuleAction(ctx.profile, 'rh_funcionarios', 'excluir') ||
-            hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar') ||
-            hasModuleAction(ctx.profile, 'rh_funcionarios', 'assiduidade');
+            hasModuleAction(ctx.profile, 'rh_funcionarios', 'pagamentos') &&
+            (hasModuleAction(ctx.profile, 'rh_funcionarios', 'excluir') ||
+              hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar') ||
+              hasModuleAction(ctx.profile, 'rh_funcionarios', 'assiduidade'));
           if (!canDelAdv) {
             res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para remover adiantamentos.' });
             return;
@@ -2040,17 +2207,38 @@ exports.api = onRequest(
         if (projMatch && (req.method === 'PUT' || req.method === 'DELETE')) {
           const projCode = decodeURIComponent(projMatch[1]);
           if (req.method === 'PUT') {
-            const body = req.body && typeof req.body === 'object' ? req.body : {};
+            let body = req.body && typeof req.body === 'object' ? { ...req.body } : {};
             const keys = Object.keys(body);
             const paymentsOnly = keys.length === 1 && keys[0] === 'payments';
+            const canSeeOpValues = hasModuleAction(ctx.profile, 'op_obras', 'valores');
             const allowed = paymentsOnly
-              ? hasModuleAction(ctx.profile, 'op_obras', 'pagamentos') ||
-                hasModuleAction(ctx.profile, 'op_obras', 'editar')
+              ? canSeeOpValues &&
+                (hasModuleAction(ctx.profile, 'op_obras', 'pagamentos') ||
+                  hasModuleAction(ctx.profile, 'op_obras', 'editar'))
               : hasModuleAction(ctx.profile, 'op_obras', 'editar');
 
             if (!allowed) {
               res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para atualizar esta obra.' });
               return;
+            }
+            if (!canSeeOpValues) {
+              const { data: opSnap } = await supabaseAdmin.rpc('spark_erp_snapshot', {
+                p_include_rh: false,
+                p_include_payslips: false,
+                p_include_projects: true,
+              });
+              const existingProj = (opSnap?.projects || []).find(
+                (p) => p.id === projCode || p.code === projCode
+              );
+              if (existingProj) {
+                body = {
+                  ...body,
+                  manualBudgetCap: existingProj.manualBudgetCap ?? 0,
+                  dailyRatePerWorker: existingProj.dailyRatePerWorker ?? 0,
+                  budget: existingProj.budget || { vatRate: 23, contingencyPct: 0, items: [] },
+                  payments: existingProj.payments || [],
+                };
+              }
             }
             const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_project', {
               p_payload: { ...body, code: body.code || projCode, id: projCode },
@@ -2067,7 +2255,11 @@ exports.api = onRequest(
               acao: paymentsOnly ? 'ATUALIZAR_PAGAMENTOS_OBRA' : 'EDITAR_OBRA',
               entidadeId: projCode,
             });
-            res.status(200).json(data);
+            res.status(200).json(
+              canSeeOpValues
+                ? data
+                : { ...(data || {}), manualBudgetCap: 0, dailyRatePerWorker: 0, budget: { vatRate: 0, contingencyPct: 0, items: [] }, payments: [], _valuesRestricted: true }
+            );
             return;
           }
 
@@ -2198,8 +2390,8 @@ exports.api = onRequest(
 
         const invFileMatch = requestPath.match(/^\/api\/erp\/project-invoices\/([^/]+)\/file$/);
         if (invFileMatch && req.method === 'GET') {
-          if (!canOpVer) {
-            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para visualizar faturas de obras.' });
+          if (!canOpVer || !hasModuleAction(ctx.profile, 'op_obras', 'valores')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para visualizar valores ou faturas de obras.' });
             return;
           }
           const invCode = decodeURIComponent(invFileMatch[1]);

@@ -10,6 +10,8 @@ import {
   createRolePermissions,
   normalizePermissions,
   hasPermission,
+  blockAllFinancialPermissions,
+  areAllFinancialValuesBlocked,
   countGrantedPermissions,
 } from '../../shared/permissions.js';
 import { escapeHtml, getInitials, formatDatePT } from '../core/formatters.js';
@@ -31,10 +33,13 @@ function generateProvisionalPassword(length = 12) {
 }
 
 function summarizeModules(user) {
-  if (user.nivel_acesso === 'administrador') {
+  if (user.nivel_acesso === 'administrador' && !areAllFinancialValuesBlocked(user.permissoes)) {
     return '<span class="erp-perm-tag">Acesso Total (Todos os Módulos)</span>';
   }
   const tags = [];
+  if (areAllFinancialValuesBlocked(user.permissoes)) {
+    tags.push('<span class="erp-badge erp-badge--danger" style="font-size:10.5px;">Valores € Bloqueados</span>');
+  }
   for (const mod of PERMISSION_MODULES) {
     const perms = user.permissoes?.[mod.key] || {};
     const granted = mod.actions.filter((a) => perms[a.key] === true).length;
@@ -501,6 +506,20 @@ export class AdminUtilizadoresModule {
               <button type="button" class="erp-btn erp-btn--ghost" data-apply-template="operacional">Aplicar: Obras</button>
               <button type="button" class="erp-btn erp-btn--ghost" data-apply-template="operador">Aplicar: Consulta</button>
             </div>
+
+            <div class="erp-inline-invoice-box" style="margin:12px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-left:4px solid var(--erp-danger);">
+              <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;flex:1;min-width:240px;">
+                <input type="checkbox" id="usrBlockAllFinancial" style="width:16px;height:16px;margin-top:2px;accent-color:var(--erp-danger);" ${areAllFinancialValuesBlocked(workingPerms) ? 'checked' : ''} ${isSelf ? 'disabled' : ''}>
+                <span>
+                  <strong style="display:block;color:var(--erp-heading);font-size:13px;">Bloquear TODOS os valores financeiros, ordenados e saldos (€)</strong>
+                  <span class="erp-cell-sub">Oculta valores no Dashboard, ordenados/diárias de funcionários, valores a pagar (fecho do mês/vales), recibos, orçamentos e faturas (€) tanto na interface como nas respostas do servidor.</span>
+                </span>
+              </label>
+              <span class="erp-badge ${areAllFinancialValuesBlocked(workingPerms) ? 'erp-badge--danger' : 'erp-badge--success'}" id="usrFinancialLockBadge">
+                ${areAllFinancialValuesBlocked(workingPerms) ? 'Valores € Bloqueados' : 'Personalizável por Módulo'}
+              </span>
+            </div>
+
             <div id="usrPermMatrix" class="erp-perm-matrix">
               ${renderMatrixHtml(workingPerms)}
             </div>
@@ -518,9 +537,21 @@ export class AdminUtilizadoresModule {
         const roleSelect = modal.querySelector('#usrRole');
         const pwInput = modal.querySelector('#usrTempPassword');
         const forceCheckbox = modal.querySelector('#usrForceChange');
+        const blockAllFinCheckbox = modal.querySelector('#usrBlockAllFinancial');
+        const finLockBadge = modal.querySelector('#usrFinancialLockBadge');
+
+        const syncFinancialBadge = () => {
+          const allBlocked = areAllFinancialValuesBlocked(workingPerms);
+          if (blockAllFinCheckbox) blockAllFinCheckbox.checked = allBlocked;
+          if (finLockBadge) {
+            finLockBadge.className = `erp-badge ${allBlocked ? 'erp-badge--danger' : 'erp-badge--success'}`;
+            finLockBadge.textContent = allBlocked ? 'Valores € Bloqueados' : 'Personalizável por Módulo';
+          }
+        };
 
         const syncCheckboxesFromWorking = () => {
           matrixEl.innerHTML = renderMatrixHtml(workingPerms);
+          syncFinancialBadge();
           bindMatrixEvents();
         };
 
@@ -550,6 +581,7 @@ export class AdminUtilizadoresModule {
               if (toggleBtn) {
                 toggleBtn.textContent = allCbs.every((x) => x.checked) ? 'Desmarcar tudo' : 'Marcar tudo';
               }
+              syncFinancialBadge();
             });
           });
 
@@ -581,6 +613,17 @@ export class AdminUtilizadoresModule {
         roleSelect?.addEventListener('change', () => {
           workingPerms = createRolePermissions(roleSelect.value);
           syncCheckboxesFromWorking();
+        });
+
+        blockAllFinCheckbox?.addEventListener('change', () => {
+          if (blockAllFinCheckbox.checked) {
+            workingPerms = blockAllFinancialPermissions(workingPerms);
+            syncCheckboxesFromWorking();
+            showToast('Todos os valores financeiros, ordenados e saldos foram bloqueados para este utilizador.');
+          } else {
+            workingPerms = createRolePermissions(roleSelect?.value || initialRole);
+            syncCheckboxesFromWorking();
+          }
         });
 
         modal.querySelector('#btnGenProvPw')?.addEventListener('click', () => {

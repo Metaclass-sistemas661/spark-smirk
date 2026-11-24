@@ -58,6 +58,9 @@ export class RhFuncionariosModule {
   }
 
   render(container, ctx) {
+    this._can = ctx.can || (() => true);
+    const canSeeSalary = this._can('rh_funcionarios', 'ordenados');
+    const canSeePayable = this._can('rh_funcionarios', 'pagamentos');
     const state = store.getState();
     const { month, search } = ctx;
     const query = (search || '').trim().toLowerCase();
@@ -73,12 +76,15 @@ export class RhFuncionariosModule {
     });
 
     const activeCount = state.employees.filter((e) => e.status === 'ativo').length;
-    const totalPayrollEstimated = state.employees
-      .filter((e) => e.status === 'ativo')
-      .reduce(
-        (acc, e) => acc + computeMonthlyAttendance(e, state.attendance, month, state.employeeAdvances).netToPay,
-        0
-      );
+    const totalContractsCount = (state.employeeContracts || []).length;
+    const totalPayrollEstimated = canSeePayable
+      ? state.employees
+          .filter((e) => e.status === 'ativo')
+          .reduce(
+            (acc, e) => acc + computeMonthlyAttendance(e, state.attendance, month, state.employeeAdvances).netToPay,
+            0
+          )
+      : 0;
 
     let totalPresentMonth = 0;
     let totalAbsencesMonth = 0;
@@ -117,14 +123,25 @@ export class RhFuncionariosModule {
           <div class="erp-kpi-card__meta">Justificadas + injustificadas</div>
         </div>
 
-        <div class="erp-kpi-card">
-          <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Líquido a Pagar (${escapeHtml(month)})</span>
-            <span class="erp-kpi-card__icon">${ICONS.euro}</span>
-          </div>
-          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalPayrollEstimated))}</div>
-          <div class="erp-kpi-card__meta">Já c/ diárias, horas, SS% e adiantamentos</div>
-        </div>
+        ${
+          canSeePayable
+            ? `<div class="erp-kpi-card">
+                <div class="erp-kpi-card__head">
+                  <span class="erp-kpi-card__label">Líquido a Pagar (${escapeHtml(month)})</span>
+                  <span class="erp-kpi-card__icon">${ICONS.euro}</span>
+                </div>
+                <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalPayrollEstimated))}</div>
+                <div class="erp-kpi-card__meta">${canSeeSalary ? 'Já c/ diárias, horas, SS% e adiantamentos' : 'Resumo de pagamentos'}</div>
+              </div>`
+            : `<div class="erp-kpi-card">
+                <div class="erp-kpi-card__head">
+                  <span class="erp-kpi-card__label">Contratos &amp; Dossiê RH</span>
+                  <span class="erp-kpi-card__icon">${ICONS.paperclip}</span>
+                </div>
+                <div class="erp-kpi-card__value">${totalContractsCount} PDF</div>
+                <div class="erp-kpi-card__meta">Valores a pagar restritos para este perfil</div>
+              </div>`
+        }
       </div>
 
       <div class="erp-panel">
@@ -135,7 +152,7 @@ export class RhFuncionariosModule {
               <span>Diretório de Funcionários</span>
               <span class="erp-subtab__badge">${filtered.length}</span>
             </button>
-            <button type="button" class="erp-subtab ${this.viewMode === 'daily' ? 'is-active' : ''}" data-rh-view="daily" ${(ctx.can ? ctx.can('rh_funcionarios', 'assiduidade') : true) ? '' : 'style="display:none"'}>
+            <button type="button" class="erp-subtab ${this.viewMode === 'daily' ? 'is-active' : ''}" data-rh-view="daily" ${this._can('rh_funcionarios', 'assiduidade') ? '' : 'style="display:none"'}>
               ${ICONS.calendar}
               <span>Marcar Presenças &amp; Faltas</span>
             </button>
@@ -152,7 +169,7 @@ export class RhFuncionariosModule {
                 : ''
             }
             ${
-              (ctx.can ? ctx.can('rh_funcionarios', 'criar') : true)
+              this._can('rh_funcionarios', 'criar')
                 ? `<button type="button" class="erp-btn erp-btn--primary" id="btnNewEmployee">
                     ${ICONS.plus}
                     <span>Novo Funcionário</span>
@@ -166,7 +183,6 @@ export class RhFuncionariosModule {
       </div>
     `;
 
-    this._can = ctx.can || (() => true);
     if (this.viewMode === 'daily' && !this._can('rh_funcionarios', 'assiduidade')) {
       this.viewMode = 'directory';
     }
@@ -198,6 +214,10 @@ export class RhFuncionariosModule {
   }
 
   _renderDirectory(target, employees, attendanceMap, month) {
+    const canSeeSalary = !this._can || this._can('rh_funcionarios', 'ordenados');
+    const canSeePayable = !this._can || this._can('rh_funcionarios', 'pagamentos');
+    const canSeeRecibos = !this._can || this._can('rh_recibos', 'ver');
+
     target.innerHTML = `
       <div class="erp-attendance-controls">
         <div class="erp-filter-bar">
@@ -213,7 +233,7 @@ export class RhFuncionariosModule {
             <option value="inativo" ${this.statusFilter === 'inativo' ? 'selected' : ''}>Inativos</option>
           </select>
         </div>
-        <span class="erp-cell-sub">Clique no funcionário para registar adiantamento · Assiduidade de ${escapeHtml(formatMonthLabel(month))}</span>
+        <span class="erp-cell-sub">${canSeePayable ? 'Clique no funcionário para registar adiantamento · ' : ''}Assiduidade de ${escapeHtml(formatMonthLabel(month))}</span>
       </div>
 
       ${
@@ -227,8 +247,8 @@ export class RhFuncionariosModule {
                 <th>Colaborador</th>
                 <th>NIF / NISS</th>
                 <th>Departamento &amp; Contrato</th>
-                <th>Remuneração &amp; SS%</th>
-                <th>Mês (${escapeHtml(month)}) / Líquido</th>
+                <th>${canSeeSalary ? 'Remuneração &amp; SS%' : 'Modalidade Contratual'}</th>
+                <th>${canSeePayable ? `Mês (${escapeHtml(month)}) / Líquido` : `Assiduidade (${escapeHtml(month)})`}</th>
                 <th>Estado</th>
                 <th style="text-align:right">Ações</th>
               </tr>
@@ -248,7 +268,7 @@ export class RhFuncionariosModule {
                         ? `${formatCurrency(stats.hourlyRate)}/h`
                         : `${formatCurrency(stats.baseSalaryFixed)}/mês`;
                   return `
-                  <tr class="erp-proj-row" data-emp-row="${escapeHtml(emp.id)}" title="Clique para registar/consultar adiantamentos (valores retirados do ordenado)">
+                  <tr class="${canSeePayable ? 'erp-proj-row' : ''}" data-emp-row="${escapeHtml(emp.id)}" title="${canSeePayable ? 'Clique para registar/consultar adiantamentos (valores retirados do ordenado)' : escapeHtml(emp.name)}">
                     <td>
                       <div class="erp-person-cell">
                         <span class="erp-avatar">${escapeHtml(getInitials(emp.name))}</span>
@@ -268,8 +288,13 @@ export class RhFuncionariosModule {
                       ${empContractsCount > 0 ? `<div style="margin-top:4px;"><span class="erp-badge erp-badge--info">${empContractsCount} contrato(s) PDF</span></div>` : ''}
                     </td>
                     <td>
-                      <div class="erp-cell-title">${escapeHtml(rateValue)}</div>
-                      <div class="erp-cell-sub">${escapeHtml(remLabel)} · SS ${stats.ssPercentage}% · Sub. Alim. ${escapeHtml(formatCurrency(emp.mealAllowance))}/d</div>
+                      ${
+                        canSeeSalary
+                          ? `<div class="erp-cell-title">${escapeHtml(rateValue)}</div>
+                             <div class="erp-cell-sub">${escapeHtml(remLabel)} · SS ${stats.ssPercentage}% · Sub. Alim. ${escapeHtml(formatCurrency(emp.mealAllowance))}/d</div>`
+                          : `<div class="erp-cell-title">${escapeHtml(remLabel)}</div>
+                             <div class="erp-cell-sub">Valores de ordenado restritos</div>`
+                      }
                     </td>
                     <td>
                       <div style="display:flex;gap:4px;flex-wrap:nowrap;margin-bottom:4px;">
@@ -277,9 +302,13 @@ export class RhFuncionariosModule {
                         <span class="erp-att-pill erp-att-pill--FJ">${stats.justified}FJ</span>
                         <span class="erp-att-pill erp-att-pill--FI">${stats.unjustified}FI</span>
                       </div>
-                      <div class="erp-cell-sub" style="font-weight:700;color:var(--erp-success);">
-                        A pagar: ${escapeHtml(formatCurrency(stats.netToPay))}${stats.advancesTotal > 0 ? ` <span style="color:var(--erp-danger);">(-${escapeHtml(formatCurrency(stats.advancesTotal))} vale)</span>` : ''}
-                      </div>
+                      ${
+                        canSeePayable
+                          ? `<div class="erp-cell-sub" style="font-weight:700;color:var(--erp-success);">
+                               A pagar: ${escapeHtml(formatCurrency(stats.netToPay))}${stats.advancesTotal > 0 ? ` <span style="color:var(--erp-danger);">(-${escapeHtml(formatCurrency(stats.advancesTotal))} vale)</span>` : ''}
+                             </div>`
+                          : `<div class="erp-cell-sub">Pagamento restrito</div>`
+                      }
                     </td>
                     <td>
                       <span class="erp-badge ${emp.status === 'ativo' ? 'erp-badge--success' : 'erp-badge--neutral'}">
@@ -288,9 +317,9 @@ export class RhFuncionariosModule {
                     </td>
                     <td>
                       <div class="erp-row-actions">
-                        <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" title="Fechar Mês e Ver Valor a Pagar" data-emp-close-month="${escapeHtml(emp.id)}">Fechar Mês</button>
+                        ${canSeePayable ? `<button type="button" class="erp-btn erp-btn--outline erp-btn--sm" title="Fechar Mês e Ver Valor a Pagar" data-emp-close-month="${escapeHtml(emp.id)}">Fechar Mês</button>` : ''}
                         <button type="button" class="erp-icon-btn" title="Contratos de Trabalho (PDF)" data-emp-contracts="${escapeHtml(emp.id)}">${ICONS.paperclip}</button>
-                        <button type="button" class="erp-icon-btn" title="Ver Recibos do Ano" data-emp-payslips="${escapeHtml(emp.id)}">${ICONS.receipt}</button>
+                        ${canSeeRecibos ? `<button type="button" class="erp-icon-btn" title="Ver Recibos do Ano" data-emp-payslips="${escapeHtml(emp.id)}">${ICONS.receipt}</button>` : ''}
                         <button type="button" class="erp-icon-btn" title="Calendário Mensal" data-emp-calendar="${escapeHtml(emp.id)}">${ICONS.calendar}</button>
                         ${!this._can || this._can('rh_funcionarios', 'editar') ? `<button type="button" class="erp-icon-btn" title="Editar Funcionário" data-emp-edit="${escapeHtml(emp.id)}">${ICONS.edit}</button>` : ''}
                         ${!this._can || this._can('rh_funcionarios', 'excluir') ? `<button type="button" class="erp-icon-btn erp-icon-btn--danger" title="Excluir Funcionário" data-emp-delete="${escapeHtml(emp.id)}">${ICONS.trash}</button>` : ''}
@@ -314,12 +343,14 @@ export class RhFuncionariosModule {
       store._commit();
     });
 
-    target.querySelectorAll('[data-emp-row]').forEach((row) => {
-      row.addEventListener('click', (e) => {
-        if (e.target.closest('.erp-row-actions, button, a')) return;
-        this._openAdvancePopup(row.dataset.empRow, month);
+    if (canSeePayable) {
+      target.querySelectorAll('[data-emp-row]').forEach((row) => {
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('.erp-row-actions, button, a')) return;
+          this._openAdvancePopup(row.dataset.empRow, month);
+        });
       });
-    });
+    }
 
     target.querySelectorAll('[data-emp-close-month]').forEach((btn) => {
       btn.addEventListener('click', () => this._openCloseMonthModal(btn.dataset.empCloseMonth, month));
@@ -362,6 +393,8 @@ export class RhFuncionariosModule {
   }
 
   _renderDailyAttendance(target, employees, attendanceMap) {
+    const canSeeSalary = !this._can || this._can('rh_funcionarios', 'ordenados');
+    const canSeePayable = !this._can || this._can('rh_funcionarios', 'pagamentos');
     const activeEmployees = employees.filter((e) => e.status === 'ativo');
 
     target.innerHTML = `
@@ -412,7 +445,7 @@ export class RhFuncionariosModule {
                       <span class="erp-avatar">${escapeHtml(getInitials(emp.name))}</span>
                       <div>
                         <div class="erp-cell-title">${escapeHtml(emp.name)}</div>
-                        <div class="erp-cell-sub">${escapeHtml(emp.role)} · <strong>${escapeHtml(remTag)}</strong></div>
+                        <div class="erp-cell-sub">${escapeHtml(emp.role)}${canSeeSalary ? ` · <strong>${escapeHtml(remTag)}</strong>` : ''}</div>
                       </div>
                     </div>
                   </td>
@@ -487,18 +520,24 @@ export class RhFuncionariosModule {
             store.getState().employeeAdvances
           );
           if (code === 'P' && (emp.remunerationType === 'diaria' || emp.remunerationType === 'hora')) {
-            const addedVal =
-              emp.remunerationType === 'diaria'
-                ? Number(emp.dailyRate) || 0
-                : hrs * (Number(emp.hourlyRate) || 0);
-            showToast(
-              `Presença registada (${emp.name}): + ${formatCurrency(addedVal)} · Acumulado no mês: ${formatCurrency(updatedPayroll.earnedBase)}`,
-              'success',
-              4500
-            );
+            if (canSeeSalary || canSeePayable) {
+              const addedVal =
+                emp.remunerationType === 'diaria'
+                  ? Number(emp.dailyRate) || 0
+                  : hrs * (Number(emp.hourlyRate) || 0);
+              showToast(
+                `Presença registada (${emp.name}): + ${formatCurrency(addedVal)} · Acumulado no mês: ${formatCurrency(updatedPayroll.earnedBase)}`,
+                'success',
+                4500
+              );
+            } else {
+              showToast(`Presença registada (${emp.name}).`, 'success');
+            }
           } else if (code === 'FJ' || code === 'FI') {
             showToast(
-              `${code === 'FJ' ? 'Falta Justificada' : 'Falta Injustificada'} registada (${emp.name}) — € 0,00 acrescentado.`,
+              canSeeSalary || canSeePayable
+                ? `${code === 'FJ' ? 'Falta Justificada' : 'Falta Injustificada'} registada (${emp.name}) — € 0,00 acrescentado.`
+                : `${code === 'FJ' ? 'Falta Justificada' : 'Falta Injustificada'} registada (${emp.name}).`,
               'warning'
             );
           }
@@ -519,6 +558,8 @@ export class RhFuncionariosModule {
   }
 
   _renderMonthlyReport(target, employees, attendanceMap, month) {
+    const canSeeSalary = !this._can || this._can('rh_funcionarios', 'ordenados');
+    const canSeePayable = !this._can || this._can('rh_funcionarios', 'pagamentos');
     target.innerHTML = `
       <div class="erp-attendance-controls">
         <span class="erp-cell-title">Relatório Consolidado — ${escapeHtml(formatMonthLabel(month))}</span>
@@ -532,10 +573,8 @@ export class RhFuncionariosModule {
               <th>Colaborador</th>
               <th>Trabalhados / Horas</th>
               <th>Faltas (FJ / FI)</th>
-              <th>Base Apurada</th>
-              <th>SS (%)</th>
-              <th>Adiantamentos</th>
-              <th>Líquido a Pagar</th>
+              ${canSeeSalary ? '<th>Base Apurada</th><th>SS (%)</th>' : ''}
+              ${canSeePayable ? '<th>Adiantamentos</th><th>Líquido a Pagar</th>' : ''}
               <th style="text-align:right">Ações</th>
             </tr>
           </thead>
@@ -559,15 +598,23 @@ export class RhFuncionariosModule {
                     <span class="erp-att-pill erp-att-pill--FJ">${s.justified}FJ</span>
                     <span class="erp-att-pill erp-att-pill--FI">${s.unjustified}FI</span>
                   </td>
-                  <td><span class="erp-cell-title">${escapeHtml(formatCurrency(s.earnedBase))}</span></td>
-                  <td>-${escapeHtml(formatCurrency(s.ssDeduction))} (${s.ssPercentage}%)</td>
-                  <td style="color:${s.advancesTotal > 0 ? 'var(--erp-danger)' : 'var(--erp-text-muted)'};">
-                    ${s.advancesTotal > 0 ? `-${escapeHtml(formatCurrency(s.advancesTotal))}` : '€ 0,00'}
-                  </td>
-                  <td><span class="erp-cell-title" style="color:var(--erp-success);">${escapeHtml(formatCurrency(s.netToPay))}</span></td>
+                  ${
+                    canSeeSalary
+                      ? `<td><span class="erp-cell-title">${escapeHtml(formatCurrency(s.earnedBase))}</span></td>
+                         <td>-${escapeHtml(formatCurrency(s.ssDeduction))} (${s.ssPercentage}%)</td>`
+                      : ''
+                  }
+                  ${
+                    canSeePayable
+                      ? `<td style="color:${s.advancesTotal > 0 ? 'var(--erp-danger)' : 'var(--erp-text-muted)'};">
+                           ${s.advancesTotal > 0 ? `-${escapeHtml(formatCurrency(s.advancesTotal))}` : '€ 0,00'}
+                         </td>
+                         <td><span class="erp-cell-title" style="color:var(--erp-success);">${escapeHtml(formatCurrency(s.netToPay))}</span></td>`
+                      : ''
+                  }
                   <td style="text-align:right">
                     <div class="erp-row-actions">
-                      <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-rep-close="${escapeHtml(emp.id)}">Fechar Mês</button>
+                      ${canSeePayable ? `<button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-rep-close="${escapeHtml(emp.id)}">Fechar Mês</button>` : ''}
                       <button type="button" class="erp-icon-btn" title="Abrir Calendário do Mês" data-rep-cal="${escapeHtml(emp.id)}">${ICONS.calendar}</button>
                     </div>
                   </td>
@@ -588,6 +635,7 @@ export class RhFuncionariosModule {
   }
 
   _exportMonthlyReportCSV(state, month) {
+    const canSeeSalary = !this._can || this._can('rh_funcionarios', 'ordenados');
     const headers = [
       'ID',
       'Nome',
@@ -601,7 +649,7 @@ export class RhFuncionariosModule {
       'Total Faltas',
       'Férias',
       'Taxa Assiduidade (%)',
-      'Subsídio Alimentação Apurado (€)',
+      ...(canSeeSalary ? ['Subsídio Alimentação Apurado (€)'] : []),
     ];
     const rows = state.employees.map((emp) => {
       const s = computeMonthlyAttendance(emp, state.attendance, month);
@@ -618,7 +666,7 @@ export class RhFuncionariosModule {
         s.totalAbsences,
         s.vacation,
         s.attendanceRate,
-        s.mealEarned.toFixed(2),
+        ...(canSeeSalary ? [s.mealEarned.toFixed(2)] : []),
       ];
     });
     downloadCSV(`relatorio-assiduidade-${month}.csv`, headers, rows);
@@ -629,6 +677,8 @@ export class RhFuncionariosModule {
     const state = store.getState();
     const emp = state.employees.find((e) => e.id === empId);
     if (!emp) return;
+    const canSeeSalary = !this._can || this._can('rh_funcionarios', 'ordenados');
+    const canSeePayable = !this._can || this._can('rh_funcionarios', 'pagamentos');
 
     const renderCalendarBody = () => {
       const att = store.getState().attendance[emp.id] || {};
@@ -665,16 +715,24 @@ export class RhFuncionariosModule {
             <div class="erp-summary-item__label">Faltas (FJ / FI)</div>
             <div class="erp-summary-item__val">${stats.justified}FJ · <span style="color:var(--erp-danger)">${stats.unjustified}FI</span></div>
           </div>
-          <div>
-            <div class="erp-summary-item__label">Base Apurada</div>
-            <div class="erp-summary-item__val">${escapeHtml(formatCurrency(stats.earnedBase))}</div>
-          </div>
-          <div>
-            <div class="erp-summary-item__label">Líquido Atual (c/ SS &amp; Vales)</div>
-            <div class="erp-summary-item__val erp-summary-item__val--accent">${escapeHtml(formatCurrency(stats.netToPay))}</div>
-          </div>
+          ${
+            canSeeSalary
+              ? `<div>
+                   <div class="erp-summary-item__label">Base Apurada</div>
+                   <div class="erp-summary-item__val">${escapeHtml(formatCurrency(stats.earnedBase))}</div>
+                 </div>`
+              : ''
+          }
+          ${
+            canSeePayable
+              ? `<div>
+                   <div class="erp-summary-item__label">Líquido Atual (c/ SS &amp; Vales)</div>
+                   <div class="erp-summary-item__val erp-summary-item__val--accent">${escapeHtml(formatCurrency(stats.netToPay))}</div>
+                 </div>`
+              : ''
+          }
         </div>
-        <p class="erp-cell-sub" style="margin-bottom:10px;">Clique num dia para alternar: Presente (P) → Falta Justificada (FJ) → Falta Injustificada (FI) → Férias (FE) → Sem registo. Apenas presenças (P) somam diária/hora.</p>
+        <p class="erp-cell-sub" style="margin-bottom:10px;">Clique num dia para alternar: Presente (P) → Falta Justificada (FJ) → Falta Injustificada (FI) → Férias (FE) → Sem registo.</p>
         <div class="erp-cal-grid">
           <div class="erp-cal-head">Seg</div>
           <div class="erp-cal-head">Ter</div>
@@ -693,7 +751,7 @@ export class RhFuncionariosModule {
       subtitle: `${emp.role} · ${formatMonthLabel(month)}`,
       bodyHtml: `<div id="empCalWrap">${renderCalendarBody()}</div>`,
       footerHtml: `
-        <button type="button" class="erp-btn erp-btn--outline" id="btnCalCloseMonth">Fechar Mês</button>
+        ${canSeePayable ? '<button type="button" class="erp-btn erp-btn--outline" id="btnCalCloseMonth">Fechar Mês</button>' : ''}
         <button type="button" class="erp-btn erp-btn--primary" data-modal-close>Concluir</button>
       `,
       onMount: (modal) => {
@@ -720,6 +778,10 @@ export class RhFuncionariosModule {
   }
 
   _openAdvancePopup(empId, month) {
+    if (this._can && !this._can('rh_funcionarios', 'pagamentos')) {
+      showToast('Sem permissão para consultar valores a pagar ou registar adiantamentos.', 'warning');
+      return;
+    }
     const state = store.getState();
     const emp = state.employees.find((e) => e.id === empId);
     if (!emp) return;
@@ -1158,6 +1220,10 @@ export class RhFuncionariosModule {
   }
 
   _openCloseMonthModal(empId, month) {
+    if (this._can && !this._can('rh_funcionarios', 'pagamentos')) {
+      showToast('Sem permissão para consultar o fecho do mês ou valores a pagar.', 'warning');
+      return;
+    }
     const state = store.getState();
     const emp = state.employees.find((e) => e.id === empId);
     if (!emp) return;
@@ -1257,6 +1323,7 @@ export class RhFuncionariosModule {
 
   _openEmployeeModal(existing) {
     const isEdit = Boolean(existing);
+    const canSeeSalary = !this._can || this._can('rh_funcionarios', 'ordenados');
     const emp = existing || {
       name: '',
       role: '',
@@ -1354,69 +1421,78 @@ export class RhFuncionariosModule {
 
         <div class="erp-form-section">
           <div class="erp-form-section__title">3. Modalidade de Remuneração, Segurança Social (%) &amp; Dados Bancários</div>
-          <div class="erp-field erp-field--full" style="margin-bottom:12px;">
-            <label>Como este funcionário recebe? *</label>
-            <div class="erp-regime-group" style="grid-template-columns:repeat(3,minmax(0,1fr));" id="empRemGroup">
-              <label class="erp-regime-option ${remType === 'mensal' ? 'is-selected' : ''}">
-                <input type="radio" name="remunerationType" value="mensal" ${remType === 'mensal' ? 'checked' : ''}>
-                <div>
-                  <div class="erp-cell-title">Valor Fixo por Mês</div>
-                  <div class="erp-cell-sub">Salário mensal fixo garantido.</div>
-                </div>
-              </label>
-              <label class="erp-regime-option ${remType === 'diaria' ? 'is-selected' : ''}">
-                <input type="radio" name="remunerationType" value="diaria" ${remType === 'diaria' ? 'checked' : ''}>
-                <div>
-                  <div class="erp-cell-title">Por Dia (Diária)</div>
-                  <div class="erp-cell-sub">Cada presença (P) soma a diária. Faltas não somam.</div>
-                </div>
-              </label>
-              <label class="erp-regime-option ${remType === 'hora' ? 'is-selected' : ''}">
-                <input type="radio" name="remunerationType" value="hora" ${remType === 'hora' ? 'checked' : ''}>
-                <div>
-                  <div class="erp-cell-title">Por Hora Trabalhada</div>
-                  <div class="erp-cell-sub">Calculado pelas horas de presença registadas.</div>
-                </div>
-              </label>
-            </div>
-          </div>
+          ${
+            canSeeSalary
+              ? `<div class="erp-field erp-field--full" style="margin-bottom:12px;">
+                   <label>Como este funcionário recebe? *</label>
+                   <div class="erp-regime-group" style="grid-template-columns:repeat(3,minmax(0,1fr));" id="empRemGroup">
+                     <label class="erp-regime-option ${remType === 'mensal' ? 'is-selected' : ''}">
+                       <input type="radio" name="remunerationType" value="mensal" ${remType === 'mensal' ? 'checked' : ''}>
+                       <div>
+                         <div class="erp-cell-title">Valor Fixo por Mês</div>
+                         <div class="erp-cell-sub">Salário mensal fixo garantido.</div>
+                       </div>
+                     </label>
+                     <label class="erp-regime-option ${remType === 'diaria' ? 'is-selected' : ''}">
+                       <input type="radio" name="remunerationType" value="diaria" ${remType === 'diaria' ? 'checked' : ''}>
+                       <div>
+                         <div class="erp-cell-title">Por Dia (Diária)</div>
+                         <div class="erp-cell-sub">Cada presença (P) soma a diária. Faltas não somam.</div>
+                       </div>
+                     </label>
+                     <label class="erp-regime-option ${remType === 'hora' ? 'is-selected' : ''}">
+                       <input type="radio" name="remunerationType" value="hora" ${remType === 'hora' ? 'checked' : ''}>
+                       <div>
+                         <div class="erp-cell-title">Por Hora Trabalhada</div>
+                         <div class="erp-cell-sub">Calculado pelas horas de presença registadas.</div>
+                       </div>
+                     </label>
+                   </div>
+                 </div>
 
-          <div class="erp-form-grid erp-form-grid--3">
-            <div class="erp-field" id="wrapBaseSalary" style="display:${remType === 'mensal' ? 'flex' : 'none'};">
-              <label for="empSalary">Vencimento Fixo Mensal (€) *</label>
-              <input type="text" inputmode="numeric" data-currency-euro id="empSalary" name="baseSalary" value="${escapeHtml(emp.baseSalary)}" placeholder="€ 0,00">
-            </div>
-            <div class="erp-field" id="wrapDailyRate" style="display:${remType === 'diaria' ? 'flex' : 'none'};">
-              <label for="empDailyRate">Valor da Diária (€/dia) *</label>
-              <input type="text" inputmode="numeric" data-currency-euro id="empDailyRate" name="dailyRate" value="${escapeHtml(emp.dailyRate)}" placeholder="€ 0,00">
-            </div>
-            <div class="erp-field" id="wrapHourlyRate" style="display:${remType === 'hora' ? 'flex' : 'none'};">
-              <label for="empHourlyRate">Valor por Hora (€/hora) *</label>
-              <input type="text" inputmode="numeric" data-currency-euro id="empHourlyRate" name="hourlyRate" value="${escapeHtml(emp.hourlyRate)}" placeholder="€ 0,00">
-            </div>
+                 <div class="erp-form-grid erp-form-grid--3">
+                   <div class="erp-field" id="wrapBaseSalary" style="display:${remType === 'mensal' ? 'flex' : 'none'};">
+                     <label for="empSalary">Vencimento Fixo Mensal (€) *</label>
+                     <input type="text" inputmode="numeric" data-currency-euro id="empSalary" name="baseSalary" value="${escapeHtml(emp.baseSalary)}" placeholder="€ 0,00">
+                   </div>
+                   <div class="erp-field" id="wrapDailyRate" style="display:${remType === 'diaria' ? 'flex' : 'none'};">
+                     <label for="empDailyRate">Valor da Diária (€/dia) *</label>
+                     <input type="text" inputmode="numeric" data-currency-euro id="empDailyRate" name="dailyRate" value="${escapeHtml(emp.dailyRate)}" placeholder="€ 0,00">
+                   </div>
+                   <div class="erp-field" id="wrapHourlyRate" style="display:${remType === 'hora' ? 'flex' : 'none'};">
+                     <label for="empHourlyRate">Valor por Hora (€/hora) *</label>
+                     <input type="text" inputmode="numeric" data-currency-euro id="empHourlyRate" name="hourlyRate" value="${escapeHtml(emp.hourlyRate)}" placeholder="€ 0,00">
+                   </div>
 
-            <div class="erp-field">
-              <label for="empSsPct">Desconto Segurança Social (%) *</label>
-              <input type="number" step="0.1" min="0" max="100" id="empSsPct" name="ssPercentage" required value="${escapeHtml(emp.ssPercentage ?? 11)}">
-              <span class="erp-field__hint">Ex.: 11% (regime geral PT) ou 0% se isento</span>
-            </div>
+                   <div class="erp-field">
+                     <label for="empSsPct">Desconto Segurança Social (%) *</label>
+                     <input type="number" step="0.1" min="0" max="100" id="empSsPct" name="ssPercentage" required value="${escapeHtml(emp.ssPercentage ?? 11)}">
+                     <span class="erp-field__hint">Ex.: 11% (regime geral PT) ou 0% se isento</span>
+                   </div>
 
-            <div class="erp-field">
-              <label for="empMeal">Sub. Alimentação (€/dia)</label>
-              <input type="text" inputmode="numeric" data-currency-euro id="empMeal" name="mealAllowance" value="${escapeHtml(emp.mealAllowance)}" placeholder="€ 0,00">
-            </div>
+                   <div class="erp-field">
+                     <label for="empMeal">Sub. Alimentação (€/dia)</label>
+                     <input type="text" inputmode="numeric" data-currency-euro id="empMeal" name="mealAllowance" value="${escapeHtml(emp.mealAllowance)}" placeholder="€ 0,00">
+                   </div>
 
-            <div class="erp-field">
-              <label for="empTwelfths">Duodécimos (Férias/Natal)</label>
-              <select id="empTwelfths" name="twelfths">
-                <option value="Não" ${emp.twelfths === 'Não' ? 'selected' : ''}>Não (Pagamento integral)</option>
-                <option value="Sim" ${emp.twelfths === 'Sim' ? 'selected' : ''}>Sim (Mensal em duodécimos)</option>
-              </select>
-            </div>
-            <div class="erp-field erp-field--full">
-              <label for="empIban">IBAN para Transferência</label>
-              <input type="text" id="empIban" name="iban" value="${escapeHtml(emp.iban)}" placeholder="PT50 0000 0000 0000 0000 0000 0">
-            </div>
+                   <div class="erp-field">
+                     <label for="empTwelfths">Duodécimos (Férias/Natal)</label>
+                     <select id="empTwelfths" name="twelfths">
+                       <option value="Não" ${emp.twelfths === 'Não' ? 'selected' : ''}>Não (Pagamento integral)</option>
+                       <option value="Sim" ${emp.twelfths === 'Sim' ? 'selected' : ''}>Sim (Mensal em duodécimos)</option>
+                     </select>
+                   </div>
+                   <div class="erp-field erp-field--full">
+                     <label for="empIban">IBAN para Transferência</label>
+                     <input type="text" id="empIban" name="iban" value="${escapeHtml(emp.iban)}" placeholder="PT50 0000 0000 0000 0000 0000 0">
+                   </div>
+                 </div>`
+              : `<div class="erp-inline-invoice-box" style="margin-bottom:12px;">
+                   <strong>Dados salariais e bancários ocultos</strong>
+                   <div class="erp-cell-sub">O seu perfil não tem permissão para visualizar ou alterar ordenados, diárias, subsídios ou IBAN. Os valores atuais do colaborador serão preservados automaticamente.</div>
+                 </div>`
+          }
+          <div class="erp-form-grid">
             <div class="erp-field erp-field--full">
               <label for="empNotes">Notas / Certificações</label>
               <textarea id="empNotes" name="notes" rows="2" placeholder="Ex.: Carta de condução, CAP, formação em segurança em obra...">${escapeHtml(emp.notes)}</textarea>
@@ -1573,13 +1649,17 @@ export class RhFuncionariosModule {
         renderFormEmpContracts();
 
         const syncRemUI = () => {
+          if (!canSeeSalary) return;
           const active = modal.querySelector('input[name="remunerationType"]:checked')?.value || 'mensal';
           modal.querySelectorAll('#empRemGroup .erp-regime-option').forEach((lbl) => {
             lbl.classList.toggle('is-selected', Boolean(lbl.querySelector('input')?.checked));
           });
-          modal.querySelector('#wrapBaseSalary').style.display = active === 'mensal' ? 'flex' : 'none';
-          modal.querySelector('#wrapDailyRate').style.display = active === 'diaria' ? 'flex' : 'none';
-          modal.querySelector('#wrapHourlyRate').style.display = active === 'hora' ? 'flex' : 'none';
+          const wrapBase = modal.querySelector('#wrapBaseSalary');
+          const wrapDaily = modal.querySelector('#wrapDailyRate');
+          const wrapHourly = modal.querySelector('#wrapHourlyRate');
+          if (wrapBase) wrapBase.style.display = active === 'mensal' ? 'flex' : 'none';
+          if (wrapDaily) wrapDaily.style.display = active === 'diaria' ? 'flex' : 'none';
+          if (wrapHourly) wrapHourly.style.display = active === 'hora' ? 'flex' : 'none';
         };
         modal.querySelectorAll('input[name="remunerationType"]').forEach((r) => {
           r.addEventListener('change', syncRemUI);
@@ -1595,22 +1675,24 @@ export class RhFuncionariosModule {
             showToast('NIF inválido. Verifique os 9 dígitos do contribuinte.', 'danger');
             return;
           }
-          const chosenType = data.remunerationType || 'mensal';
-          const baseSalary = parseCurrencyInput(data.baseSalary);
-          const dailyRate = parseCurrencyInput(data.dailyRate);
-          const hourlyRate = parseCurrencyInput(data.hourlyRate);
+          const chosenType = canSeeSalary ? data.remunerationType || 'mensal' : emp.remunerationType || 'mensal';
+          const baseSalary = canSeeSalary ? parseCurrencyInput(data.baseSalary) : emp.baseSalary ?? 0;
+          const dailyRate = canSeeSalary ? parseCurrencyInput(data.dailyRate) : emp.dailyRate ?? 0;
+          const hourlyRate = canSeeSalary ? parseCurrencyInput(data.hourlyRate) : emp.hourlyRate ?? 0;
 
-          if (chosenType === 'mensal' && baseSalary <= 0) {
-            showToast('Indique o vencimento mensal fixo.', 'danger');
-            return;
-          }
-          if (chosenType === 'diaria' && dailyRate <= 0) {
-            showToast('Indique o valor da diária do funcionário.', 'danger');
-            return;
-          }
-          if (chosenType === 'hora' && hourlyRate <= 0) {
-            showToast('Indique o valor por hora do funcionário.', 'danger');
-            return;
+          if (canSeeSalary) {
+            if (chosenType === 'mensal' && baseSalary <= 0) {
+              showToast('Indique o vencimento mensal fixo.', 'danger');
+              return;
+            }
+            if (chosenType === 'diaria' && dailyRate <= 0) {
+              showToast('Indique o valor da diária do funcionário.', 'danger');
+              return;
+            }
+            if (chosenType === 'hora' && hourlyRate <= 0) {
+              showToast('Indique o valor por hora do funcionário.', 'danger');
+              return;
+            }
           }
 
           if (ctrFileInput?.files?.[0]) {
@@ -1635,8 +1717,10 @@ export class RhFuncionariosModule {
             baseSalary,
             dailyRate,
             hourlyRate,
-            ssPercentage: Math.min(100, Math.max(0, Number(data.ssPercentage ?? 11) || 0)),
-            mealAllowance: parseCurrencyInput(data.mealAllowance),
+            ssPercentage: canSeeSalary
+              ? Math.min(100, Math.max(0, Number(data.ssPercentage ?? 11) || 0))
+              : Number(emp.ssPercentage ?? 11),
+            mealAllowance: canSeeSalary ? parseCurrencyInput(data.mealAllowance) : Number(emp.mealAllowance ?? 0),
           };
           const empId = isEdit ? emp.id : generateId('FUNC');
           if (isEdit) {

@@ -85,6 +85,8 @@ export class OperacionalObrasModule {
 
   render(container, ctx) {
     this._can = ctx.can || (() => true);
+    const canSeeValues = this._can('op_obras', 'valores');
+    const canInvoices = canSeeValues && this._can('op_obras', 'faturas');
     const state = store.getState();
     const { statusFilter, search } = ctx; // 'em_andamento' | 'a_iniciar' | 'concluida'
     const query = (search || '').trim().toLowerCase();
@@ -104,15 +106,23 @@ export class OperacionalObrasModule {
     let totalInvoiced = 0;
     let totalInvoicesCount = 0;
     let overBudgetCount = 0;
+    let totalContractsCount = 0;
 
     filtered.forEach((proj) => {
       const invSum = computeProjectInvoiceSummary(proj, state.projectInvoices);
-      totalBudgetPool += invSum.budgetTotal;
-      totalInvoiced += invSum.spentOnInvoices;
+      const projRefs = new Set([proj.id, proj.code].filter(Boolean));
+      totalContractsCount += (state.projectContracts || []).filter((c) => projRefs.has(c.projectId)).length;
+      if (canSeeValues) {
+        totalBudgetPool += invSum.budgetTotal;
+        totalInvoiced += invSum.spentOnInvoices;
+        if (invSum.isOverBudget) overBudgetCount += 1;
+      }
       totalInvoicesCount += invSum.invoiceCount;
-      if (invSum.isOverBudget) overBudgetCount += 1;
     });
 
+    const avgProgress = filtered.length
+      ? Math.round(filtered.reduce((s, p) => s + (Number(p.progress) || 0), 0) / filtered.length)
+      : 0;
     const totalBudgetRemaining = totalBudgetPool - totalInvoiced;
     const empMap = new Map(state.employees.map((e) => [e.id, e]));
     const techMap = new Map((state.technicalManagers || []).map((t) => [t.id, t]));
@@ -129,39 +139,68 @@ export class OperacionalObrasModule {
           <div class="erp-kpi-card__meta">De ${state.projects.length} empreitadas no sistema</div>
         </div>
 
-        <div class="erp-kpi-card">
-          <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Orçamento Geral das Obras</span>
-            <span class="erp-kpi-card__icon">${ICONS.euro}</span>
-          </div>
-          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalBudgetPool))}</div>
-          <div class="erp-kpi-card__meta">Plafond global orçamentado</div>
-        </div>
+        ${
+          canSeeValues
+            ? `<div class="erp-kpi-card">
+                 <div class="erp-kpi-card__head">
+                   <span class="erp-kpi-card__label">Orçamento Geral das Obras</span>
+                   <span class="erp-kpi-card__icon">${ICONS.euro}</span>
+                 </div>
+                 <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalBudgetPool))}</div>
+                 <div class="erp-kpi-card__meta">Plafond global orçamentado</div>
+               </div>
 
-        <div class="erp-kpi-card erp-kpi-card--warning">
-          <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Faturas de Compra Lançadas</span>
-            <span class="erp-kpi-card__icon">${ICONS.receipt}</span>
-          </div>
-          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalInvoiced))}</div>
-          <div class="erp-kpi-card__meta">${totalInvoicesCount} fatura(s) de materiais imputadas</div>
-        </div>
+               <div class="erp-kpi-card erp-kpi-card--warning">
+                 <div class="erp-kpi-card__head">
+                   <span class="erp-kpi-card__label">Faturas de Compra Lançadas</span>
+                   <span class="erp-kpi-card__icon">${ICONS.receipt}</span>
+                 </div>
+                 <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalInvoiced))}</div>
+                 <div class="erp-kpi-card__meta">${totalInvoicesCount} fatura(s) de materiais imputadas</div>
+               </div>
 
-        <div class="erp-kpi-card ${overBudgetCount > 0 || totalBudgetRemaining < 0 ? 'erp-kpi-card--danger' : 'erp-kpi-card--success'}">
-          <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Saldo Disponível nas Obras</span>
-            <span class="erp-kpi-card__icon">${ICONS.checkCircle}</span>
-          </div>
-          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalBudgetRemaining))}</div>
-          <div class="erp-kpi-card__meta">${overBudgetCount > 0 ? `${overBudgetCount} obra(s) acima do orçamento` : 'Calculado em tempo real após faturas'}</div>
-        </div>
+               <div class="erp-kpi-card ${overBudgetCount > 0 || totalBudgetRemaining < 0 ? 'erp-kpi-card--danger' : 'erp-kpi-card--success'}">
+                 <div class="erp-kpi-card__head">
+                   <span class="erp-kpi-card__label">Saldo Disponível nas Obras</span>
+                   <span class="erp-kpi-card__icon">${ICONS.checkCircle}</span>
+                 </div>
+                 <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalBudgetRemaining))}</div>
+                 <div class="erp-kpi-card__meta">${overBudgetCount > 0 ? `${overBudgetCount} obra(s) acima do orçamento` : 'Calculado em tempo real após faturas'}</div>
+               </div>`
+            : `<div class="erp-kpi-card">
+                 <div class="erp-kpi-card__head">
+                   <span class="erp-kpi-card__label">Progresso Médio</span>
+                   <span class="erp-kpi-card__icon">${ICONS.chart}</span>
+                 </div>
+                 <div class="erp-kpi-card__value">${avgProgress}%</div>
+                 <div class="erp-kpi-card__meta">Execução física das empreitadas</div>
+               </div>
+
+               <div class="erp-kpi-card">
+                 <div class="erp-kpi-card__head">
+                   <span class="erp-kpi-card__label">Documentos &amp; Contratos</span>
+                   <span class="erp-kpi-card__icon">${ICONS.paperclip}</span>
+                 </div>
+                 <div class="erp-kpi-card__value">${totalContractsCount}</div>
+                 <div class="erp-kpi-card__meta">Contratos PDF arquivados</div>
+               </div>
+
+               <div class="erp-kpi-card">
+                 <div class="erp-kpi-card__head">
+                   <span class="erp-kpi-card__label">Saldos &amp; Valores (€)</span>
+                   <span class="erp-kpi-card__icon">${ICONS.alert}</span>
+                 </div>
+                 <div class="erp-kpi-card__value" style="font-size:18px;">Restrito</div>
+                 <div class="erp-kpi-card__meta">Valores ocultos para este perfil</div>
+               </div>`
+        }
       </div>
 
       <div class="erp-panel">
         <div class="erp-panel__header">
           <div class="erp-panel__title-group">
             <h2 class="erp-panel__title">Gestão Operacional — Obras ${escapeHtml(statusInfo.label)}</h2>
-            <p class="erp-panel__desc">Orçamentos, faturas de compra de materiais (PDF), saldo restante em tempo real e recebimentos.</p>
+            <p class="erp-panel__desc">${canSeeValues ? 'Orçamentos, faturas de compra de materiais (PDF), saldo restante em tempo real e recebimentos.' : 'Acompanhamento técnico, equipas, contratos PDF e prazos das obras.'}</p>
           </div>
           <div class="erp-panel__actions">
             <select class="erp-select-sm" id="filterProjectType">
@@ -169,7 +208,7 @@ export class OperacionalObrasModule {
               ${PROJECT_TYPES.map((t) => `<option value="${escapeHtml(t)}" ${this.typeFilter === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
             </select>
             ${
-              (ctx.can ? ctx.can('op_obras', 'faturas') : true) && state.projects.length > 0
+              canInvoices && state.projects.length > 0
                 ? `<button type="button" class="erp-btn erp-btn--outline" id="btnQuickLaunchInvoice">
                     ${ICONS.receipt}
                     <span>Lançar Fatura de Material</span>
@@ -180,7 +219,7 @@ export class OperacionalObrasModule {
               (ctx.can ? ctx.can('op_obras', 'criar') : true)
                 ? `<button type="button" class="erp-btn erp-btn--primary" id="btnNewProject">
                     ${ICONS.plus}
-                    <span>Nova Obra &amp; Orçamento</span>
+                    <span>${canSeeValues ? 'Nova Obra &amp; Orçamento' : 'Nova Obra'}</span>
                   </button>`
                 : ''
             }
@@ -198,9 +237,7 @@ export class OperacionalObrasModule {
                   <th>Obra &amp; Localização</th>
                   <th>Cliente &amp; Responsável</th>
                   <th>Prazos &amp; Progresso</th>
-                  <th>Orçamento Geral</th>
-                  <th>Faturas / Materiais</th>
-                  <th>Saldo Disponível (Real Time)</th>
+                  ${canSeeValues ? '<th>Orçamento Geral</th><th>Faturas / Materiais</th><th>Saldo Disponível (Real Time)</th>' : '<th>Documentos</th>'}
                   <th style="text-align:right">Ações</th>
                 </tr>
               </thead>
@@ -221,13 +258,13 @@ export class OperacionalObrasModule {
                         ? 'erp-budget-meter__fill--warning'
                         : '';
                     return `
-                    <tr class="erp-proj-row" data-proj-row="${escapeHtml(proj.id)}" title="Clique para abrir Faturas ou Contratos desta obra">
+                    <tr class="erp-proj-row" data-proj-row="${escapeHtml(proj.id)}" title="Clique para consultar os registos desta obra">
                       <td>
                         <div class="erp-cell-title">${escapeHtml(proj.name)}</div>
                         <div class="erp-cell-sub">${escapeHtml(proj.code)} · ${escapeHtml(proj.type)} · ${escapeHtml(proj.district)}</div>
                         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">
                           <span class="erp-badge ${isLaborOnly ? 'erp-badge--info' : 'erp-badge--neutral'}">
-                            ${isLaborOnly ? 'Somente Funcionários' : 'Materiais &amp; Funcionários'}${dailyRate > 0 ? ` · ${escapeHtml(formatCurrency(dailyRate))}/dia` : ''}
+                            ${isLaborOnly ? 'Somente Funcionários' : 'Materiais &amp; Funcionários'}${canSeeValues && dailyRate > 0 ? ` · ${escapeHtml(formatCurrency(dailyRate))}/dia` : ''}
                           </span>
                           ${contractsCount > 0 ? `<span class="erp-badge erp-badge--neutral">${contractsCount} contrato(s) PDF</span>` : ''}
                         </div>
@@ -245,31 +282,38 @@ export class OperacionalObrasModule {
                           <span class="erp-progress__label">${Number(proj.progress) || 0}%</span>
                         </div>
                       </td>
-                      <td>
-                        <div class="erp-cell-title">${escapeHtml(formatCurrency(invSum.budgetTotal))}</div>
-                        <div class="erp-cell-sub">${invSum.isManualCap ? 'Plafond direto da obra' : `IVA ${fin.vatRate}% · ${proj.budget?.items?.length || 0} artigo(s)`}</div>
-                      </td>
-                      <td>
-                        <div class="erp-cell-title" style="color:var(--erp-heading);">${escapeHtml(formatCurrency(invSum.spentOnInvoices))}</div>
-                        <div class="erp-cell-sub" style="margin-bottom:4px;">${invSum.invoiceCount} fatura(s) · ${invSum.spentPct}% consumido</div>
-                        <div class="erp-budget-meter__track" style="height:6px;width:130px;">
-                          <div class="erp-budget-meter__fill ${barClass}" style="width:${barWidth}%"></div>
-                        </div>
-                      </td>
-                      <td>
-                        <div class="erp-cell-title" style="color:${invSum.isOverBudget ? 'var(--erp-danger)' : invSum.isWarningBudget ? 'var(--erp-warning)' : 'var(--erp-success)'};font-size:14px;">
-                          ${escapeHtml(formatCurrency(invSum.remainingBudget))}
-                        </div>
-                        <span class="erp-badge ${invSum.isOverBudget ? 'erp-badge--danger' : invSum.isWarningBudget ? 'erp-badge--warning' : 'erp-badge--success'}">
-                          ${invSum.isOverBudget ? 'Orçamento Excedido' : invSum.isWarningBudget ? 'Atenção (>80%)' : 'Saldo Disponível'}
-                        </span>
-                      </td>
+                      ${
+                        canSeeValues
+                          ? `<td>
+                               <div class="erp-cell-title">${escapeHtml(formatCurrency(invSum.budgetTotal))}</div>
+                               <div class="erp-cell-sub">${invSum.isManualCap ? 'Plafond direto da obra' : `IVA ${fin.vatRate}% · ${proj.budget?.items?.length || 0} artigo(s)`}</div>
+                             </td>
+                             <td>
+                               <div class="erp-cell-title" style="color:var(--erp-heading);">${escapeHtml(formatCurrency(invSum.spentOnInvoices))}</div>
+                               <div class="erp-cell-sub" style="margin-bottom:4px;">${invSum.invoiceCount} fatura(s) · ${invSum.spentPct}% consumido</div>
+                               <div class="erp-budget-meter__track" style="height:6px;width:130px;">
+                                 <div class="erp-budget-meter__fill ${barClass}" style="width:${barWidth}%"></div>
+                               </div>
+                             </td>
+                             <td>
+                               <div class="erp-cell-title" style="color:${invSum.isOverBudget ? 'var(--erp-danger)' : invSum.isWarningBudget ? 'var(--erp-warning)' : 'var(--erp-success)'};font-size:14px;">
+                                 ${escapeHtml(formatCurrency(invSum.remainingBudget))}
+                               </div>
+                               <span class="erp-badge ${invSum.isOverBudget ? 'erp-badge--danger' : invSum.isWarningBudget ? 'erp-badge--warning' : 'erp-badge--success'}">
+                                 ${invSum.isOverBudget ? 'Orçamento Excedido' : invSum.isWarningBudget ? 'Atenção (>80%)' : 'Saldo Disponível'}
+                               </span>
+                             </td>`
+                          : `<td>
+                               <div class="erp-cell-title">${contractsCount} contrato(s) PDF</div>
+                               <div class="erp-cell-sub">Valores financeiros ocultos (€)</div>
+                             </td>`
+                      }
                       <td>
                         <div class="erp-row-actions">
-                          ${!ctx.can || ctx.can('op_obras', 'faturas') ? `<button type="button" class="erp-icon-btn" title="Lançar Fatura de Compra (PDF)" data-proj-invoice="${escapeHtml(proj.id)}">${ICONS.receipt}</button>` : ''}
-                          <button type="button" class="erp-icon-btn" title="Ver Faturas, Orçamento &amp; Saldo" data-proj-view="${escapeHtml(proj.id)}">${ICONS.eye}</button>
-                          ${!ctx.can || ctx.can('op_obras', 'editar') ? `<button type="button" class="erp-icon-btn" title="Editar Obra Completa" data-proj-edit="${escapeHtml(proj.id)}">${ICONS.edit}</button>` : ''}
-                          ${!ctx.can || ctx.can('op_obras', 'excluir') ? `<button type="button" class="erp-icon-btn erp-icon-btn--danger" title="Excluir Obra" data-proj-del="${escapeHtml(proj.id)}">${ICONS.trash}</button>` : ''}
+                          ${canInvoices ? `<button type="button" class="erp-icon-btn" title="Lançar Fatura de Compra (PDF)" data-proj-invoice="${escapeHtml(proj.id)}">${ICONS.receipt}</button>` : ''}
+                          <button type="button" class="erp-icon-btn" title="${canSeeValues ? 'Ver Faturas, Orçamento &amp; Saldo' : 'Ver Ficha Técnica e Contratos'}" data-proj-view="${escapeHtml(proj.id)}">${ICONS.eye}</button>
+                          ${!this._can || this._can('op_obras', 'editar') ? `<button type="button" class="erp-icon-btn" title="Editar Obra" data-proj-edit="${escapeHtml(proj.id)}">${ICONS.edit}</button>` : ''}
+                          ${!this._can || this._can('op_obras', 'excluir') ? `<button type="button" class="erp-icon-btn erp-icon-btn--danger" title="Excluir Obra" data-proj-del="${escapeHtml(proj.id)}">${ICONS.trash}</button>` : ''}
                         </div>
                       </td>
                     </tr>`;
@@ -334,6 +378,7 @@ export class OperacionalObrasModule {
   }
 
   _openProjectHubPopup(projectId) {
+    const canSeeValues = !this._can || this._can('op_obras', 'valores');
     const state = store.getState();
     const proj = state.projects.find((p) => p.id === projectId);
     if (!proj) return;
@@ -346,35 +391,50 @@ export class OperacionalObrasModule {
 
     openModal({
       title: `${proj.code} — ${proj.name}`,
-      subtitle: `${isLaborOnly ? 'Somente Funcionários' : 'Materiais & Funcionários'}${dailyRate > 0 ? ` · Diária/Func.: ${formatCurrency(dailyRate)}` : ''} · Cliente: ${proj.clientName}`,
+      subtitle: `${isLaborOnly ? 'Somente Funcionários' : 'Materiais & Funcionários'}${canSeeValues && dailyRate > 0 ? ` · Diária/Func.: ${formatCurrency(dailyRate)}` : ''} · Cliente: ${proj.clientName}`,
       bodyHtml: `
-        <div class="erp-summary-box" style="margin-bottom:10px;">
-          <div>
-            <div class="erp-summary-item__label">Orçamento Geral</div>
-            <div class="erp-summary-item__val">${escapeHtml(formatCurrency(invSum.budgetTotal))}</div>
-          </div>
-          <div>
-            <div class="erp-summary-item__label">Total em Faturas</div>
-            <div class="erp-summary-item__val erp-summary-item__val--warning">${escapeHtml(formatCurrency(invSum.spentOnInvoices))}</div>
-          </div>
-          <div>
-            <div class="erp-summary-item__label">Saldo Disponível</div>
-            <div class="erp-summary-item__val ${invSum.isOverBudget ? 'erp-summary-item__val--danger' : 'erp-summary-item__val--success'}">${escapeHtml(formatCurrency(invSum.remainingBudget))}</div>
-          </div>
-          <div>
-            <div class="erp-summary-item__label">Diária por Func.</div>
-            <div class="erp-summary-item__val">${dailyRate > 0 ? escapeHtml(formatCurrency(dailyRate)) : '—'}</div>
-          </div>
-        </div>
+        ${
+          canSeeValues
+            ? `<div class="erp-summary-box" style="margin-bottom:10px;">
+                 <div>
+                   <div class="erp-summary-item__label">Orçamento Geral</div>
+                   <div class="erp-summary-item__val">${escapeHtml(formatCurrency(invSum.budgetTotal))}</div>
+                 </div>
+                 <div>
+                   <div class="erp-summary-item__label">Total em Faturas</div>
+                   <div class="erp-summary-item__val erp-summary-item__val--warning">${escapeHtml(formatCurrency(invSum.spentOnInvoices))}</div>
+                 </div>
+                 <div>
+                   <div class="erp-summary-item__label">Saldo Disponível</div>
+                   <div class="erp-summary-item__val ${invSum.isOverBudget ? 'erp-summary-item__val--danger' : 'erp-summary-item__val--success'}">${escapeHtml(formatCurrency(invSum.remainingBudget))}</div>
+                 </div>
+                 <div>
+                   <div class="erp-summary-item__label">Diária por Func.</div>
+                   <div class="erp-summary-item__val">${dailyRate > 0 ? escapeHtml(formatCurrency(dailyRate)) : '—'}</div>
+                 </div>
+               </div>`
+            : `<div class="erp-inline-invoice-box" style="margin-bottom:10px;">
+                 <strong>Valores financeiros e saldos ocultos para este perfil</strong>
+                 <div class="erp-cell-sub">Progresso físico: ${Number(proj.progress) || 0}% · Contratos PDF: ${projContracts.length}</div>
+               </div>`
+        }
 
         <p style="font-size:13px;color:var(--erp-text-secondary);margin-bottom:4px;">Selecione o que pretende consultar ou gerir nesta obra:</p>
 
         <div class="erp-hub-choices">
-          <button type="button" class="erp-hub-card" data-hub-choice="invoices">
-            <span class="erp-hub-card__icon">${ICONS.receipt}</span>
-            <span class="erp-hub-card__title">Faturas (${invSum.invoiceCount})</span>
-            <span class="erp-hub-card__meta">Ver todas as faturas lançadas na obra, visualizar PDFs, lançar novas faturas e acompanhar o saldo em tempo real.</span>
-          </button>
+          ${
+            canSeeValues
+              ? `<button type="button" class="erp-hub-card" data-hub-choice="invoices">
+                   <span class="erp-hub-card__icon">${ICONS.receipt}</span>
+                   <span class="erp-hub-card__title">Faturas (${invSum.invoiceCount})</span>
+                   <span class="erp-hub-card__meta">Ver todas as faturas lançadas na obra, visualizar PDFs, lançar novas faturas e acompanhar o saldo em tempo real.</span>
+                 </button>`
+              : `<button type="button" class="erp-hub-card" data-hub-choice="overview">
+                   <span class="erp-hub-card__icon">${ICONS.building}</span>
+                   <span class="erp-hub-card__title">Dados Técnicos &amp; Equipa</span>
+                   <span class="erp-hub-card__meta">Consultar prazos, localização, responsável técnico e colaboradores alocados à obra.</span>
+                 </button>`
+          }
 
           <button type="button" class="erp-hub-card" data-hub-choice="contracts">
             <span class="erp-hub-card__icon">${ICONS.paperclip}</span>
@@ -384,7 +444,7 @@ export class OperacionalObrasModule {
         </div>
       `,
       footerHtml: `
-        <button type="button" class="erp-btn erp-btn--outline" id="btnHubOverview">${ICONS.eye}<span>Dados Técnicos &amp; Orçamento</span></button>
+        <button type="button" class="erp-btn erp-btn--outline" id="btnHubOverview">${ICONS.eye}<span>${canSeeValues ? 'Dados Técnicos &amp; Orçamento' : 'Dados Técnicos'}</span></button>
         <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Fechar</button>
       `,
       onMount: (modal) => {
@@ -393,6 +453,9 @@ export class OperacionalObrasModule {
         });
         modal.querySelector('[data-hub-choice="contracts"]')?.addEventListener('click', () => {
           this._openProjectDetailModal(proj.id, 'contracts');
+        });
+        modal.querySelector('[data-hub-choice="overview"]')?.addEventListener('click', () => {
+          this._openProjectDetailModal(proj.id, 'overview');
         });
         modal.querySelector('#btnHubOverview')?.addEventListener('click', () => {
           this._openProjectDetailModal(proj.id, 'overview');
@@ -419,19 +482,22 @@ export class OperacionalObrasModule {
     const statusInfo = STATUS_META[proj.status] || STATUS_META.em_andamento;
     const today = todayISO();
 
-    const canBudget = !this._can || this._can('op_obras', 'orcamentos');
-    const canPayments = !this._can || this._can('op_obras', 'pagamentos');
-    const canInvoices = !this._can || this._can('op_obras', 'faturas');
+    const canSeeValues = !this._can || this._can('op_obras', 'valores');
+    const canBudget = canSeeValues && (!this._can || this._can('op_obras', 'orcamentos'));
+    const canPayments = canSeeValues && (!this._can || this._can('op_obras', 'pagamentos'));
+    const canInvoices = canSeeValues && (!this._can || this._can('op_obras', 'faturas'));
     const canEditProj = !this._can || this._can('op_obras', 'editar') || (!this._can || this._can('op_obras', 'criar'));
-    const canDeleteInvoice = !this._can || this._can('op_obras', 'excluir') || canInvoices;
+    const canDeleteInvoice = canSeeValues && (!this._can || this._can('op_obras', 'excluir') || canInvoices);
     const canDeleteContract = !this._can || this._can('op_obras', 'excluir') || canEditProj;
 
     const activeTab =
-      initialTab === 'budget' && !canBudget
+      initialTab === 'invoices' && !canSeeValues
         ? 'overview'
-        : initialTab === 'payments' && !canPayments
+        : initialTab === 'budget' && !canBudget
           ? 'overview'
-          : initialTab;
+          : initialTab === 'payments' && !canPayments
+            ? 'overview'
+            : initialTab;
 
     const meterPct = Math.min(100, Math.max(0, invSum.spentPct));
     const meterClass = invSum.isOverBudget
@@ -447,30 +513,37 @@ export class OperacionalObrasModule {
     const dailyRate = Number(proj.dailyRatePerWorker) || 0;
 
     const bodyHtml = `
-      <div class="erp-summary-box" style="margin-bottom:18px;">
-        <div>
-          <div class="erp-summary-item__label">Orçamento Geral da Obra</div>
-          <div class="erp-summary-item__val">${escapeHtml(formatCurrency(invSum.budgetTotal))}</div>
-        </div>
-        <div>
-          <div class="erp-summary-item__label">Gasto em Faturas (${invSum.invoiceCount})</div>
-          <div class="erp-summary-item__val erp-summary-item__val--warning">${escapeHtml(formatCurrency(invSum.spentOnInvoices))} (${invSum.spentPct}%)</div>
-        </div>
-        <div>
-          <div class="erp-summary-item__label">Saldo Disponível (Real Time)</div>
-          <div class="erp-summary-item__val ${invSum.isOverBudget ? 'erp-summary-item__val--danger' : 'erp-summary-item__val--success'}">
-            ${escapeHtml(formatCurrency(invSum.remainingBudget))}
-          </div>
-        </div>
-        <div>
-          <div class="erp-summary-item__label">${dailyRate > 0 ? 'Diária por Funcionário' : 'Recebido Cliente'}</div>
-          <div class="erp-summary-item__val erp-summary-item__val--accent">${dailyRate > 0 ? `${escapeHtml(formatCurrency(dailyRate))}/dia` : `${escapeHtml(formatCurrency(fin.paidAmount))} (${fin.paidPct}%)`}</div>
-        </div>
-      </div>
+      ${
+        canSeeValues
+          ? `<div class="erp-summary-box" style="margin-bottom:18px;">
+               <div>
+                 <div class="erp-summary-item__label">Orçamento Geral da Obra</div>
+                 <div class="erp-summary-item__val">${escapeHtml(formatCurrency(invSum.budgetTotal))}</div>
+               </div>
+               <div>
+                 <div class="erp-summary-item__label">Gasto em Faturas (${invSum.invoiceCount})</div>
+                 <div class="erp-summary-item__val erp-summary-item__val--warning">${escapeHtml(formatCurrency(invSum.spentOnInvoices))} (${invSum.spentPct}%)</div>
+               </div>
+               <div>
+                 <div class="erp-summary-item__label">Saldo Disponível (Real Time)</div>
+                 <div class="erp-summary-item__val ${invSum.isOverBudget ? 'erp-summary-item__val--danger' : 'erp-summary-item__val--success'}">
+                   ${escapeHtml(formatCurrency(invSum.remainingBudget))}
+                 </div>
+               </div>
+               <div>
+                 <div class="erp-summary-item__label">${dailyRate > 0 ? 'Diária por Funcionário' : 'Recebido Cliente'}</div>
+                 <div class="erp-summary-item__val erp-summary-item__val--accent">${dailyRate > 0 ? `${escapeHtml(formatCurrency(dailyRate))}/dia` : `${escapeHtml(formatCurrency(fin.paidAmount))} (${fin.paidPct}%)`}</div>
+               </div>
+             </div>`
+          : `<div class="erp-inline-invoice-box" style="margin-bottom:18px;">
+               <strong>Valores financeiros, orçamentos e saldos ocultos para este perfil</strong>
+               <div class="erp-cell-sub">Modalidade: ${isLaborOnly ? 'Somente Funcionários' : 'Materiais e Funcionários'} · Progresso: ${Number(proj.progress) || 0}%</div>
+             </div>`
+      }
 
       <div class="erp-detail-tabs">
         <button type="button" class="erp-detail-tab ${activeTab === 'overview' ? 'is-active' : ''}" data-det-tab="overview">Dados Técnicos &amp; Equipa</button>
-        <button type="button" class="erp-detail-tab ${activeTab === 'invoices' ? 'is-active' : ''}" data-det-tab="invoices">Faturas &amp; Materiais (${invSum.invoiceCount})</button>
+        ${canSeeValues ? `<button type="button" class="erp-detail-tab ${activeTab === 'invoices' ? 'is-active' : ''}" data-det-tab="invoices">Faturas &amp; Materiais (${invSum.invoiceCount})</button>` : ''}
         <button type="button" class="erp-detail-tab ${activeTab === 'contracts' ? 'is-active' : ''}" data-det-tab="contracts">Contratos PDF (${projContracts.length})</button>
         ${canBudget ? `<button type="button" class="erp-detail-tab ${activeTab === 'budget' ? 'is-active' : ''}" data-det-tab="budget">Orçamento Detalhado (${proj.budget?.items?.length || 0})</button>` : ''}
         ${canPayments ? `<button type="button" class="erp-detail-tab ${activeTab === 'payments' ? 'is-active' : ''}" data-det-tab="payments">Recebimentos Cliente (${proj.payments?.length || 0})</button>` : ''}
@@ -481,7 +554,7 @@ export class OperacionalObrasModule {
           <span class="erp-badge ${isLaborOnly ? 'erp-badge--info' : 'erp-badge--neutral'}">
             Modalidade: ${isLaborOnly ? 'Somente Funcionários (Mão de Obra à Diária)' : 'Materiais e Funcionários'}
           </span>
-          ${dailyRate > 0 ? `<span class="erp-badge erp-badge--success" style="margin-left:6px;">Valor Diário/Func.: ${escapeHtml(formatCurrency(dailyRate))} (${(proj.teamIds || []).length} alocado(s) = ${escapeHtml(formatCurrency(dailyRate * (proj.teamIds || []).length))}/dia)</span>` : ''}
+          ${canSeeValues && dailyRate > 0 ? `<span class="erp-badge erp-badge--success" style="margin-left:6px;">Valor Diário/Func.: ${escapeHtml(formatCurrency(dailyRate))} (${(proj.teamIds || []).length} alocado(s) = ${escapeHtml(formatCurrency(dailyRate * (proj.teamIds || []).length))}/dia)</span>` : ''}
         </div>
         <div class="erp-form-grid" style="margin-bottom:14px;">
           <div>
@@ -761,7 +834,7 @@ export class OperacionalObrasModule {
       bodyHtml,
       footerHtml: `
         <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Fechar</button>
-        ${!this._can || this._can('op_obras', 'editar') ? `<button type="button" class="erp-btn erp-btn--primary" id="btnDetEdit">${ICONS.edit}<span>Editar Obra &amp; Orçamento</span></button>` : ''}
+        ${!this._can || this._can('op_obras', 'editar') ? `<button type="button" class="erp-btn erp-btn--primary" id="btnDetEdit">${ICONS.edit}<span>${canSeeValues ? 'Editar Obra &amp; Orçamento' : 'Editar Obra'}</span></button>` : ''}
       `,
       onMount: (modal) => {
         const panes = {
@@ -1035,6 +1108,10 @@ export class OperacionalObrasModule {
   }
 
   openLaunchInvoiceModal(defaultProjectId = null, returnToDetailId = null) {
+    if (this._can && (!this._can('op_obras', 'valores') || !this._can('op_obras', 'faturas'))) {
+      showToast('Sem permissão para lançar ou visualizar valores de faturas.', 'warning');
+      return;
+    }
     const state = store.getState();
     if (!state.projects || state.projects.length === 0) {
       showToast('Cadastre primeiro uma obra antes de lançar faturas.', 'warning');
@@ -1316,6 +1393,10 @@ export class OperacionalObrasModule {
   _openProjectFormModal(existing, defaultStatus) {
     const state = store.getState();
     const isEdit = Boolean(existing);
+    const canSeeValues = !this._can || this._can('op_obras', 'valores');
+    const canManageBudget = canSeeValues && (!this._can || this._can('op_obras', 'orcamentos'));
+    const canManagePayments = canSeeValues && (!this._can || this._can('op_obras', 'pagamentos'));
+    const canManageInvoices = canSeeValues && (!this._can || this._can('op_obras', 'faturas'));
     const proj = existing
       ? JSON.parse(JSON.stringify(existing))
       : {
@@ -1568,122 +1649,145 @@ export class OperacionalObrasModule {
                 </label>
               </div>
 
-              <div class="erp-worker-daily-card" id="projDailyRateBox">
-                <div class="erp-form-grid">
-                  <div class="erp-field">
-                    <label for="projDailyRate">Valor por Funcionário na Obra — Diária (€/dia) *</label>
-                    <input type="text" inputmode="numeric" data-currency-euro id="projDailyRate" name="dailyRatePerWorker" value="${escapeHtml(proj.dailyRatePerWorker || '')}" placeholder="€ 0,00">
-                    <span class="erp-field__hint">Indique quanto custa ou é cobrado por cada funcionário por dia nesta obra.</span>
-                  </div>
-                  <div class="erp-field">
-                    <label>Previsão Diária da Equipa</label>
-                    <div class="erp-cred-box__code" id="projDailyEstimate" style="margin-top:2px;">0 func. × € 0,00 = € 0,00/dia</div>
-                    <span class="erp-field__hint" id="projRegimeHint">Atualizado automaticamente conforme os funcionários selecionados.</span>
-                  </div>
-                </div>
-              </div>
+              ${
+                canSeeValues
+                  ? `<div class="erp-worker-daily-card" id="projDailyRateBox">
+                       <div class="erp-form-grid">
+                         <div class="erp-field">
+                           <label for="projDailyRate">Valor por Funcionário na Obra — Diária (€/dia) *</label>
+                           <input type="text" inputmode="numeric" data-currency-euro id="projDailyRate" name="dailyRatePerWorker" value="${escapeHtml(proj.dailyRatePerWorker || '')}" placeholder="€ 0,00">
+                           <span class="erp-field__hint">Indique quanto custa ou é cobrado por cada funcionário por dia nesta obra.</span>
+                         </div>
+                         <div class="erp-field">
+                           <label>Previsão Diária da Equipa</label>
+                           <div class="erp-cred-box__code" id="projDailyEstimate" style="margin-top:2px;">0 func. × € 0,00 = € 0,00/dia</div>
+                           <span class="erp-field__hint" id="projRegimeHint">Atualizado automaticamente conforme os funcionários selecionados.</span>
+                         </div>
+                       </div>
+                     </div>`
+                  : ''
+              }
             </div>
           </div>
         </div>
 
-        <div class="erp-form-section">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
-            <div class="erp-form-section__title" style="margin-bottom:0;">3. Orçamento Detalhado da Obra</div>
-            <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" id="btnAddBudgetLine">${ICONS.plus}<span>Adicionar Artigo</span></button>
-          </div>
-          <div class="erp-form-grid erp-form-grid--3" style="margin-bottom:12px;">
-            <div class="erp-field">
-              <label for="projManualCap">Orçamento Geral / Plafond (€)</label>
-              <input type="text" inputmode="numeric" data-currency-euro id="projManualCap" name="manualBudgetCap" value="${escapeHtml(proj.manualBudgetCap || '')}" placeholder="€ 0,00 (ex.: € 100.000,00)">
-              <span class="erp-field__hint">Se preenchido, define o teto global para abate das faturas. Caso contrário usa os artigos abaixo.</span>
-            </div>
-            <div class="erp-field">
-              <label for="projVat">Regime de IVA (Portugal)</label>
-              <select id="projVat" name="vatRate">
-                <option value="23" ${Number(proj.budget?.vatRate) === 23 ? 'selected' : ''}>23% — Taxa Normal (Construção Geral)</option>
-                <option value="6" ${Number(proj.budget?.vatRate) === 6 ? 'selected' : ''}>6% — Taxa Reduzida (Reabilitação Urbana / ARU)</option>
-                <option value="0" ${Number(proj.budget?.vatRate) === 0 ? 'selected' : ''}>0% — Autoliquidação / Isento (Art. 2.º CIVA)</option>
-              </select>
-            </div>
-            <div class="erp-field">
-              <label for="projCont">Margem de Contingência (%)</label>
-              <input type="number" step="0.5" min="0" max="50" id="projCont" name="contingencyPct" value="${escapeHtml(proj.budget?.contingencyPct ?? 0)}">
-            </div>
-          </div>
-          <div class="erp-line-list" id="budgetLinesContainer">${renderBudgetRows(proj.budget.items)}</div>
-          <div class="erp-summary-box" style="margin-top:12px;">
-            <div><div class="erp-summary-item__label">Subtotal Artigos</div><div class="erp-summary-item__val" id="formBudSub">€0,00</div></div>
-            <div><div class="erp-summary-item__label">Contingência</div><div class="erp-summary-item__val" id="formBudCont">€0,00</div></div>
-            <div><div class="erp-summary-item__label">IVA</div><div class="erp-summary-item__val" id="formBudVat">€0,00</div></div>
-            <div><div class="erp-summary-item__label">Total Orçamentado c/ IVA</div><div class="erp-summary-item__val erp-summary-item__val--accent" id="formBudGross">€0,00</div></div>
-          </div>
-        </div>
+        ${
+          canSeeValues
+            ? `
+        ${
+          canManageBudget
+            ? `<div class="erp-form-section">
+                 <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+                   <div class="erp-form-section__title" style="margin-bottom:0;">3. Orçamento Detalhado da Obra</div>
+                   <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" id="btnAddBudgetLine">${ICONS.plus}<span>Adicionar Artigo</span></button>
+                 </div>
+                 <div class="erp-form-grid erp-form-grid--3" style="margin-bottom:12px;">
+                   <div class="erp-field">
+                     <label for="projManualCap">Orçamento Geral / Plafond (€)</label>
+                     <input type="text" inputmode="numeric" data-currency-euro id="projManualCap" name="manualBudgetCap" value="${escapeHtml(proj.manualBudgetCap || '')}" placeholder="€ 0,00 (ex.: € 100.000,00)">
+                     <span class="erp-field__hint">Se preenchido, define o teto global para abate das faturas. Caso contrário usa os artigos abaixo.</span>
+                   </div>
+                   <div class="erp-field">
+                     <label for="projVat">Regime de IVA (Portugal)</label>
+                     <select id="projVat" name="vatRate">
+                       <option value="23" ${Number(proj.budget?.vatRate) === 23 ? 'selected' : ''}>23% — Taxa Normal (Construção Geral)</option>
+                       <option value="6" ${Number(proj.budget?.vatRate) === 6 ? 'selected' : ''}>6% — Taxa Reduzida (Reabilitação Urbana / ARU)</option>
+                       <option value="0" ${Number(proj.budget?.vatRate) === 0 ? 'selected' : ''}>0% — Autoliquidação / Isento (Art. 2.º CIVA)</option>
+                     </select>
+                   </div>
+                   <div class="erp-field">
+                     <label for="projCont">Margem de Contingência (%)</label>
+                     <input type="number" step="0.5" min="0" max="50" id="projCont" name="contingencyPct" value="${escapeHtml(proj.budget?.contingencyPct ?? 0)}">
+                   </div>
+                 </div>
+                 <div class="erp-line-list" id="budgetLinesContainer">${renderBudgetRows(proj.budget.items)}</div>
+                 <div class="erp-summary-box" style="margin-top:12px;">
+                   <div><div class="erp-summary-item__label">Subtotal Artigos</div><div class="erp-summary-item__val" id="formBudSub">€0,00</div></div>
+                   <div><div class="erp-summary-item__label">Contingência</div><div class="erp-summary-item__val" id="formBudCont">€0,00</div></div>
+                   <div><div class="erp-summary-item__label">IVA</div><div class="erp-summary-item__val" id="formBudVat">€0,00</div></div>
+                   <div><div class="erp-summary-item__label">Total Orçamentado c/ IVA</div><div class="erp-summary-item__val erp-summary-item__val--accent" id="formBudGross">€0,00</div></div>
+                 </div>
+               </div>`
+            : ''
+        }
 
-        <div class="erp-form-section">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
-            <div class="erp-form-section__title" style="margin-bottom:0;">4. Plano &amp; Datas de Pagamento da Obra</div>
-            <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" id="btnAddPayLine">${ICONS.plus}<span>Adicionar Parcela</span></button>
-          </div>
-          <div class="erp-line-list" id="paymentLinesContainer">${renderPaymentRows(proj.payments)}</div>
-          <div class="erp-summary-box" style="margin-top:12px;">
-            <div><div class="erp-summary-item__label">Total Orçamentado</div><div class="erp-summary-item__val" id="formPayContract">€0,00</div></div>
-            <div><div class="erp-summary-item__label">Total Pago</div><div class="erp-summary-item__val erp-summary-item__val--success" id="formPayPaid">€0,00</div></div>
-            <div><div class="erp-summary-item__label">Saldo em Aberto</div><div class="erp-summary-item__val erp-summary-item__val--danger" id="formPayOpen">€0,00</div></div>
-            <div><div class="erp-summary-item__label">Parcelas Lançadas</div><div class="erp-summary-item__val" id="formPayCount">0</div></div>
-          </div>
-        </div>
+        ${
+          canManagePayments
+            ? `<div class="erp-form-section">
+                 <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+                   <div class="erp-form-section__title" style="margin-bottom:0;">4. Plano &amp; Datas de Pagamento da Obra</div>
+                   <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" id="btnAddPayLine">${ICONS.plus}<span>Adicionar Parcela</span></button>
+                 </div>
+                 <div class="erp-line-list" id="paymentLinesContainer">${renderPaymentRows(proj.payments)}</div>
+                 <div class="erp-summary-box" style="margin-top:12px;">
+                   <div><div class="erp-summary-item__label">Total Orçamentado</div><div class="erp-summary-item__val" id="formPayContract">€0,00</div></div>
+                   <div><div class="erp-summary-item__label">Total Pago</div><div class="erp-summary-item__val erp-summary-item__val--success" id="formPayPaid">€0,00</div></div>
+                   <div><div class="erp-summary-item__label">Saldo em Aberto</div><div class="erp-summary-item__val erp-summary-item__val--danger" id="formPayOpen">€0,00</div></div>
+                   <div><div class="erp-summary-item__label">Parcelas Lançadas</div><div class="erp-summary-item__val" id="formPayCount">0</div></div>
+                 </div>
+               </div>`
+            : ''
+        }
 
-        <div class="erp-form-section">
-          <div class="erp-form-section__title">5. Faturas de Materiais &amp; Compras da Obra (PDF) — Abate em Tempo Real</div>
-          ${
-            !this._can || this._can('op_obras', 'faturas')
-              ? `<div class="erp-inline-invoice-box">
-                  <div class="erp-form-grid erp-form-grid--3">
-                    <div class="erp-field">
-                      <label for="formInvAmount">Qual o valor da fatura? (€) *</label>
-                      <input type="text" inputmode="numeric" data-currency-euro id="formInvAmount" placeholder="€ 0,00">
-                    </div>
-                    <div class="erp-field">
-                      <label for="formInvNumber">N.º Fatura / Documento *</label>
-                      <input type="text" id="formInvNumber" placeholder="Ex.: FT 2026/0012">
-                    </div>
-                    <div class="erp-field">
-                      <label for="formInvSupplier">Fornecedor / Armazém *</label>
-                      <input type="text" id="formInvSupplier" placeholder="Ex.: Leroy Merlin, Maxmat">
-                    </div>
-                    <div class="erp-field">
-                      <label for="formInvCategory">Categoria de Custo</label>
-                      <select id="formInvCategory">
-                        ${INVOICE_CATEGORIES.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
-                      </select>
-                    </div>
-                    <div class="erp-field">
-                      <label for="formInvDate">Data da Fatura</label>
-                      <input type="date" id="formInvDate" value="${todayISO()}">
-                    </div>
-                    <div class="erp-field">
-                      <label for="formInvFile">Anexar PDF / Foto da Fatura</label>
-                      <input type="file" id="formInvFile" accept=".pdf,image/*">
-                    </div>
-                  </div>
-                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;flex-wrap:wrap;">
-                    <span class="erp-cell-sub" id="formInvFileLabel">Anexe o PDF da fatura e indique o valor para descontar do orçamento geral.</span>
-                    <button type="button" class="erp-btn erp-btn--primary erp-btn--sm" id="btnAddFormInvoice">
-                      ${ICONS.plus}<span>Anexar Fatura PDF &amp; Abater Saldo</span>
-                    </button>
-                  </div>
-                </div>`
-              : ''
-          }
-          <div class="erp-summary-box" style="margin-bottom:12px;">
-            <div><div class="erp-summary-item__label">Orçamento Geral</div><div class="erp-summary-item__val" id="formInvBudget">€0,00</div></div>
-            <div><div class="erp-summary-item__label">Total em Faturas (<span id="formInvCount">0</span>)</div><div class="erp-summary-item__val erp-summary-item__val--warning" id="formInvSpent">€0,00</div></div>
-            <div><div class="erp-summary-item__label">Consumido</div><div class="erp-summary-item__val" id="formInvPct">0%</div></div>
-            <div><div class="erp-summary-item__label">Saldo Disponível (Real Time)</div><div class="erp-summary-item__val erp-summary-item__val--success" id="formInvRemaining">€0,00</div></div>
-          </div>
-          <div id="projRegimeNotice" class="erp-cell-sub" style="margin-bottom:8px;"></div>
-          <div id="formInvoicesList"></div>
-        </div>
+        ${
+          canManageInvoices
+            ? `<div class="erp-form-section">
+                 <div class="erp-form-section__title">5. Faturas de Materiais &amp; Compras da Obra (PDF) — Abate em Tempo Real</div>
+                 <div class="erp-inline-invoice-box">
+                   <div class="erp-form-grid erp-form-grid--3">
+                     <div class="erp-field">
+                       <label for="formInvAmount">Qual o valor da fatura? (€) *</label>
+                       <input type="text" inputmode="numeric" data-currency-euro id="formInvAmount" placeholder="€ 0,00">
+                     </div>
+                     <div class="erp-field">
+                       <label for="formInvNumber">N.º Fatura / Documento *</label>
+                       <input type="text" id="formInvNumber" placeholder="Ex.: FT 2026/0012">
+                     </div>
+                     <div class="erp-field">
+                       <label for="formInvSupplier">Fornecedor / Armazém *</label>
+                       <input type="text" id="formInvSupplier" placeholder="Ex.: Leroy Merlin, Maxmat">
+                     </div>
+                     <div class="erp-field">
+                       <label for="formInvCategory">Categoria de Custo</label>
+                       <select id="formInvCategory">
+                         ${INVOICE_CATEGORIES.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
+                       </select>
+                     </div>
+                     <div class="erp-field">
+                       <label for="formInvDate">Data da Fatura</label>
+                       <input type="date" id="formInvDate" value="${todayISO()}">
+                     </div>
+                     <div class="erp-field">
+                       <label for="formInvFile">Anexar PDF / Foto da Fatura</label>
+                       <input type="file" id="formInvFile" accept=".pdf,image/*">
+                     </div>
+                   </div>
+                   <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;flex-wrap:wrap;">
+                     <span class="erp-cell-sub" id="formInvFileLabel">Anexe o PDF da fatura e indique o valor para descontar do orçamento geral.</span>
+                     <button type="button" class="erp-btn erp-btn--primary erp-btn--sm" id="btnAddFormInvoice">
+                       ${ICONS.plus}<span>Anexar Fatura PDF &amp; Abater Saldo</span>
+                     </button>
+                   </div>
+                 </div>
+                 <div class="erp-summary-box" style="margin-bottom:12px;">
+                   <div><div class="erp-summary-item__label">Orçamento Geral</div><div class="erp-summary-item__val" id="formInvBudget">€0,00</div></div>
+                   <div><div class="erp-summary-item__label">Total em Faturas (<span id="formInvCount">0</span>)</div><div class="erp-summary-item__val erp-summary-item__val--warning" id="formInvSpent">€0,00</div></div>
+                   <div><div class="erp-summary-item__label">Consumido</div><div class="erp-summary-item__val" id="formInvPct">0%</div></div>
+                   <div><div class="erp-summary-item__label">Saldo Disponível (Real Time)</div><div class="erp-summary-item__val erp-summary-item__val--success" id="formInvRemaining">€0,00</div></div>
+                 </div>
+                 <div id="projRegimeNotice" class="erp-cell-sub" style="margin-bottom:8px;"></div>
+                 <div id="formInvoicesList"></div>
+               </div>`
+            : ''
+        }
+        `
+            : `<div class="erp-form-section">
+                 <div class="erp-inline-invoice-box">
+                   <strong>Orçamentos, pagamentos e faturas financeiros ocultos</strong>
+                   <div class="erp-cell-sub">O seu perfil não tem permissão para consultar ou alterar valores financeiros desta obra. Os orçamentos e saldos atuais serão preservados automaticamente.</div>
+                 </div>
+               </div>`
+        }
 
         <div class="erp-form-section">
           <div class="erp-form-section__title">6. Contratos da Obra (PDF)</div>
@@ -1962,6 +2066,7 @@ export class OperacionalObrasModule {
         };
 
         const syncBudgetFromDOM = () => {
+          if (!budWrap || !vatSelect || !contInput) return;
           const rows = [...budWrap.querySelectorAll('[data-b-idx]')];
           proj.budget.items = rows.map((row) => ({
             description: row.querySelector('[data-b-field="description"]').value,
@@ -1975,6 +2080,7 @@ export class OperacionalObrasModule {
         };
 
         const syncPaymentsFromDOM = () => {
+          if (!payWrap) return;
           const rows = [...payWrap.querySelectorAll('[data-p-idx]')];
           proj.payments = rows.map((row, i) => ({
             id: proj.payments[i]?.id || generateId('PAG'),
@@ -1990,11 +2096,14 @@ export class OperacionalObrasModule {
 
         const computeEffectiveFormBudget = () => {
           const t = computeBudgetTotals(proj.budget);
-          const manualCap = Math.max(0, parseCurrencyInput(capInput?.value));
+          const manualCap = canManageBudget
+            ? Math.max(0, parseCurrencyInput(capInput?.value))
+            : Number(proj.manualBudgetCap || 0);
           return { t, manualCap, budgetTotal: manualCap > 0 ? manualCap : t.grossTotal };
         };
 
         const updateSummaries = () => {
+          if (!canSeeValues) return;
           syncBudgetFromDOM();
           syncPaymentsFromDOM();
           const { t, manualCap, budgetTotal } = computeEffectiveFormBudget();
@@ -2002,27 +2111,34 @@ export class OperacionalObrasModule {
           const contract = budgetTotal > 0 ? budgetTotal : proj.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
           const open = Math.max(0, contract - paid);
 
-          modal.querySelector('#formBudSub').textContent = formatCurrency(t.subtotal);
-          modal.querySelector('#formBudCont').textContent = formatCurrency(t.contingencyVal);
-          modal.querySelector('#formBudVat').textContent = formatCurrency(t.vatVal);
-          modal.querySelector('#formBudGross').textContent = formatCurrency(manualCap > 0 ? manualCap : t.grossTotal);
+          const setTxt = (sel, txt) => {
+            const el = modal.querySelector(sel);
+            if (el) el.textContent = txt;
+          };
 
-          modal.querySelector('#formPayContract').textContent = formatCurrency(contract);
-          modal.querySelector('#formPayPaid').textContent = formatCurrency(paid);
-          modal.querySelector('#formPayOpen').textContent = formatCurrency(open);
-          modal.querySelector('#formPayCount').textContent = String(proj.payments.length);
+          setTxt('#formBudSub', formatCurrency(t.subtotal));
+          setTxt('#formBudCont', formatCurrency(t.contingencyVal));
+          setTxt('#formBudVat', formatCurrency(t.vatVal));
+          setTxt('#formBudGross', formatCurrency(manualCap > 0 ? manualCap : t.grossTotal));
+
+          setTxt('#formPayContract', formatCurrency(contract));
+          setTxt('#formPayPaid', formatCurrency(paid));
+          setTxt('#formPayOpen', formatCurrency(open));
+          setTxt('#formPayCount', String(proj.payments.length));
 
           const totalInvSpent = formInvoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
           const remaining = budgetTotal - totalInvSpent;
           const pct = budgetTotal > 0 ? Math.round((totalInvSpent / budgetTotal) * 100) : 0;
 
-          modal.querySelector('#formInvBudget').textContent = formatCurrency(budgetTotal);
-          modal.querySelector('#formInvCount').textContent = String(formInvoices.length);
-          modal.querySelector('#formInvSpent').textContent = formatCurrency(totalInvSpent);
-          modal.querySelector('#formInvPct').textContent = `${pct}%`;
+          setTxt('#formInvBudget', formatCurrency(budgetTotal));
+          setTxt('#formInvCount', String(formInvoices.length));
+          setTxt('#formInvSpent', formatCurrency(totalInvSpent));
+          setTxt('#formInvPct', `${pct}%`);
           const remEl = modal.querySelector('#formInvRemaining');
-          remEl.textContent = formatCurrency(remaining);
-          remEl.className = `erp-summary-item__val ${remaining < 0 ? 'erp-summary-item__val--danger' : 'erp-summary-item__val--success'}`;
+          if (remEl) {
+            remEl.textContent = formatCurrency(remaining);
+            remEl.className = `erp-summary-item__val ${remaining < 0 ? 'erp-summary-item__val--danger' : 'erp-summary-item__val--success'}`;
+          }
         };
 
         capInput?.addEventListener('input', updateSummaries);
@@ -2108,6 +2224,7 @@ export class OperacionalObrasModule {
         });
 
         const bindBudgetEvents = () => {
+          if (!budWrap) return;
           attachEuroMasks(budWrap);
           budWrap.querySelectorAll('input, select').forEach((el) => {
             el.addEventListener('input', updateSummaries);
@@ -2128,6 +2245,7 @@ export class OperacionalObrasModule {
         };
 
         const bindPaymentEvents = () => {
+          if (!payWrap) return;
           attachEuroMasks(payWrap);
           payWrap.querySelectorAll('input, select').forEach((el) => {
             el.addEventListener('input', updateSummaries);
@@ -2144,7 +2262,8 @@ export class OperacionalObrasModule {
           });
         };
 
-        modal.querySelector('#btnAddBudgetLine').addEventListener('click', () => {
+        modal.querySelector('#btnAddBudgetLine')?.addEventListener('click', () => {
+          if (!budWrap) return;
           syncBudgetFromDOM();
           proj.budget.items.push({ description: '', category: 'Materiais', unit: 'vg', qty: 1, unitPrice: 0 });
           budWrap.innerHTML = renderBudgetRows(proj.budget.items);
@@ -2152,7 +2271,8 @@ export class OperacionalObrasModule {
           updateSummaries();
         });
 
-        modal.querySelector('#btnAddPayLine').addEventListener('click', () => {
+        modal.querySelector('#btnAddPayLine')?.addEventListener('click', () => {
+          if (!payWrap) return;
           syncPaymentsFromDOM();
           proj.payments.push({
             id: generateId('PAG'),
@@ -2169,8 +2289,8 @@ export class OperacionalObrasModule {
           updateSummaries();
         });
 
-        vatSelect.addEventListener('change', updateSummaries);
-        contInput.addEventListener('input', updateSummaries);
+        vatSelect?.addEventListener('change', updateSummaries);
+        contInput?.addEventListener('input', updateSummaries);
         renderFormInvoices();
         bindBudgetEvents();
         bindPaymentEvents();
@@ -2215,9 +2335,13 @@ export class OperacionalObrasModule {
             clientEmail: modal.querySelector('#projClientEmail').value.trim(),
             managerId: modal.querySelector('#projManager').value,
             teamIds: checkedTeam,
-            manualBudgetCap: Math.max(0, parseCurrencyInput(modal.querySelector('#projManualCap').value)),
+            manualBudgetCap: canManageBudget
+              ? Math.max(0, parseCurrencyInput(modal.querySelector('#projManualCap')?.value))
+              : Number(proj.manualBudgetCap || 0),
             costRegime: modal.querySelector('input[name="costRegime"]:checked')?.value || 'materiais_funcionarios',
-            dailyRatePerWorker: Math.max(0, parseCurrencyInput(dailyRateInput?.value)),
+            dailyRatePerWorker: canSeeValues
+              ? Math.max(0, parseCurrencyInput(dailyRateInput?.value))
+              : Number(proj.dailyRatePerWorker || 0),
             budget: proj.budget,
             payments: proj.payments,
           };
@@ -2260,7 +2384,9 @@ export class OperacionalObrasModule {
           const finalSum = computeProjectInvoiceSummary(savedProjObj, store.getState().projectInvoices);
 
           showToast(
-            `${isEdit ? `Obra ${payload.code} atualizada.` : `Obra ${payload.code} registada.`} Saldo disponível: ${formatCurrency(finalSum.remainingBudget)}`,
+            canSeeValues
+              ? `${isEdit ? `Obra ${payload.code} atualizada.` : `Obra ${payload.code} registada.`} Saldo disponível: ${formatCurrency(finalSum.remainingBudget)}`
+              : `${isEdit ? `Obra ${payload.code} atualizada.` : `Obra ${payload.code} registada.`}`,
             'success',
             5000
           );

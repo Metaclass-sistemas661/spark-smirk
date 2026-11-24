@@ -52,6 +52,12 @@ export class DashboardModule {
   render(container, ctx) {
     const state = store.getState();
     const { month } = ctx;
+    const can = ctx.can || (() => true);
+    const canSeeDashValues = can('dashboard', 'valores');
+    const canCreateProj = can('op_obras', 'criar');
+    const canCreateEmp = can('rh_funcionarios', 'criar');
+    const canViewRh = can('rh_funcionarios', 'ver');
+    const canViewObras = can('op_obras', 'ver');
     const today = todayISO();
 
     // Global Financials across all projects
@@ -65,33 +71,41 @@ export class DashboardModule {
     const projectStats = state.projects.map((proj) => {
       const fin = computeProjectFinancials(proj);
       const invSum = computeProjectInvoiceSummary(proj, state.projectInvoices);
-      totalContracted += fin.contractTotal;
-      totalPaid += fin.paidAmount;
-      totalOpen += fin.balanceOpen;
-      totalInvoicedCosts += invSum.spentOnInvoices;
-      totalBudgetPool += invSum.budgetTotal;
+      if (canSeeDashValues) {
+        totalContracted += fin.contractTotal;
+        totalPaid += fin.paidAmount;
+        totalOpen += fin.balanceOpen;
+        totalInvoicedCosts += invSum.spentOnInvoices;
+        totalBudgetPool += invSum.budgetTotal;
 
-      (proj.payments || []).forEach((pay) => {
-        if (pay.status !== 'pago') {
-          openInstallments.push({
-            projectId: proj.id,
-            projectCode: proj.code,
-            projectName: proj.name,
-            clientName: proj.clientName,
-            paymentId: pay.id,
-            description: pay.description,
-            dueDate: pay.dueDate,
-            amount: Number(pay.amount) || 0,
-            overdue: Boolean(pay.dueDate && pay.dueDate < today),
-          });
-        }
-      });
+        (proj.payments || []).forEach((pay) => {
+          if (pay.status !== 'pago') {
+            openInstallments.push({
+              projectId: proj.id,
+              projectCode: proj.code,
+              projectName: proj.name,
+              clientName: proj.clientName,
+              paymentId: pay.id,
+              description: pay.description,
+              dueDate: pay.dueDate,
+              amount: Number(pay.amount) || 0,
+              overdue: Boolean(pay.dueDate && pay.dueDate < today),
+            });
+          }
+        });
+      }
 
       return { proj, fin, invSum };
     });
 
     const totalBudgetRemaining = totalBudgetPool - totalInvoicedCosts;
     const totalInvoicesCount = (state.projectInvoices || []).length;
+    const ongoingCount = state.projects.filter((p) => p.status === 'em_andamento').length;
+    const plannedCount = state.projects.filter((p) => p.status === 'a_iniciar').length;
+    const completedCount = state.projects.filter((p) => p.status === 'concluida').length;
+    const avgProgress = state.projects.length
+      ? Math.round(state.projects.reduce((s, p) => s + (Number(p.progress) || 0), 0) / state.projects.length)
+      : 0;
 
     openInstallments.sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
     const overdueInstallments = openInstallments.filter((i) => i.overdue);
@@ -110,7 +124,9 @@ export class DashboardModule {
     const attRateGlobal = totalP + totalAbs > 0 ? Math.round((totalP / (totalP + totalAbs)) * 100) : 100;
 
     const yearStr = month.slice(0, 4);
-    const yearPayslips = state.payslips.filter((p) => String(p.month || '').startsWith(yearStr));
+    const yearPayslips = canSeeDashValues
+      ? state.payslips.filter((p) => String(p.month || '').startsWith(yearStr))
+      : [];
     const yearNetTotal = yearPayslips.reduce((s, p) => s + (Number(p.netSalary) || 0), 0);
 
     // Filtered projects for Bar Chart
@@ -118,76 +134,138 @@ export class DashboardModule {
       ({ proj }) => this.projectFilter === 'all' || proj.status === this.projectFilter
     );
 
+    if (!canSeeDashValues && this.donutMode === 'categories') {
+      this.donutMode = 'status';
+    }
+
     container.innerHTML = `
       <div class="erp-dash-banner">
         <div>
           <div class="erp-dash-banner__title">Centro de Comando Executivo — Spark &amp; Smirk, Lda.</div>
           <div class="erp-dash-banner__sub">
-            Controlo consolidado de Engenharia, Obras, Orçamentos, Tesouraria e Recursos Humanos (${escapeHtml(formatMonthLabel(month))}).
+            ${
+              canSeeDashValues
+                ? `Controlo consolidado de Engenharia, Obras, Orçamentos, Tesouraria e Recursos Humanos (${escapeHtml(formatMonthLabel(month))}).`
+                : `Controlo operacional de Obras, Equipa e Assiduidade (${escapeHtml(formatMonthLabel(month))}).`
+            }
           </div>
         </div>
         <div class="erp-dash-banner__actions">
-          <button type="button" class="erp-btn erp-btn--primary" data-dash-quick="new-project">
-            ${ICONS.plus}<span>Nova Obra</span>
-          </button>
-          <button type="button" class="erp-btn erp-btn--outline" style="background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.22);" data-dash-quick="new-employee">
-            ${ICONS.users}<span>Novo Funcionário</span>
-          </button>
+          ${
+            canCreateProj
+              ? `<button type="button" class="erp-btn erp-btn--primary" data-dash-quick="new-project">
+                  ${ICONS.plus}<span>Nova Obra</span>
+                </button>`
+              : ''
+          }
+          ${
+            canCreateEmp
+              ? `<button type="button" class="erp-btn erp-btn--outline" style="background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.22);" data-dash-quick="new-employee">
+                  ${ICONS.users}<span>Novo Funcionário</span>
+                </button>`
+              : ''
+          }
         </div>
       </div>
 
       <!-- KPIs -->
       <div class="erp-kpi-grid">
-        <div class="erp-kpi-card erp-kpi-card--primary">
-          <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Carteira Contratada c/ IVA</span>
-            <span class="erp-kpi-card__icon">${ICONS.building}</span>
-          </div>
-          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalContracted))}</div>
-          <div class="erp-kpi-card__meta">${state.projects.length} obra(s) · ${overallPaidPct}% liquidado</div>
-        </div>
+        ${
+          canSeeDashValues
+            ? `
+            <div class="erp-kpi-card erp-kpi-card--primary">
+              <div class="erp-kpi-card__head">
+                <span class="erp-kpi-card__label">Carteira Contratada c/ IVA</span>
+                <span class="erp-kpi-card__icon">${ICONS.building}</span>
+              </div>
+              <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalContracted))}</div>
+              <div class="erp-kpi-card__meta">${state.projects.length} obra(s) · ${overallPaidPct}% liquidado</div>
+            </div>
 
-        <div class="erp-kpi-card ${overdueInstallments.length > 0 ? 'erp-kpi-card--danger' : 'erp-kpi-card--warning'}">
-          <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Saldo Total em Aberto</span>
-            <span class="erp-kpi-card__icon">${ICONS.clock}</span>
-          </div>
-          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalOpen))}</div>
-          <div class="erp-kpi-card__meta">
-            ${
-              overdueInstallments.length > 0
-                ? `${overdueInstallments.length} parcela(s) em atraso · ${escapeHtml(formatCurrency(totalPaid))} pago`
-                : `${openInstallments.length} parcela(s) por vencer`
-            }
-          </div>
-        </div>
+            <div class="erp-kpi-card ${overdueInstallments.length > 0 ? 'erp-kpi-card--danger' : 'erp-kpi-card--warning'}">
+              <div class="erp-kpi-card__head">
+                <span class="erp-kpi-card__label">Saldo Total em Aberto</span>
+                <span class="erp-kpi-card__icon">${ICONS.clock}</span>
+              </div>
+              <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalOpen))}</div>
+              <div class="erp-kpi-card__meta">
+                ${
+                  overdueInstallments.length > 0
+                    ? `${overdueInstallments.length} parcela(s) em atraso · ${escapeHtml(formatCurrency(totalPaid))} pago`
+                    : `${openInstallments.length} parcela(s) por vencer`
+                }
+              </div>
+            </div>
 
-        <div class="erp-kpi-card erp-kpi-card--success">
-          <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Assiduidade (${escapeHtml(month)})</span>
-            <span class="erp-kpi-card__icon">${ICONS.checkCircle}</span>
-          </div>
-          <div class="erp-kpi-card__value">${attRateGlobal}%</div>
-          <div class="erp-kpi-card__meta">${totalP} presenças · ${totalAbs} faltas (${activeEmployees.length} ativos)</div>
-        </div>
+            <div class="erp-kpi-card erp-kpi-card--success">
+              <div class="erp-kpi-card__head">
+                <span class="erp-kpi-card__label">Assiduidade (${escapeHtml(month)})</span>
+                <span class="erp-kpi-card__icon">${ICONS.checkCircle}</span>
+              </div>
+              <div class="erp-kpi-card__value">${attRateGlobal}%</div>
+              <div class="erp-kpi-card__meta">${totalP} presenças · ${totalAbs} faltas (${activeEmployees.length} ativos)</div>
+            </div>
 
-        <div class="erp-kpi-card">
-          <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Faturas &amp; Saldo de Obras</span>
-            <span class="erp-kpi-card__icon">${ICONS.receipt}</span>
-          </div>
-          <div class="erp-kpi-card__value" style="color:${totalBudgetRemaining < 0 ? 'var(--erp-danger)' : 'var(--erp-success)'};">${escapeHtml(formatCurrency(totalBudgetRemaining))}</div>
-          <div class="erp-kpi-card__meta">${totalInvoicesCount} fatura(s) · ${escapeHtml(formatCurrency(totalInvoicedCosts))} gasto em materiais (${escapeHtml(yearStr)}: ${escapeHtml(formatCurrency(yearNetTotal))} RH)</div>
-        </div>
+            <div class="erp-kpi-card">
+              <div class="erp-kpi-card__head">
+                <span class="erp-kpi-card__label">Faturas &amp; Saldo de Obras</span>
+                <span class="erp-kpi-card__icon">${ICONS.receipt}</span>
+              </div>
+              <div class="erp-kpi-card__value" style="color:${totalBudgetRemaining < 0 ? 'var(--erp-danger)' : 'var(--erp-success)'};">${escapeHtml(formatCurrency(totalBudgetRemaining))}</div>
+              <div class="erp-kpi-card__meta">${totalInvoicesCount} fatura(s) · ${escapeHtml(formatCurrency(totalInvoicedCosts))} gasto em materiais (${escapeHtml(yearStr)}: ${escapeHtml(formatCurrency(yearNetTotal))} RH)</div>
+            </div>
+          `
+            : `
+            <div class="erp-kpi-card erp-kpi-card--primary">
+              <div class="erp-kpi-card__head">
+                <span class="erp-kpi-card__label">Obras no Sistema</span>
+                <span class="erp-kpi-card__icon">${ICONS.building}</span>
+              </div>
+              <div class="erp-kpi-card__value">${state.projects.length}</div>
+              <div class="erp-kpi-card__meta">${ongoingCount} em andamento · ${plannedCount} a iniciar</div>
+            </div>
+
+            <div class="erp-kpi-card">
+              <div class="erp-kpi-card__head">
+                <span class="erp-kpi-card__label">Equipa Ativa</span>
+                <span class="erp-kpi-card__icon">${ICONS.users}</span>
+              </div>
+              <div class="erp-kpi-card__value">${activeEmployees.length} <span style="font-size:13px;font-weight:600;color:var(--erp-text-muted)">/ ${state.employees.length}</span></div>
+              <div class="erp-kpi-card__meta">Colaboradores registados em RH</div>
+            </div>
+
+            <div class="erp-kpi-card erp-kpi-card--success">
+              <div class="erp-kpi-card__head">
+                <span class="erp-kpi-card__label">Assiduidade (${escapeHtml(month)})</span>
+                <span class="erp-kpi-card__icon">${ICONS.checkCircle}</span>
+              </div>
+              <div class="erp-kpi-card__value">${attRateGlobal}%</div>
+              <div class="erp-kpi-card__meta">${totalP} presenças · ${totalAbs} faltas (${activeEmployees.length} ativos)</div>
+            </div>
+
+            <div class="erp-kpi-card">
+              <div class="erp-kpi-card__head">
+                <span class="erp-kpi-card__label">Execução Média das Obras</span>
+                <span class="erp-kpi-card__icon">${ICONS.chart}</span>
+              </div>
+              <div class="erp-kpi-card__value">${avgProgress}%</div>
+              <div class="erp-kpi-card__meta">${completedCount} concluída(s) · ${(state.technicalManagers || []).length} resp. técnico(s)</div>
+            </div>
+          `
+        }
       </div>
 
-      <!-- Row 2: Custom Financial Bar Chart + Donut Chart -->
+      <!-- Row 2: Custom Bar Chart / Operational Progress + Donut Chart -->
       <div class="erp-dash-grid">
         <section class="erp-chart-card">
           <div class="erp-chart-card__head">
             <div>
-              <h2 class="erp-chart-card__title">Desempenho Financeiro por Obra</h2>
-              <p class="erp-chart-card__sub">Comparativo entre Orçamentado c/ IVA, Valor Recebido e Saldo em Aberto (clique na barra para abrir a obra)</p>
+              <h2 class="erp-chart-card__title">${canSeeDashValues ? 'Desempenho Financeiro por Obra' : 'Progresso Físico por Obra'}</h2>
+              <p class="erp-chart-card__sub">${
+                canSeeDashValues
+                  ? 'Comparativo entre Orçamentado c/ IVA, Valor Recebido e Saldo em Aberto (clique na barra para abrir a obra)'
+                  : 'Estado de execução física das empreitadas (valores financeiros ocultos para este perfil)'
+              }</p>
             </div>
             <div class="erp-pill-switch">
               <button type="button" class="${this.projectFilter === 'all' ? 'is-active' : ''}" data-chart-pfilter="all">Todas</button>
@@ -197,7 +275,11 @@ export class DashboardModule {
             </div>
           </div>
           <div class="erp-chart-card__body">
-            ${this._renderFinancialBarChartSVG(chartProjects)}
+            ${
+              canSeeDashValues
+                ? this._renderFinancialBarChartSVG(chartProjects)
+                : this._renderOperationalProgressBars(chartProjects)
+            }
           </div>
         </section>
 
@@ -205,20 +287,24 @@ export class DashboardModule {
           <div class="erp-chart-card__head">
             <div>
               <h2 class="erp-chart-card__title">Distribuição Estratégica</h2>
-              <p class="erp-chart-card__sub">Análise por estado das obras ou estrutura de custos</p>
+              <p class="erp-chart-card__sub">${canSeeDashValues ? 'Análise por estado das obras ou estrutura de custos' : 'Distribuição por estado das empreitadas'}</p>
             </div>
             <div class="erp-pill-switch">
               <button type="button" class="${this.donutMode === 'status' ? 'is-active' : ''}" data-donut-mode="status">Estados</button>
-              <button type="button" class="${this.donutMode === 'categories' ? 'is-active' : ''}" data-donut-mode="categories">Orçamentos</button>
+              ${
+                canSeeDashValues
+                  ? `<button type="button" class="${this.donutMode === 'categories' ? 'is-active' : ''}" data-donut-mode="categories">Orçamentos</button>`
+                  : ''
+              }
             </div>
           </div>
           <div class="erp-chart-card__body">
-            ${this._renderDonutWidget(projectStats)}
+            ${this._renderDonutWidget(projectStats, canSeeDashValues)}
           </div>
         </section>
       </div>
 
-      <!-- Row 3: HR Attendance Bars + Payment Deadlines Feed -->
+      <!-- Row 3: HR Attendance Bars + Payment Deadlines / Operational Schedule Feed -->
       <div class="erp-dash-grid erp-dash-grid--equal">
         <section class="erp-chart-card">
           <div class="erp-chart-card__head">
@@ -226,7 +312,7 @@ export class DashboardModule {
               <h2 class="erp-chart-card__title">Assiduidade da Equipa — ${escapeHtml(formatMonthLabel(month))}</h2>
               <p class="erp-chart-card__sub">Distribuição proporcional de dias trabalhados, faltas e férias</p>
             </div>
-            <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-dash-nav="rh-funcionarios">Ver RH Completo</button>
+            ${canViewRh ? '<button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-dash-nav="rh-funcionarios">Ver RH Completo</button>' : ''}
           </div>
           <div class="erp-chart-card__body">
             ${this._renderAttendanceBars(empAttendance)}
@@ -236,13 +322,17 @@ export class DashboardModule {
         <section class="erp-chart-card">
           <div class="erp-chart-card__head">
             <div>
-              <h2 class="erp-chart-card__title">Próximos Pagamentos &amp; Parcelas em Aberto</h2>
-              <p class="erp-chart-card__sub">Vencimentos financeiros de obras ordenados por prioridade</p>
+              <h2 class="erp-chart-card__title">${canSeeDashValues ? 'Próximos Pagamentos &amp; Parcelas em Aberto' : 'Cronograma &amp; Prazos das Obras'}</h2>
+              <p class="erp-chart-card__sub">${canSeeDashValues ? 'Vencimentos financeiros de obras ordenados por prioridade' : 'Datas previstas de conclusão das empreitadas ativas'}</p>
             </div>
-            <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-dash-nav="op-andamento">Ir para Operacional</button>
+            ${canViewObras ? '<button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-dash-nav="op-andamento">Ir para Operacional</button>' : ''}
           </div>
           <div class="erp-chart-card__body">
-            ${this._renderPaymentsFeed(openInstallments)}
+            ${
+              canSeeDashValues
+                ? this._renderPaymentsFeed(openInstallments)
+                : this._renderOperationalDeadlinesFeed(state.projects)
+            }
           </div>
         </section>
       </div>
@@ -251,6 +341,60 @@ export class DashboardModule {
     `;
 
     this._bindEvents(container, state);
+  }
+
+  _renderOperationalProgressBars(items) {
+    if (items.length === 0) {
+      return `<div class="erp-empty">${ICONS.building}<div class="erp-empty__title">Sem obras neste filtro</div></div>`;
+    }
+    return `
+      <div class="erp-att-bar-list">
+        ${items
+          .map(({ proj }) => {
+            const pct = Math.min(100, Math.max(0, Number(proj.progress) || 0));
+            return `
+            <div class="erp-att-bar-item" data-dash-open-proj="${escapeHtml(proj.id)}" data-dash-proj-status="${escapeHtml(proj.status)}">
+              <div class="erp-att-bar-item__top">
+                <span class="erp-att-bar-item__name">${escapeHtml(proj.code)} — ${escapeHtml(proj.name)} <span style="font-weight:400;color:var(--erp-text-muted)">· ${escapeHtml(proj.district || '')}</span></span>
+                <span class="erp-att-bar-item__meta"><strong style="color:var(--erp-navy)">${pct}%</strong> concluído</span>
+              </div>
+              <div class="erp-progress">
+                <div class="erp-progress__track" style="height:10px;"><div class="erp-progress__fill" style="width:${pct}%"></div></div>
+              </div>
+            </div>`;
+          })
+          .join('')}
+      </div>
+    `;
+  }
+
+  _renderOperationalDeadlinesFeed(projects) {
+    const active = projects
+      .filter((p) => p.status !== 'concluida')
+      .slice()
+      .sort((a, b) => String(a.expectedEndDate || '9999').localeCompare(String(b.expectedEndDate || '9999')));
+    if (active.length === 0) {
+      return `<div class="erp-empty">${ICONS.checkCircle}<div class="erp-empty__title">Sem prazos pendentes</div><p>Todas as empreitadas registadas estão concluídas.</p></div>`;
+    }
+    return `
+      <div class="erp-pay-feed">
+        ${active
+          .slice(0, 5)
+          .map(
+            (p) => `
+          <div class="erp-pay-feed__item">
+            <div class="erp-pay-feed__left">
+              <div class="erp-pay-feed__title">${escapeHtml(p.code)} · ${escapeHtml(p.name)}</div>
+              <div class="erp-pay-feed__sub">${escapeHtml(p.clientName)} · Conclusão prevista: ${escapeHtml(formatDatePT(p.expectedEndDate))}</div>
+            </div>
+            <div class="erp-pay-feed__right">
+              <span class="erp-badge ${p.status === 'em_andamento' ? 'erp-badge--info' : 'erp-badge--warning'}">${Number(p.progress) || 0}%</span>
+            </div>
+          </div>`
+          )
+          .join('')}
+      </div>
+    `;
   }
 
   _renderFinancialBarChartSVG(items) {
@@ -357,7 +501,7 @@ export class DashboardModule {
     `;
   }
 
-  _renderDonutWidget(projectStats) {
+  _renderDonutWidget(projectStats, canSeeDashValues = true) {
     let slices = [];
     let centerVal = '';
     let centerLbl = '';
@@ -372,14 +516,14 @@ export class DashboardModule {
         const g = groups.find((x) => x.key === proj.status);
         if (g) {
           g.count += 1;
-          g.amount += fin.contractTotal;
+          g.amount += canSeeDashValues ? fin.contractTotal : 0;
         }
       });
       slices = groups.map((g) => ({
         label: g.label,
         color: g.color,
-        value: g.amount,
-        display: `${g.count} · ${formatCurrency(g.amount)}`,
+        value: canSeeDashValues ? g.amount : g.count,
+        display: canSeeDashValues ? `${g.count} · ${formatCurrency(g.amount)}` : `${g.count} obra(s)`,
         route: g.route,
       }));
       centerVal = String(projectStats.length);
@@ -568,6 +712,16 @@ export class DashboardModule {
       btn.addEventListener('click', () => {
         if (typeof this.onQuickAction === 'function') {
           this.onQuickAction(btn.dataset.dashQuick);
+        }
+      });
+    });
+
+    container.querySelectorAll('[data-dash-open-proj]').forEach((item) => {
+      item.addEventListener('click', () => {
+        const st = item.dataset.dashProjStatus;
+        const route = st === 'concluida' ? 'op-concluidas' : st === 'a_iniciar' ? 'op-iniciar' : 'op-andamento';
+        if (typeof this.onNavigate === 'function') {
+          this.onNavigate(route, item.dataset.dashOpenProj);
         }
       });
     });
