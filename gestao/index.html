@@ -59,10 +59,12 @@
         </div>
 
         <ul class="erp-pw-checklist" id="forcePwChecklist">
-          <li data-rule="len">Mínimo de 8 caracteres</li>
-          <li data-rule="letter">Pelo menos uma letra (A–Z / a–z)</li>
-          <li data-rule="digit">Pelo menos um número (0–9)</li>
-          <li data-rule="match">As palavras-passe coincidem</li>
+          <li data-rule="len" class="is-invalid">Mínimo de 8 caracteres</li>
+          <li data-rule="upper" class="is-invalid">1 letra maiúscula (A–Z)</li>
+          <li data-rule="lower" class="is-invalid">1 letra minúscula (a–z)</li>
+          <li data-rule="digit" class="is-invalid">1 número (0–9)</li>
+          <li data-rule="special" class="is-invalid">1 carácter especial (ex: @, !, #)</li>
+          <li data-rule="match" class="is-invalid">As palavras-passe coincidem</li>
         </ul>
 
         <div class="erp-force-pw-actions">

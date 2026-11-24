@@ -757,6 +757,16 @@
   color: var(--erp-success);
 }
 
+.erp-pw-checklist li.is-invalid {
+  color: var(--erp-danger);
+  font-weight: 600;
+}
+
+.erp-pw-checklist li.is-invalid::before {
+  content: '✕';
+  color: var(--erp-danger);
+}
+
 .erp-force-pw-actions {
   display: flex;
   flex-direction: column;

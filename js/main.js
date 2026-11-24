@@ -6,6 +6,26 @@
 // ══════════════════════════════════════════════════════════════
 // VENDOR IMPORTS (npm packages)
 // ══════════════════════════════════════════════════════════════
+// Segurança: caso uma ligação de recuperação de palavra-passe aterre na raiz (/),
+// encaminhar imediatamente para /login/ antes de iniciar a landing page.
+(function redirectRecoveryLinkToLogin() {
+  try {
+    const search = window.location.search || '';
+    const hash = window.location.hash || '';
+    const combined = `${search}&${hash}`;
+    if (
+      combined.includes('type=recovery') ||
+      combined.includes('token_hash=') ||
+      combined.includes('recovery_token=') ||
+      combined.includes('otp_expired')
+    ) {
+      window.location.replace(`/login/${search}${hash}`);
+    }
+  } catch {
+    // Ignore navigation guards
+  }
+})();
+
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import Lenis from 'lenis';

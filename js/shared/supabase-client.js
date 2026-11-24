@@ -267,3 +267,43 @@ export async function signOutUser() {
     // Ignore storage access errors
   }
 }
+
+/**
+ * Checks whether an access token represents an OTP/recovery-only session that has not
+ * yet authenticated with a password.
+ */
+export function isRecoverySessionToken(accessToken) {
+  try {
+    const parts = String(accessToken || '').split('.');
+    if (parts.length < 2) return false;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padLen = (4 - (base64.length % 4)) % 4;
+    const payload = JSON.parse(window.atob(`${base64}${'='.repeat(padLen)}`));
+    if (!Array.isArray(payload?.amr) || payload.amr.length === 0) return false;
+    const methods = payload.amr
+      .map((entry) => (typeof entry === 'string' ? entry : entry?.method || ''))
+      .filter(Boolean);
+    return methods.length > 0 && !methods.includes('password');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validates corporate password complexity rules and confirmation match.
+ */
+export function validateStrongPassword(password, confirmPassword) {
+  const pw = String(password || '');
+  const confirm = String(confirmPassword || '');
+  const rules = {
+    len: pw.length >= 8,
+    upper: /[A-Z]/.test(pw),
+    lower: /[a-z]/.test(pw),
+    digit: /\d/.test(pw),
+    special: /[^A-Za-z0-9\s]/.test(pw),
+    match: pw.length > 0 && pw === confirm,
+  };
+  const valid =
+    rules.len && rules.upper && rules.lower && rules.digit && rules.special && rules.match;
+  return { valid, rules };
+}

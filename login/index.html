@@ -111,44 +111,6 @@
             <span>Voltar ao Iniciar Sessão</span>
           </button>
         </div>
-
-        <!-- Vista 3: Definir Nova Palavra-passe -->
-        <div class="login-view" id="resetView" hidden>
-          <div class="login-verifying-box" id="resetVerifyingBox" hidden>
-            <div class="login-verifying-spinner" aria-hidden="true"></div>
-            <span>A validar ligação de recuperação segura...</span>
-          </div>
-
-          <form class="login-form" id="resetForm" autocomplete="off">
-            <div class="login-input-wrap login-input-wrap--password">
-              <svg class="login-input-wrap__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <input type="password" id="resetNewPassword" name="newPassword" required minlength="8" autocomplete="new-password" placeholder="Nova palavra-passe (mín. 8 caracteres)">
-              <button type="button" class="login-show-btn" data-toggle-input="resetNewPassword">MOSTRAR</button>
-            </div>
-
-            <div class="login-input-wrap login-input-wrap--password">
-              <svg class="login-input-wrap__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              <input type="password" id="resetConfirmPassword" name="confirmPassword" required minlength="8" autocomplete="new-password" placeholder="Confirmar nova palavra-passe">
-              <button type="button" class="login-show-btn" data-toggle-input="resetConfirmPassword">MOSTRAR</button>
-            </div>
-
-            <ul class="login-pw-checklist" id="resetPwChecklist">
-              <li data-rule="len">Mínimo de 8 caracteres</li>
-              <li data-rule="letter">Pelo menos uma letra (A–Z / a–z)</li>
-              <li data-rule="digit">Pelo menos um número (0–9)</li>
-              <li data-rule="match">As palavras-passe coincidem</li>
-            </ul>
-
-            <button type="submit" class="login-submit" id="btnResetSubmit">Guardar Nova Palavra-passe</button>
-          </form>
-
-          <div class="login-divider">ou</div>
-
-          <button type="button" class="login-secondary-btn" id="btnBackToLoginFromReset">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-            <span>Voltar ao Iniciar Sessão</span>
-          </button>
-        </div>
       </div>
     </section>
 
@@ -156,6 +118,64 @@
       &copy; 2026 Spark &amp; Smirk, Lda. · Acesso restrito a utilizadores autenticados.
     </p>
   </main>
+
+  <!-- Pop-up Obrigatório de Nova Palavra-passe (Recuperação por Email) -->
+  <div class="login-modal-backdrop" id="resetPasswordModal" role="dialog" aria-modal="true" aria-labelledby="resetModalTitle" hidden>
+    <div class="login-modal">
+      <div class="login-modal__header">
+        <div>
+          <div class="login-modal__badge">Segurança de Acesso</div>
+          <h2 class="login-modal__title" id="resetModalTitle">Definir Nova Palavra-passe</h2>
+          <p class="login-modal__subtitle" id="resetModalAccount">Crie uma nova palavra-passe segura para a sua conta corporativa.</p>
+        </div>
+        <button type="button" class="login-modal__close" id="btnBackToLoginFromReset" aria-label="Cancelar e voltar ao login" title="Voltar ao Iniciar Sessão">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="login-modal__body">
+        <div class="login-alert" id="resetModalAlert" role="alert"></div>
+
+        <div class="login-verifying-box" id="resetVerifyingBox" hidden>
+          <div class="login-verifying-spinner" aria-hidden="true"></div>
+          <span>A validar ligação de recuperação segura...</span>
+        </div>
+
+        <form class="login-form" id="resetForm" autocomplete="off">
+          <div class="login-input-wrap login-input-wrap--password">
+            <svg class="login-input-wrap__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <input type="password" id="resetNewPassword" name="newPassword" required minlength="8" autocomplete="new-password" placeholder="Nova palavra-passe (ex: Obra@2026)">
+            <button type="button" class="login-show-btn" data-toggle-input="resetNewPassword">MOSTRAR</button>
+          </div>
+
+          <div class="login-input-wrap login-input-wrap--password">
+            <svg class="login-input-wrap__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <input type="password" id="resetConfirmPassword" name="confirmPassword" required minlength="8" autocomplete="new-password" placeholder="Confirmar nova palavra-passe">
+            <button type="button" class="login-show-btn" data-toggle-input="resetConfirmPassword">MOSTRAR</button>
+          </div>
+
+          <div class="login-pw-box">
+            <div class="login-pw-box__title">Requisitos obrigatórios da palavra-passe:</div>
+            <ul class="login-pw-checklist" id="resetPwChecklist">
+              <li data-rule="len" class="is-unmet">Mínimo de 8 caracteres</li>
+              <li data-rule="upper" class="is-unmet">Letra maiúscula (A–Z)</li>
+              <li data-rule="lower" class="is-unmet">Letra minúscula (a–z)</li>
+              <li data-rule="digit" class="is-unmet">Pelo menos 1 número (0–9)</li>
+              <li data-rule="special" class="is-unmet">Carácter especial (ex: @, !, #, $)</li>
+              <li data-rule="match" class="is-unmet">Palavras-passe coincidem</li>
+            </ul>
+          </div>
+
+          <button type="submit" class="login-submit" id="btnResetSubmit" disabled>Guardar Nova Palavra-passe</button>
+
+          <button type="button" class="login-secondary-btn" id="btnCancelResetModal">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            <span>Voltar ao Iniciar Sessão</span>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="/js/login/login.js"></script>
 </body>

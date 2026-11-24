@@ -18,6 +18,8 @@ import {
   verifyWithBackendEndpoint,
   authenticatedApiFetch,
   signOutUser,
+  isRecoverySessionToken,
+  validateStrongPassword,
 } from '../shared/supabase-client.js';
 
 const SIDEBAR_COLLAPSE_KEY = 'spark_erp_sidebar_collapsed';
@@ -562,22 +564,18 @@ function showForcedPasswordChangeGate({ user, profile, onComplete }) {
   });
 
   const validateRules = () => {
-    const pw = newPwInput?.value || '';
-    const confirm = confirmPwInput?.value || '';
-    const checks = {
-      len: pw.length >= 8,
-      letter: /[A-Za-z]/.test(pw),
-      digit: /\d/.test(pw),
-      match: pw.length > 0 && pw === confirm,
-    };
+    const { valid, rules } = validateStrongPassword(newPwInput?.value || '', confirmPwInput?.value || '');
     checklistEl?.querySelectorAll('[data-rule]').forEach((li) => {
-      li.classList.toggle('is-valid', Boolean(checks[li.dataset.rule]));
+      const met = Boolean(rules[li.dataset.rule]);
+      li.classList.toggle('is-valid', met);
+      li.classList.toggle('is-invalid', !met);
     });
-    return checks.len && checks.letter && checks.digit && checks.match;
+    return valid;
   };
 
   newPwInput?.addEventListener('input', validateRules);
   confirmPwInput?.addEventListener('input', validateRules);
+  validateRules();
 
   logoutBtn?.addEventListener('click', async () => {
     await signOutUser();
@@ -587,7 +585,9 @@ function showForcedPasswordChangeGate({ user, profile, onComplete }) {
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!validateRules()) {
-      showGateError('A nova palavra-passe deve ter pelo menos 8 caracteres, letras, números e coincidir na confirmação.');
+      showGateError(
+        'A nova palavra-passe deve cumprir todos os requisitos (mín. 8 caracteres, maiúscula, minúscula, número, carácter especial ex: @ e confirmação igual).'
+      );
       return;
     }
 
@@ -628,6 +628,16 @@ function showForcedPasswordChangeGate({ user, profile, onComplete }) {
 }
 
 async function bootstrapErp() {
+  const combinedUrl = `${window.location.search || ''}&${window.location.hash || ''}`;
+  if (
+    combinedUrl.includes('type=recovery') ||
+    combinedUrl.includes('token_hash=') ||
+    combinedUrl.includes('recovery_token=')
+  ) {
+    window.location.replace(`/login/${window.location.search}${window.location.hash}`);
+    return;
+  }
+
   const auth = await verifyAuthenticatedUser();
   if (!auth.authenticated || !auth.session?.access_token) {
     const redirectTarget = encodeURIComponent(window.location.pathname + window.location.search);
@@ -635,8 +645,17 @@ async function bootstrapErp() {
     return;
   }
 
+  if (isRecoverySessionToken(auth.session.access_token)) {
+    window.location.replace('/login/?mode=recovery');
+    return;
+  }
+
   const backendCheck = await verifyWithBackendEndpoint(auth.session.access_token);
   if (!backendCheck.authenticated || !backendCheck.profile) {
+    if (backendCheck.error === 'RECOVERY_PASSWORD_REQUIRED') {
+      window.location.replace('/login/?mode=recovery');
+      return;
+    }
     await signOutUser();
     const reason =
       backendCheck.error === 'ACCOUNT_DISABLED'

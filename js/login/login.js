@@ -6,6 +6,8 @@ import {
   getSupabaseClient,
   verifyAuthenticatedUser,
   loadSupabaseConfig,
+  isRecoverySessionToken,
+  validateStrongPassword,
 } from '../shared/supabase-client.js';
 import { getFirebaseApp } from '../shared/firebase-client.js';
 
@@ -27,21 +29,17 @@ const VIEW_META = {
     title: 'Recuperar Acesso',
     subtitle: 'Introduza o seu email corporativo para receber uma ligação segura de redefinição.',
   },
-  reset: {
-    title: 'Nova Palavra-passe',
-    subtitle: 'Defina uma nova palavra-passe segura para a sua conta corporativa Spark & Smirk.',
-  },
 };
 
-function showAlert(type, message) {
-  const alertEl = document.getElementById('loginAlert');
+function showAlert(type, message, targetId = 'loginAlert') {
+  const alertEl = document.getElementById(targetId);
   if (!alertEl) return;
   alertEl.className = `login-alert is-visible login-alert--${type}`;
   alertEl.textContent = message;
 }
 
-function clearAlert() {
-  const alertEl = document.getElementById('loginAlert');
+function clearAlert(targetId = 'loginAlert') {
+  const alertEl = document.getElementById(targetId);
   if (!alertEl) return;
   alertEl.className = 'login-alert';
   alertEl.textContent = '';
@@ -50,19 +48,41 @@ function clearAlert() {
 function setActiveView(viewName) {
   const titleEl = document.getElementById('loginPaneTitle');
   const subtitleEl = document.getElementById('loginPaneSubtitle');
-  const views = {
-    login: document.getElementById('loginView'),
-    forgot: document.getElementById('forgotView'),
-    reset: document.getElementById('resetView'),
-  };
+  const loginView = document.getElementById('loginView');
+  const forgotView = document.getElementById('forgotView');
 
-  Object.entries(views).forEach(([key, el]) => {
-    if (el) el.hidden = key !== viewName;
-  });
+  if (loginView) loginView.hidden = viewName !== 'login';
+  if (forgotView) forgotView.hidden = viewName !== 'forgot';
 
   const meta = VIEW_META[viewName] || VIEW_META.login;
   if (titleEl) titleEl.textContent = meta.title;
   if (subtitleEl) subtitleEl.textContent = meta.subtitle;
+}
+
+function openResetPasswordModal({ verifying = false, email = '' } = {}) {
+  const modal = document.getElementById('resetPasswordModal');
+  const verifyingBox = document.getElementById('resetVerifyingBox');
+  const resetForm = document.getElementById('resetForm');
+  const subtitleEl = document.getElementById('resetModalAccount');
+
+  if (modal) modal.hidden = false;
+  if (verifyingBox) verifyingBox.hidden = !verifying;
+  if (resetForm) resetForm.hidden = verifying;
+  if (subtitleEl) {
+    subtitleEl.textContent = email
+      ? `Conta verificada: ${email}`
+      : 'Crie uma nova palavra-passe segura para a sua conta corporativa.';
+  }
+}
+
+function closeResetPasswordModal() {
+  const modal = document.getElementById('resetPasswordModal');
+  const verifyingBox = document.getElementById('resetVerifyingBox');
+  const resetForm = document.getElementById('resetForm');
+  if (modal) modal.hidden = true;
+  if (verifyingBox) verifyingBox.hidden = true;
+  if (resetForm) resetForm.hidden = false;
+  clearAlert('resetModalAlert');
 }
 
 function translateAuthError(error) {
@@ -165,6 +185,7 @@ function parseRecoveryUrlContext() {
 
   const tokenHash = searchParams.get('token_hash') || searchParams.get('recovery_token') || '';
   const queryType = searchParams.get('type') || '';
+  const queryMode = searchParams.get('mode') || '';
   const authCode = searchParams.get('code') || '';
   const hashType = hashParams.get('type') || '';
   const hasAccessTokenInHash = Boolean(hashParams.get('access_token'));
@@ -180,6 +201,7 @@ function parseRecoveryUrlContext() {
       authCode ||
       hashType === 'recovery' ||
       queryType === 'recovery' ||
+      queryMode === 'recovery' ||
       (hasAccessTokenInHash && hashType === 'recovery') ||
       urlError
   );
@@ -196,42 +218,40 @@ function parseRecoveryUrlContext() {
 
 function stripSensitiveUrlParams() {
   try {
-    const cleanUrl = `${window.location.pathname}`;
-    window.history.replaceState({}, document.title, cleanUrl);
+    window.history.replaceState({}, document.title, window.location.pathname);
   } catch {
     // Ignore history errors
   }
 }
 
-function validatePasswordStrength(password, confirmPassword) {
-  const rules = {
-    len: password.length >= 8,
-    letter: /[a-zA-Z]/.test(password),
-    digit: /\d/.test(password),
-    match: password.length > 0 && password === confirmPassword,
-  };
-  const valid = rules.len && rules.letter && rules.digit && rules.match;
-  return { valid, rules };
+function refreshPasswordChecklistUi() {
+  const pw1 = document.getElementById('resetNewPassword');
+  const pw2 = document.getElementById('resetConfirmPassword');
+  const checklist = document.getElementById('resetPwChecklist');
+  const submitBtn = document.getElementById('btnResetSubmit');
+
+  const { valid, rules } = validateStrongPassword(pw1?.value || '', pw2?.value || '');
+  if (checklist) {
+    Object.entries(rules).forEach(([ruleKey, met]) => {
+      const item = checklist.querySelector(`[data-rule="${ruleKey}"]`);
+      if (item) {
+        item.classList.toggle('is-met', met);
+        item.classList.toggle('is-unmet', !met);
+      }
+    });
+  }
+  if (submitBtn) {
+    submitBtn.disabled = !valid;
+  }
+  return valid;
 }
 
 function bindPasswordChecklist() {
   const pw1 = document.getElementById('resetNewPassword');
   const pw2 = document.getElementById('resetConfirmPassword');
-  const checklist = document.getElementById('resetPwChecklist');
-
-  const refresh = () => {
-    const { rules } = validatePasswordStrength(pw1?.value || '', pw2?.value || '');
-    if (checklist) {
-      Object.entries(rules).forEach(([ruleKey, met]) => {
-        const item = checklist.querySelector(`[data-rule="${ruleKey}"]`);
-        if (item) item.classList.toggle('is-met', met);
-      });
-    }
-  };
-
-  pw1?.addEventListener('input', refresh);
-  pw2?.addEventListener('input', refresh);
-  refresh();
+  pw1?.addEventListener('input', refreshPasswordChecklistUi);
+  pw2?.addEventListener('input', refreshPasswordChecklistUi);
+  refreshPasswordChecklistUi();
 }
 
 function bindTogglePasswordButtons() {
@@ -257,16 +277,12 @@ function bindTogglePasswordButtons() {
   });
 }
 
-async function resolveRecoverySession(recoveryCtx) {
-  const verifyingBox = document.getElementById('resetVerifyingBox');
-  const resetForm = document.getElementById('resetForm');
+async function resolveRecoveryModalFlow(recoveryCtx, existingSession = null) {
+  openResetPasswordModal({ verifying: true, email: existingSession?.user?.email || '' });
 
-  setActiveView('reset');
-  if (verifyingBox) verifyingBox.hidden = false;
-  if (resetForm) resetForm.hidden = true;
-
-  if (recoveryCtx.urlError) {
+  if (recoveryCtx?.urlError) {
     stripSensitiveUrlParams();
+    closeResetPasswordModal();
     setActiveView('forgot');
     showAlert(
       'error',
@@ -277,32 +293,33 @@ async function resolveRecoverySession(recoveryCtx) {
 
   const supabase = await getSupabaseClient();
   if (!supabase) {
-    if (verifyingBox) verifyingBox.hidden = true;
+    closeResetPasswordModal();
     setActiveView('forgot');
     showAlert('error', 'Serviço de segurança temporariamente indisponível. Tente novamente.');
     return;
   }
 
-  let activeSession = null;
+  let activeSession = existingSession;
 
   try {
-    if (recoveryCtx.tokenHash) {
+    if (!activeSession && recoveryCtx?.tokenHash) {
       const { data, error } = await supabase.auth.verifyOtp({
         token_hash: recoveryCtx.tokenHash,
         type: recoveryCtx.otpType || 'recovery',
       });
       stripSensitiveUrlParams();
       if (error || !data?.session) {
+        closeResetPasswordModal();
         setActiveView('forgot');
         showAlert('error', translateAuthError(error));
         return;
       }
       activeSession = data.session;
-    } else {
+    } else if (!activeSession) {
       const { data: currentData } = await supabase.auth.getSession();
       activeSession = currentData?.session || null;
 
-      if (!activeSession && recoveryCtx.authCode) {
+      if (!activeSession && recoveryCtx?.authCode) {
         const { data: exchangeData, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(
           recoveryCtx.authCode
         );
@@ -311,9 +328,12 @@ async function resolveRecoverySession(recoveryCtx) {
         }
       }
       stripSensitiveUrlParams();
+    } else {
+      stripSensitiveUrlParams();
     }
   } catch {
     stripSensitiveUrlParams();
+    closeResetPasswordModal();
     setActiveView('forgot');
     showAlert(
       'error',
@@ -322,9 +342,8 @@ async function resolveRecoverySession(recoveryCtx) {
     return;
   }
 
-  if (verifyingBox) verifyingBox.hidden = true;
-
   if (!activeSession || !activeSession.user) {
+    closeResetPasswordModal();
     setActiveView('forgot');
     showAlert(
       'error',
@@ -334,13 +353,14 @@ async function resolveRecoverySession(recoveryCtx) {
   }
 
   recoveryEmail = activeSession.user.email || '';
-  if (resetForm) resetForm.hidden = false;
+  openResetPasswordModal({ verifying: false, email: recoveryEmail });
+  clearAlert('resetModalAlert');
   showAlert(
     'info',
-    recoveryEmail
-      ? `Conta verificada (${recoveryEmail}). Introduza a sua nova palavra-passe abaixo.`
-      : 'Ligação validada. Introduza a sua nova palavra-passe abaixo.'
+    'Ligação validada com segurança. Defina abaixo a sua nova palavra-passe cumprindo todos os critérios.',
+    'resetModalAlert'
   );
+  refreshPasswordChecklistUi();
   document.getElementById('resetNewPassword')?.focus();
 }
 
@@ -382,6 +402,22 @@ async function notifyBackendRecoveryCompleted(accessToken) {
   }
 }
 
+async function cancelRecoveryAndReturnToLogin(emailInput) {
+  clearAlert();
+  closeResetPasswordModal();
+  const client = await getSupabaseClient();
+  if (client) {
+    await client.auth.signOut().catch(() => {});
+  }
+  const pw1 = document.getElementById('resetNewPassword');
+  const pw2 = document.getElementById('resetConfirmPassword');
+  if (pw1) pw1.value = '';
+  if (pw2) pw2.value = '';
+  refreshPasswordChecklistUi();
+  setActiveView('login');
+  emailInput?.focus();
+}
+
 async function initLoginPage() {
   getFirebaseApp();
   const form = document.getElementById('loginForm');
@@ -401,6 +437,7 @@ async function initLoginPage() {
   const resetConfirmPwInput = document.getElementById('resetConfirmPassword');
   const resetSubmitBtn = document.getElementById('btnResetSubmit');
   const backFromResetBtn = document.getElementById('btnBackToLoginFromReset');
+  const cancelResetModalBtn = document.getElementById('btnCancelResetModal');
 
   // Restaurar email guardado
   try {
@@ -419,14 +456,18 @@ async function initLoginPage() {
   const recoveryCtx = parseRecoveryUrlContext();
 
   if (recoveryCtx.isRecovery) {
-    await resolveRecoverySession(recoveryCtx);
+    await resolveRecoveryModalFlow(recoveryCtx);
   } else {
     showRedirectNoticeIfNeeded();
 
     const auth = await verifyAuthenticatedUser();
-    if (auth.authenticated) {
-      window.location.replace(getSafeRedirectTarget());
-      return;
+    if (auth.authenticated && auth.session?.access_token) {
+      if (isRecoverySessionToken(auth.session.access_token)) {
+        await resolveRecoveryModalFlow({ isRecovery: true }, auth.session);
+      } else {
+        window.location.replace(getSafeRedirectTarget());
+        return;
+      }
     }
 
     const config = await loadSupabaseConfig();
@@ -444,16 +485,14 @@ async function initLoginPage() {
     supabaseClient.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY' && session?.user) {
         recoveryEmail = session.user.email || '';
-        setActiveView('reset');
-        const verifyingBox = document.getElementById('resetVerifyingBox');
-        if (verifyingBox) verifyingBox.hidden = true;
-        if (resetForm) resetForm.hidden = false;
+        openResetPasswordModal({ verifying: false, email: recoveryEmail });
         showAlert(
           'info',
-          recoveryEmail
-            ? `Conta verificada (${recoveryEmail}). Introduza a sua nova palavra-passe abaixo.`
-            : 'Ligação validada. Introduza a sua nova palavra-passe abaixo.'
+          'Ligação validada com segurança. Defina abaixo a sua nova palavra-passe cumprindo todos os critérios.',
+          'resetModalAlert'
         );
+        refreshPasswordChecklistUi();
+        resetNewPwInput?.focus();
       }
     });
   }
@@ -483,19 +522,8 @@ async function initLoginPage() {
     });
   }
 
-  if (backFromResetBtn) {
-    backFromResetBtn.addEventListener('click', async () => {
-      clearAlert();
-      const client = await getSupabaseClient();
-      if (client) {
-        await client.auth.signOut().catch(() => {});
-      }
-      if (resetNewPwInput) resetNewPwInput.value = '';
-      if (resetConfirmPwInput) resetConfirmPwInput.value = '';
-      setActiveView('login');
-      emailInput?.focus();
-    });
-  }
+  backFromResetBtn?.addEventListener('click', () => cancelRecoveryAndReturnToLogin(emailInput));
+  cancelResetModalBtn?.addEventListener('click', () => cancelRecoveryAndReturnToLogin(emailInput));
 
   // Submeter pedido de recuperação personalizado conectado à base de dados
   if (forgotForm) {
@@ -533,31 +561,29 @@ async function initLoginPage() {
     });
   }
 
-  // Submeter nova palavra-passe após clicar no link do email
+  // Submeter nova palavra-passe no pop-up
   if (resetForm) {
     resetForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      clearAlert();
+      clearAlert('resetModalAlert');
 
       const newPassword = resetNewPwInput?.value || '';
       const confirmPassword = resetConfirmPwInput?.value || '';
-      const check = validatePasswordStrength(newPassword, confirmPassword);
+      const check = validateStrongPassword(newPassword, confirmPassword);
 
-      if (!check.rules.len || !check.rules.letter || !check.rules.digit) {
+      if (!check.valid) {
+        refreshPasswordChecklistUi();
         showAlert(
           'error',
-          'A nova palavra-passe deve ter no mínimo 8 caracteres, incluindo letras e números.'
+          'Cumpra todos os requisitos a verde: mín. 8 caracteres, maiúscula, minúscula, número, carácter especial (ex: @) e confirmação igual.',
+          'resetModalAlert'
         );
-        return;
-      }
-      if (!check.rules.match) {
-        showAlert('error', 'As palavras-passe introduzidas não coincidem.');
         return;
       }
 
       const supabase = await getSupabaseClient();
       if (!supabase) {
-        showAlert('error', 'Serviço de segurança temporariamente indisponível.');
+        showAlert('error', 'Serviço de segurança temporariamente indisponível.', 'resetModalAlert');
         return;
       }
 
@@ -576,7 +602,8 @@ async function initLoginPage() {
         });
 
         if (updateErr) {
-          showAlert('error', translateAuthError(updateErr));
+          showAlert('error', translateAuthError(updateErr), 'resetModalAlert');
+          refreshPasswordChecklistUi();
           return;
         }
 
@@ -585,6 +612,9 @@ async function initLoginPage() {
 
         if (resetNewPwInput) resetNewPwInput.value = '';
         if (resetConfirmPwInput) resetConfirmPwInput.value = '';
+        refreshPasswordChecklistUi();
+        closeResetPasswordModal();
+
         if (emailInput && accountEmail) {
           emailInput.value = accountEmail;
         }
@@ -601,12 +631,13 @@ async function initLoginPage() {
       } catch {
         showAlert(
           'error',
-          'Não foi possível guardar a nova palavra-passe. Solicite uma nova ligação de recuperação.'
+          'Não foi possível guardar a nova palavra-passe. Solicite uma nova ligação de recuperação.',
+          'resetModalAlert'
         );
       } finally {
         if (resetSubmitBtn) {
-          resetSubmitBtn.disabled = false;
           resetSubmitBtn.textContent = 'Guardar Nova Palavra-passe';
+          refreshPasswordChecklistUi();
         }
       }
     });

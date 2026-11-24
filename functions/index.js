@@ -40,6 +40,21 @@ function isOriginAllowed(req) {
   return ALLOWED_ORIGINS.has(origin);
 }
 
+function isRecoveryOnlyToken(token) {
+  try {
+    const parts = String(token || '').split('.');
+    if (parts.length < 2) return false;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    if (!Array.isArray(payload?.amr) || payload.amr.length === 0) return false;
+    const methods = payload.amr
+      .map((entry) => (typeof entry === 'string' ? entry : entry?.method || ''))
+      .filter(Boolean);
+    return methods.length > 0 && !methods.includes('password');
+  } catch {
+    return false;
+  }
+}
+
 function getSafeRequestOrigin(req) {
   const origin = (req.headers.origin || '').trim();
   if (origin && ALLOWED_ORIGINS.has(origin)) {
@@ -545,7 +560,8 @@ function buildEffectiveProfile(authUser, dbRow) {
   };
 }
 
-async function resolveCallerContext(req, supabaseAdmin) {
+async function resolveCallerContext(req, supabaseAdmin, options = {}) {
+  const { allowRecoverySession = false } = options;
   const token = getBearerToken(req);
   if (!token) {
     return { errorStatus: 401, errorCode: 'MISSING_BEARER_TOKEN' };
@@ -554,6 +570,10 @@ async function resolveCallerContext(req, supabaseAdmin) {
   const { data, error } = await supabaseAdmin.auth.getUser(token);
   if (error || !data?.user) {
     return { errorStatus: 401, errorCode: 'INVALID_TOKEN' };
+  }
+
+  if (!allowRecoverySession && isRecoveryOnlyToken(token)) {
+    return { errorStatus: 403, errorCode: 'RECOVERY_PASSWORD_REQUIRED' };
   }
 
   const authUser = data.user;
@@ -938,7 +958,9 @@ exports.api = onRequest(
     // ── POST /api/auth/complete-password-recovery ────────────────────────────
     if (req.method === 'POST' && requestPath === '/api/auth/complete-password-recovery') {
       try {
-        const ctx = await resolveCallerContext(req, supabaseAdmin);
+        const ctx = await resolveCallerContext(req, supabaseAdmin, {
+          allowRecoverySession: true,
+        });
         if (ctx.errorStatus) {
           res.status(ctx.errorStatus).json({ error: ctx.errorCode });
           return;
