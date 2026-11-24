@@ -20,6 +20,34 @@ export function formatCurrency(amount) {
   }).format(num);
 }
 
+export function formatEuroInputValue(amount) {
+  const n = Math.max(0, Number(amount) || 0);
+  const cents = Math.round(n * 100);
+  const whole = String(Math.floor(cents / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const dec = String(cents % 100).padStart(2, '0');
+  return `€ ${whole},${dec}`;
+}
+
+export function parseCurrencyInput(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+  const raw = String(value || '').trim();
+  if (!raw) return 0;
+
+  // Formato com máscara europeia (ex.: "€ 100.000,50" ou "2.000,00")
+  if (raw.includes(',')) {
+    const normalized = raw.replace(/[^0-9,-]/g, '').replace(',', '.');
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  // Formato simples numérico ou decimal com ponto (ex.: "1500.50")
+  const clean = raw.replace(/[^0-9.-]/g, '');
+  const parsed = Number.parseFloat(clean);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export function formatDatePT(isoDate) {
   if (!isoDate) return '—';
   const parts = String(isoDate).split('-');

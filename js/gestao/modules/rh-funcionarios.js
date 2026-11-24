@@ -12,6 +12,7 @@ import {
   getInitials,
   getWeekdayShortPT,
   isValidNIF,
+  parseCurrencyInput,
   generateId,
   todayISO,
   downloadCSV,
@@ -759,11 +760,11 @@ export class RhFuncionariosModule {
           <div class="erp-form-grid erp-form-grid--3">
             <div class="erp-field">
               <label for="empSalary">Vencimento Base Ilíquido (€) *</label>
-              <input type="number" id="empSalary" name="baseSalary" required min="0" step="0.01" value="${escapeHtml(emp.baseSalary)}">
+              <input type="text" inputmode="numeric" data-currency-euro id="empSalary" name="baseSalary" required value="${escapeHtml(emp.baseSalary)}" placeholder="€ 0,00">
             </div>
             <div class="erp-field">
               <label for="empMeal">Sub. Alimentação (€/dia)</label>
-              <input type="number" id="empMeal" name="mealAllowance" min="0" step="0.01" value="${escapeHtml(emp.mealAllowance)}">
+              <input type="text" inputmode="numeric" data-currency-euro id="empMeal" name="mealAllowance" value="${escapeHtml(emp.mealAllowance)}" placeholder="€ 0,00">
             </div>
             <div class="erp-field">
               <label for="empTwelfths">Duodécimos (Férias/Natal)</label>
@@ -807,8 +808,8 @@ export class RhFuncionariosModule {
           const payload = {
             ...data,
             nif: cleanNif,
-            baseSalary: Number(data.baseSalary) || 0,
-            mealAllowance: Number(data.mealAllowance) || 0,
+            baseSalary: parseCurrencyInput(data.baseSalary),
+            mealAllowance: parseCurrencyInput(data.mealAllowance),
           };
           if (isEdit) {
             store.updateEmployee(emp.id, payload);

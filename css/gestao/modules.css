@@ -357,6 +357,20 @@
   }
 }
 
+.erp-inline-invoice-box {
+  padding: 14px 16px;
+  border-radius: var(--erp-radius-md);
+  border: 1px dashed var(--erp-border-strong);
+  background: var(--erp-surface-alt);
+  margin-bottom: 14px;
+}
+
+.erp-toast--balance {
+  max-width: 440px;
+  padding: 13px 16px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+}
+
 /* ── Dynamic Line Items (Orçamento & Pagamentos) ── */
 .erp-line-list {
   display: flex;

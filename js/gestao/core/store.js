@@ -330,12 +330,12 @@ class ErpStore {
   addProject(project) {
     this.state.projects.unshift(project);
     this._notify();
-    this._syncMutation('/api/erp/projects', 'POST', project, 'Erro ao guardar obra na base de dados.');
+    return this._syncMutation('/api/erp/projects', 'POST', project, 'Erro ao guardar obra na base de dados.');
   }
 
   updateProject(id, patch) {
     const idx = this.state.projects.findIndex((p) => p.id === id);
-    if (idx === -1) return;
+    if (idx === -1) return Promise.resolve(null);
     const current = this.state.projects[idx];
     const updated = { ...current, ...patch };
     this.state.projects[idx] = updated;
@@ -345,7 +345,7 @@ class ErpStore {
     const isPaymentsOnly = patchKeys.length === 1 && patchKeys[0] === 'payments';
     const body = isPaymentsOnly ? { code: current.code || id, payments: patch.payments } : updated;
 
-    this._syncMutation(
+    return this._syncMutation(
       `/api/erp/projects/${encodeURIComponent(current.code || id)}`,
       'PUT',
       body,
@@ -380,7 +380,7 @@ class ErpStore {
     const pending = pendingInvoicePayloads.get(invoice.id);
     pendingInvoicePayloads.delete(invoice.id);
 
-    this._syncMutation(
+    return this._syncMutation(
       '/api/erp/project-invoices',
       'POST',
       {

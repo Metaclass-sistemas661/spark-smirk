@@ -2,7 +2,7 @@
    SPARK & SMIRK ERP — UI Helpers (Icons, Modal, Toast)
    ═══════════════════════════════════════════════════════════ */
 
-import { escapeHtml } from './formatters.js';
+import { escapeHtml, formatCurrency, formatEuroInputValue } from './formatters.js';
 
 export const ICONS = {
   users:
@@ -39,7 +39,7 @@ export const ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
 };
 
-export function showToast(message, variant = 'success') {
+export function showToast(message, variant = 'success', durationMs = 3400) {
   const stack = document.getElementById('erpToastStack');
   if (!stack) return;
 
@@ -53,7 +53,76 @@ export function showToast(message, variant = 'success') {
     toast.style.transform = 'translateY(8px)';
     toast.style.transition = 'all 0.2s ease';
     setTimeout(() => toast.remove(), 220);
-  }, 3400);
+  }, durationMs);
+}
+
+export function showBalanceNotification({ projectLabel, invoiceNumber, invoiceAmount, remainingBudget, budgetTotal }) {
+  const stack = document.getElementById('erpToastStack');
+  if (!stack) return;
+
+  const isOver = budgetTotal > 0 && remainingBudget < -0.009;
+  const spentPct = budgetTotal > 0 ? Math.round(((budgetTotal - remainingBudget) / budgetTotal) * 100) : 0;
+  const isWarn = !isOver && budgetTotal > 0 && spentPct >= 80;
+  const variant = isOver ? 'danger' : isWarn ? 'warning' : 'success';
+
+  const toast = document.createElement('div');
+  toast.className = `erp-toast erp-toast--${variant} erp-toast--balance`;
+  toast.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:3px;">
+      <strong style="font-size:13px;">Fatura ${escapeHtml(invoiceNumber || '')} lançada · ${escapeHtml(projectLabel || 'Obra')}</strong>
+      <span style="font-size:12.5px;">Abatido: <strong>${escapeHtml(formatCurrency(invoiceAmount))}</strong> · O saldo desta obra é <strong style="text-decoration:underline;">${escapeHtml(formatCurrency(remainingBudget))}</strong></span>
+    </div>
+  `;
+  stack.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(8px)';
+    toast.style.transition = 'all 0.25s ease';
+    setTimeout(() => toast.remove(), 240);
+  }, 6500);
+}
+
+export function applyEuroMaskToInput(input) {
+  if (!input || input.dataset.euroMaskBound === '1') return;
+  input.dataset.euroMaskBound = '1';
+
+  const formatFromDigits = () => {
+    const digits = String(input.value || '').replace(/\D/g, '').slice(0, 13);
+    if (!digits) {
+      input.value = '';
+      return;
+    }
+    const numeric = Number(digits) / 100;
+    input.value = formatEuroInputValue(numeric);
+  };
+
+  // Formata valor inicial caso tenha vindo numérico ou não formatado
+  if (input.value !== '' && !String(input.value).includes(',')) {
+    const num = Number(input.value);
+    if (!Number.isNaN(num) && num > 0) {
+      input.value = formatEuroInputValue(num);
+    } else if (num === 0 && input.dataset.allowZero === '1') {
+      input.value = formatEuroInputValue(0);
+    } else {
+      input.value = '';
+    }
+  }
+
+  input.addEventListener('input', formatFromDigits);
+  input.addEventListener('focus', () => {
+    if (typeof input.setSelectionRange === 'function') {
+      const len = input.value.length;
+      window.setTimeout(() => input.setSelectionRange(len, len), 0);
+    }
+  });
+}
+
+export function attachEuroMasks(rootEl) {
+  if (!rootEl) return;
+  rootEl.querySelectorAll('[data-currency-euro]').forEach((inp) => {
+    applyEuroMaskToInput(inp);
+  });
 }
 
 export function openModal({ title, subtitle = '', bodyHtml, footerHtml = '', size = 'default', onMount }) {
@@ -86,8 +155,11 @@ export function openModal({ title, subtitle = '', bodyHtml, footerHtml = '', siz
     btn.addEventListener('click', closeModal);
   });
 
+  attachEuroMasks(modal);
+
   if (typeof onMount === 'function') {
     onMount(modal);
+    attachEuroMasks(modal);
   }
 }
 

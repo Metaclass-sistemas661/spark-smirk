@@ -12,9 +12,18 @@ import {
   formatDatePT,
   generateId,
   isValidNIF,
+  parseCurrencyInput,
   todayISO,
 } from '../core/formatters.js';
-import { ICONS, openModal, closeModal, confirmAction, showToast } from '../core/ui.js';
+import {
+  ICONS,
+  openModal,
+  closeModal,
+  confirmAction,
+  showToast,
+  showBalanceNotification,
+  attachEuroMasks,
+} from '../core/ui.js';
 
 const INVOICE_CATEGORIES = [
   'Materiais de Construção',
@@ -718,7 +727,7 @@ export class OperacionalObrasModule {
             </div>
             <div class="erp-field">
               <label for="invAmount">Valor da Fatura c/ IVA (€) *</label>
-              <input type="number" step="0.01" min="0" id="invAmount" required placeholder="Ex.: 2000.00">
+              <input type="text" inputmode="numeric" data-currency-euro id="invAmount" required placeholder="€ 0,00">
             </div>
             <div class="erp-field">
               <label for="invNotes">Descrição / Material Comprado</label>
@@ -777,7 +786,7 @@ export class OperacionalObrasModule {
           const latestState = store.getState();
           const proj = latestState.projects.find((p) => p.id === projSelect.value);
           const sum = computeProjectInvoiceSummary(proj, latestState.projectInvoices);
-          const newAmt = Math.max(0, Number(amountInput.value) || 0);
+          const newAmt = Math.max(0, parseCurrencyInput(amountInput.value));
           const nextRemaining = sum.remainingBudget - newAmt;
 
           modal.querySelector('#simBudget').textContent = formatCurrency(sum.budgetTotal);
@@ -839,9 +848,9 @@ export class OperacionalObrasModule {
             return;
           }
 
-          const amountVal = Number(amountInput.value);
-          if (Number.isNaN(amountVal) || amountVal < 0) {
-            showToast('Indique um valor válido para a fatura.', 'danger');
+          const amountVal = parseCurrencyInput(amountInput.value);
+          if (Number.isNaN(amountVal) || amountVal <= 0) {
+            showToast('Indique um valor válido superior a € 0,00 para a fatura.', 'danger');
             return;
           }
 
@@ -882,9 +891,13 @@ export class OperacionalObrasModule {
           store.addProjectInvoice(record);
 
           const updatedSum = computeProjectInvoiceSummary(proj, store.getState().projectInvoices);
-          showToast(
-            `Fatura ${record.invoiceNumber} registada! Saldo disponível em ${proj.code}: ${formatCurrency(updatedSum.remainingBudget)}`
-          );
+          showBalanceNotification({
+            projectLabel: `${proj.code} — ${proj.name}`,
+            invoiceNumber: record.invoiceNumber,
+            invoiceAmount: record.amount,
+            remainingBudget: updatedSum.remainingBudget,
+            budgetTotal: updatedSum.budgetTotal,
+          });
 
           if (returnToDetailId) {
             this._openProjectDetailModal(returnToDetailId, 'invoices');
@@ -1006,7 +1019,7 @@ export class OperacionalObrasModule {
           </div>
           <div class="erp-field">
             <label>Preço Unit. (€)</label>
-            <input type="number" step="0.01" min="0" data-b-field="unitPrice" value="${escapeHtml(it.unitPrice)}">
+            <input type="text" inputmode="numeric" data-currency-euro data-b-field="unitPrice" value="${escapeHtml(it.unitPrice)}" placeholder="€ 0,00">
           </div>
           <button type="button" class="erp-icon-btn erp-icon-btn--danger" data-b-remove="${idx}" title="Remover linha">${ICONS.trash}</button>
         </div>`
@@ -1032,7 +1045,7 @@ export class OperacionalObrasModule {
           </div>
           <div class="erp-field">
             <label>Valor (€)</label>
-            <input type="number" step="0.01" min="0" data-p-field="amount" value="${escapeHtml(p.amount)}">
+            <input type="text" inputmode="numeric" data-currency-euro data-p-field="amount" value="${escapeHtml(p.amount)}" placeholder="€ 0,00">
           </div>
           <div class="erp-field">
             <label>Estado</label>
@@ -1163,7 +1176,7 @@ export class OperacionalObrasModule {
           <div class="erp-form-grid erp-form-grid--3" style="margin-bottom:12px;">
             <div class="erp-field">
               <label for="projManualCap">Orçamento Geral / Plafond (€)</label>
-              <input type="number" step="0.01" min="0" id="projManualCap" name="manualBudgetCap" value="${escapeHtml(proj.manualBudgetCap || '')}" placeholder="Ex.: 100000 (opcional)">
+              <input type="text" inputmode="numeric" data-currency-euro id="projManualCap" name="manualBudgetCap" value="${escapeHtml(proj.manualBudgetCap || '')}" placeholder="€ 0,00 (ex.: € 100.000,00)">
               <span class="erp-field__hint">Se preenchido, define o teto global para abate das faturas. Caso contrário usa os artigos abaixo.</span>
             </div>
             <div class="erp-field">
@@ -1201,8 +1214,67 @@ export class OperacionalObrasModule {
             <div><div class="erp-summary-item__label">Parcelas Lançadas</div><div class="erp-summary-item__val" id="formPayCount">0</div></div>
           </div>
         </div>
+
+        <div class="erp-form-section">
+          <div class="erp-form-section__title">5. Faturas de Materiais &amp; Compras da Obra (PDF) — Abate em Tempo Real</div>
+          ${
+            !this._can || this._can('op_obras', 'faturas')
+              ? `<div class="erp-inline-invoice-box">
+                  <div class="erp-form-grid erp-form-grid--3">
+                    <div class="erp-field">
+                      <label for="formInvAmount">Qual o valor da fatura? (€) *</label>
+                      <input type="text" inputmode="numeric" data-currency-euro id="formInvAmount" placeholder="€ 0,00">
+                    </div>
+                    <div class="erp-field">
+                      <label for="formInvNumber">N.º Fatura / Documento *</label>
+                      <input type="text" id="formInvNumber" placeholder="Ex.: FT 2026/0012">
+                    </div>
+                    <div class="erp-field">
+                      <label for="formInvSupplier">Fornecedor / Armazém *</label>
+                      <input type="text" id="formInvSupplier" placeholder="Ex.: Leroy Merlin, Maxmat">
+                    </div>
+                    <div class="erp-field">
+                      <label for="formInvCategory">Categoria de Custo</label>
+                      <select id="formInvCategory">
+                        ${INVOICE_CATEGORIES.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
+                      </select>
+                    </div>
+                    <div class="erp-field">
+                      <label for="formInvDate">Data da Fatura</label>
+                      <input type="date" id="formInvDate" value="${todayISO()}">
+                    </div>
+                    <div class="erp-field">
+                      <label for="formInvFile">Anexar PDF / Foto da Fatura</label>
+                      <input type="file" id="formInvFile" accept=".pdf,image/*">
+                    </div>
+                  </div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;flex-wrap:wrap;">
+                    <span class="erp-cell-sub" id="formInvFileLabel">Anexe o PDF da fatura e indique o valor para descontar do orçamento geral.</span>
+                    <button type="button" class="erp-btn erp-btn--primary erp-btn--sm" id="btnAddFormInvoice">
+                      ${ICONS.plus}<span>Anexar Fatura PDF &amp; Abater Saldo</span>
+                    </button>
+                  </div>
+                </div>`
+              : ''
+          }
+          <div class="erp-summary-box" style="margin-bottom:12px;">
+            <div><div class="erp-summary-item__label">Orçamento Geral</div><div class="erp-summary-item__val" id="formInvBudget">€0,00</div></div>
+            <div><div class="erp-summary-item__label">Total em Faturas (<span id="formInvCount">0</span>)</div><div class="erp-summary-item__val erp-summary-item__val--warning" id="formInvSpent">€0,00</div></div>
+            <div><div class="erp-summary-item__label">Consumido</div><div class="erp-summary-item__val" id="formInvPct">0%</div></div>
+            <div><div class="erp-summary-item__label">Saldo Disponível (Real Time)</div><div class="erp-summary-item__val erp-summary-item__val--success" id="formInvRemaining">€0,00</div></div>
+          </div>
+          <div id="formInvoicesList"></div>
+        </div>
       </form>
     `;
+
+    const existingProjRefs = new Set([proj.id, proj.code].filter(Boolean));
+    const formInvoices = isEdit
+      ? (state.projectInvoices || [])
+          .filter((inv) => existingProjRefs.has(inv.projectId))
+          .map((inv) => ({ ...inv, isNew: false }))
+      : [];
+    const deletedExistingIds = [];
 
     openModal({
       title: isEdit ? `Editar Obra — ${proj.code}` : 'Cadastrar Nova Obra & Orçamento',
@@ -1211,7 +1283,7 @@ export class OperacionalObrasModule {
       bodyHtml,
       footerHtml: `
         <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Cancelar</button>
-        <button type="submit" form="projectForm" class="erp-btn erp-btn--primary">${isEdit ? 'Guardar Alterações' : 'Registar Obra'}</button>
+        <button type="submit" form="projectForm" class="erp-btn erp-btn--primary" id="btnSubmitProject">${isEdit ? 'Guardar Alterações' : 'Registar Obra'}</button>
       `,
       onMount: (modal) => {
         const budWrap = modal.querySelector('#budgetLinesContainer');
@@ -1219,6 +1291,72 @@ export class OperacionalObrasModule {
         const vatSelect = modal.querySelector('#projVat');
         const contInput = modal.querySelector('#projCont');
         const capInput = modal.querySelector('#projManualCap');
+        const invListEl = modal.querySelector('#formInvoicesList');
+        const invFileInput = modal.querySelector('#formInvFile');
+        const invFileLabel = modal.querySelector('#formInvFileLabel');
+
+        const renderFormInvoices = () => {
+          if (!invListEl) return;
+          if (formInvoices.length === 0) {
+            invListEl.innerHTML = '<div class="erp-cell-sub" style="padding:8px 4px;">Ainda não existem faturas PDF anexadas a esta obra.</div>';
+            return;
+          }
+          invListEl.innerHTML = `
+            <div class="erp-table-wrap">
+              <table class="erp-table">
+                <thead>
+                  <tr>
+                    <th>Data / N.º Fatura</th>
+                    <th>Fornecedor &amp; Categoria</th>
+                    <th>Ficheiro PDF</th>
+                    <th style="text-align:right">Valor (€)</th>
+                    <th style="text-align:right">Remover</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${formInvoices
+                    .map(
+                      (inv, idx) => `
+                    <tr>
+                      <td>
+                        <div class="erp-cell-title">${escapeHtml(inv.invoiceNumber)}</div>
+                        <div class="erp-cell-sub">${escapeHtml(formatDatePT(inv.invoiceDate))}</div>
+                      </td>
+                      <td>
+                        <div class="erp-cell-title">${escapeHtml(inv.supplier)}</div>
+                        <div class="erp-cell-sub">${escapeHtml(inv.category)}</div>
+                      </td>
+                      <td>
+                        ${
+                          inv.fileName || inv.hasFile
+                            ? `<span class="erp-badge erp-badge--info">${escapeHtml(inv.fileName || 'PDF Anexado')}</span>`
+                            : '<span class="erp-badge erp-badge--neutral">Sem PDF</span>'
+                        }
+                      </td>
+                      <td style="text-align:right;font-weight:700;">${escapeHtml(formatCurrency(inv.amount))}</td>
+                      <td style="text-align:right">
+                        <button type="button" class="erp-icon-btn erp-icon-btn--danger" data-form-inv-del="${idx}" title="Remover fatura">${ICONS.trash}</button>
+                      </td>
+                    </tr>`
+                    )
+                    .join('')}
+                </tbody>
+              </table>
+            </div>
+          `;
+
+          invListEl.querySelectorAll('[data-form-inv-del]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+              const idx = Number(btn.dataset.formInvDel);
+              const removed = formInvoices.splice(idx, 1)[0];
+              if (removed && !removed.isNew && removed.id) {
+                deletedExistingIds.push(removed.id);
+              }
+              renderFormInvoices();
+              updateSummaries();
+            });
+          });
+        };
 
         const syncBudgetFromDOM = () => {
           const rows = [...budWrap.querySelectorAll('[data-b-idx]')];
@@ -1227,7 +1365,7 @@ export class OperacionalObrasModule {
             category: row.querySelector('[data-b-field="category"]').value,
             unit: row.querySelector('[data-b-field="unit"]').value,
             qty: Number(row.querySelector('[data-b-field="qty"]').value) || 0,
-            unitPrice: Number(row.querySelector('[data-b-field="unitPrice"]').value) || 0,
+            unitPrice: parseCurrencyInput(row.querySelector('[data-b-field="unitPrice"]').value),
           }));
           proj.budget.vatRate = Number(vatSelect.value);
           proj.budget.contingencyPct = Number(contInput.value) || 0;
@@ -1240,21 +1378,25 @@ export class OperacionalObrasModule {
             description: row.querySelector('[data-p-field="description"]').value,
             dueDate: row.querySelector('[data-p-field="dueDate"]').value,
             paidDate: row.querySelector('[data-p-field="paidDate"]').value,
-            amount: Number(row.querySelector('[data-p-field="amount"]').value) || 0,
+            amount: parseCurrencyInput(row.querySelector('[data-p-field="amount"]').value),
             status: row.querySelector('[data-p-field="status"]').value,
             method: row.querySelector('[data-p-field="method"]').value,
             invoiceRef: proj.payments[i]?.invoiceRef || '',
           }));
         };
 
+        const computeEffectiveFormBudget = () => {
+          const t = computeBudgetTotals(proj.budget);
+          const manualCap = Math.max(0, parseCurrencyInput(capInput?.value));
+          return { t, manualCap, budgetTotal: manualCap > 0 ? manualCap : t.grossTotal };
+        };
+
         const updateSummaries = () => {
           syncBudgetFromDOM();
           syncPaymentsFromDOM();
-          const t = computeBudgetTotals(proj.budget);
-          const manualCap = Math.max(0, Number(capInput?.value) || 0);
+          const { t, manualCap, budgetTotal } = computeEffectiveFormBudget();
           const paid = proj.payments.filter((p) => p.status === 'pago').reduce((s, p) => s + (Number(p.amount) || 0), 0);
-          const effectiveBudget = manualCap > 0 ? manualCap : t.grossTotal;
-          const contract = effectiveBudget > 0 ? effectiveBudget : proj.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+          const contract = budgetTotal > 0 ? budgetTotal : proj.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
           const open = Math.max(0, contract - paid);
 
           modal.querySelector('#formBudSub').textContent = formatCurrency(t.subtotal);
@@ -1266,11 +1408,104 @@ export class OperacionalObrasModule {
           modal.querySelector('#formPayPaid').textContent = formatCurrency(paid);
           modal.querySelector('#formPayOpen').textContent = formatCurrency(open);
           modal.querySelector('#formPayCount').textContent = String(proj.payments.length);
+
+          const totalInvSpent = formInvoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+          const remaining = budgetTotal - totalInvSpent;
+          const pct = budgetTotal > 0 ? Math.round((totalInvSpent / budgetTotal) * 100) : 0;
+
+          modal.querySelector('#formInvBudget').textContent = formatCurrency(budgetTotal);
+          modal.querySelector('#formInvCount').textContent = String(formInvoices.length);
+          modal.querySelector('#formInvSpent').textContent = formatCurrency(totalInvSpent);
+          modal.querySelector('#formInvPct').textContent = `${pct}%`;
+          const remEl = modal.querySelector('#formInvRemaining');
+          remEl.textContent = formatCurrency(remaining);
+          remEl.className = `erp-summary-item__val ${remaining < 0 ? 'erp-summary-item__val--danger' : 'erp-summary-item__val--success'}`;
         };
 
         capInput?.addEventListener('input', updateSummaries);
 
+        if (invFileInput && invFileLabel) {
+          invFileInput.addEventListener('change', () => {
+            const f = invFileInput.files?.[0];
+            invFileLabel.textContent = f
+              ? `Ficheiro selecionado: ${f.name} (${Math.max(1, Math.round(f.size / 1024))} KB)`
+              : 'Anexe o PDF da fatura e indique o valor para descontar do orçamento geral.';
+          });
+        }
+
+        modal.querySelector('#btnAddFormInvoice')?.addEventListener('click', async () => {
+          const amtEl = modal.querySelector('#formInvAmount');
+          const numEl = modal.querySelector('#formInvNumber');
+          const supEl = modal.querySelector('#formInvSupplier');
+          const catEl = modal.querySelector('#formInvCategory');
+          const dateEl = modal.querySelector('#formInvDate');
+
+          const amountVal = parseCurrencyInput(amtEl.value);
+          if (amountVal <= 0) {
+            showToast('Indique primeiro qual é o valor da fatura (superior a € 0,00).', 'danger');
+            amtEl.focus();
+            return;
+          }
+
+          const invoiceNumber = numEl.value.trim() || `FT-${formInvoices.length + 1}`;
+          const supplier = supEl.value.trim() || 'Fornecedor de Obra';
+          const selectedFile = invFileInput?.files?.[0] || null;
+          const invId = generateId('FAT');
+
+          let fileMeta = { name: '', type: '', size: 0 };
+          if (selectedFile) {
+            try {
+              fileMeta = await saveInvoiceFile(invId, selectedFile);
+            } catch (err) {
+              showToast(err?.message || 'Erro ao ler o ficheiro PDF da fatura.', 'danger');
+              return;
+            }
+          }
+
+          formInvoices.unshift({
+            id: invId,
+            invoiceNumber,
+            supplier,
+            supplierNif: '',
+            category: catEl.value,
+            invoiceDate: dateEl.value || todayISO(),
+            amount: Number(amountVal.toFixed(2)),
+            notes: '',
+            fileName: fileMeta.name,
+            fileType: fileMeta.type,
+            fileSize: fileMeta.size,
+            hasFile: Boolean(selectedFile),
+            createdAt: todayISO(),
+            isNew: true,
+          });
+
+          amtEl.value = '';
+          numEl.value = '';
+          supEl.value = '';
+          if (invFileInput) invFileInput.value = '';
+          if (invFileLabel) {
+            invFileLabel.textContent = 'Anexe o PDF da fatura e indique o valor para descontar do orçamento geral.';
+          }
+
+          renderFormInvoices();
+          updateSummaries();
+
+          const { budgetTotal } = computeEffectiveFormBudget();
+          const totalSpent = formInvoices.reduce((s, inv) => s + (Number(inv.amount) || 0), 0);
+          const remainingNow = budgetTotal - totalSpent;
+          const projLabel = `${modal.querySelector('#projCode').value.trim() || proj.code} — ${modal.querySelector('#projName').value.trim() || 'Obra'}`;
+
+          showBalanceNotification({
+            projectLabel: projLabel,
+            invoiceNumber,
+            invoiceAmount: amountVal,
+            remainingBudget: remainingNow,
+            budgetTotal,
+          });
+        });
+
         const bindBudgetEvents = () => {
+          attachEuroMasks(budWrap);
           budWrap.querySelectorAll('input, select').forEach((el) => {
             el.addEventListener('input', updateSummaries);
           });
@@ -1290,6 +1525,7 @@ export class OperacionalObrasModule {
         };
 
         const bindPaymentEvents = () => {
+          attachEuroMasks(payWrap);
           payWrap.querySelectorAll('input, select').forEach((el) => {
             el.addEventListener('input', updateSummaries);
             el.addEventListener('change', updateSummaries);
@@ -1332,12 +1568,13 @@ export class OperacionalObrasModule {
 
         vatSelect.addEventListener('change', updateSummaries);
         contInput.addEventListener('input', updateSummaries);
+        renderFormInvoices();
         bindBudgetEvents();
         bindPaymentEvents();
         updateSummaries();
 
         const form = modal.querySelector('#projectForm');
-        form.addEventListener('submit', (e) => {
+        form.addEventListener('submit', async (e) => {
           e.preventDefault();
           syncBudgetFromDOM();
           syncPaymentsFromDOM();
@@ -1347,6 +1584,10 @@ export class OperacionalObrasModule {
             showToast('NIF do cliente inválido. Verifique os 9 dígitos.', 'danger');
             return;
           }
+
+          const submitBtn = modal.querySelector('#btnSubmitProject');
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'A guardar obra...';
 
           const checkedTeam = [...modal.querySelectorAll('input[name="teamIds"]:checked')].map((c) => c.value);
           const statusVal = modal.querySelector('#projStatus').value;
@@ -1371,18 +1612,41 @@ export class OperacionalObrasModule {
             clientEmail: modal.querySelector('#projClientEmail').value.trim(),
             managerId: modal.querySelector('#projManager').value,
             teamIds: checkedTeam,
-            manualBudgetCap: Math.max(0, Number(modal.querySelector('#projManualCap').value) || 0),
+            manualBudgetCap: Math.max(0, parseCurrencyInput(modal.querySelector('#projManualCap').value)),
             budget: proj.budget,
             payments: proj.payments,
           };
 
+          let savedProjectRef = proj.id;
           if (isEdit) {
-            store.updateProject(proj.id, payload);
-            showToast(`Obra ${payload.code} atualizada.`);
+            await store.updateProject(proj.id, payload);
           } else {
-            store.addProject({ id: generateId('OB'), ...payload });
-            showToast(`Obra ${payload.code} registada com sucesso.`);
+            savedProjectRef = generateId('OB');
+            await store.addProject({ id: savedProjectRef, ...payload });
           }
+
+          for (const delId of deletedExistingIds) {
+            store.deleteProjectInvoice(delId);
+          }
+
+          const newInvoices = formInvoices.filter((inv) => inv.isNew);
+          for (const inv of newInvoices) {
+            await store.addProjectInvoice({
+              ...inv,
+              projectId: payload.code || savedProjectRef,
+            });
+          }
+
+          const savedProjObj = store.getState().projects.find(
+            (p) => p.id === savedProjectRef || p.code === payload.code
+          ) || payload;
+          const finalSum = computeProjectInvoiceSummary(savedProjObj, store.getState().projectInvoices);
+
+          showToast(
+            `${isEdit ? `Obra ${payload.code} atualizada.` : `Obra ${payload.code} registada.`} Saldo disponível: ${formatCurrency(finalSum.remainingBudget)}`,
+            'success',
+            5000
+          );
           closeModal();
         });
       },

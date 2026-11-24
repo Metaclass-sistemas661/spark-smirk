@@ -11,10 +11,12 @@ import {
   downloadCSV,
   escapeHtml,
   formatCurrency,
+  formatEuroInputValue,
   formatDatePT,
   formatMonthLabel,
   generateId,
   getInitials,
+  parseCurrencyInput,
   todayISO,
 } from '../core/formatters.js';
 import { ICONS, openModal, closeModal, confirmAction, showToast } from '../core/ui.js';
@@ -784,28 +786,28 @@ export class RhRecibosModule {
           <div class="erp-form-grid erp-form-grid--3">
             <div class="erp-field">
               <label for="payBase">Vencimento Base (€)</label>
-              <input type="number" step="0.01" min="0" id="payBase" name="baseSalary" value="${escapeHtml(pay.baseSalary)}">
+              <input type="text" inputmode="numeric" data-currency-euro id="payBase" name="baseSalary" value="${escapeHtml(pay.baseSalary)}" placeholder="€ 0,00">
             </div>
             <div class="erp-field">
               <label for="payMeal">Subsídio Alimentação (€)</label>
-              <input type="number" step="0.01" min="0" id="payMeal" name="mealAllowanceTotal" value="${escapeHtml(pay.mealAllowanceTotal)}">
+              <input type="text" inputmode="numeric" data-currency-euro id="payMeal" name="mealAllowanceTotal" value="${escapeHtml(pay.mealAllowanceTotal)}" placeholder="€ 0,00">
               <span class="erp-field__hint" id="payWorkedHint">${worked} dias trabalhados registados no mês</span>
             </div>
             <div class="erp-field">
               <label for="payBonus">Horas Extra / Prémios (€)</label>
-              <input type="number" step="0.01" min="0" id="payBonus" name="overtimeBonus" value="${escapeHtml(pay.overtimeBonus)}">
+              <input type="text" inputmode="numeric" data-currency-euro id="payBonus" name="overtimeBonus" value="${escapeHtml(pay.overtimeBonus)}" placeholder="€ 0,00">
             </div>
             <div class="erp-field">
               <label for="paySS">Segurança Social 11% (€)</label>
-              <input type="number" step="0.01" min="0" id="paySS" name="socialSecurity" value="${escapeHtml(pay.socialSecurity)}">
+              <input type="text" inputmode="numeric" data-currency-euro id="paySS" name="socialSecurity" value="${escapeHtml(pay.socialSecurity)}" placeholder="€ 0,00">
             </div>
             <div class="erp-field">
               <label for="payIrs">Retenção na Fonte IRS (€)</label>
-              <input type="number" step="0.01" min="0" id="payIrs" name="irsRetention" value="${escapeHtml(pay.irsRetention)}">
+              <input type="text" inputmode="numeric" data-currency-euro id="payIrs" name="irsRetention" value="${escapeHtml(pay.irsRetention)}" placeholder="€ 0,00">
             </div>
             <div class="erp-field">
               <label for="payOther">Outros Descontos (€)</label>
-              <input type="number" step="0.01" min="0" id="payOther" name="otherDeductions" value="${escapeHtml(pay.otherDeductions)}">
+              <input type="text" inputmode="numeric" data-currency-euro id="payOther" name="otherDeductions" value="${escapeHtml(pay.otherDeductions)}" placeholder="€ 0,00">
             </div>
           </div>
 
@@ -880,12 +882,12 @@ export class RhRecibosModule {
         const otherInput = modal.querySelector('#payOther');
 
         const recalc = () => {
-          const base = Number(baseInput.value) || 0;
-          const meal = Number(mealInput.value) || 0;
-          const bonus = Number(bonusInput.value) || 0;
-          const ss = Number(ssInput.value) || 0;
-          const irs = Number(irsInput.value) || 0;
-          const other = Number(otherInput.value) || 0;
+          const base = parseCurrencyInput(baseInput.value);
+          const meal = parseCurrencyInput(mealInput.value);
+          const bonus = parseCurrencyInput(bonusInput.value);
+          const ss = parseCurrencyInput(ssInput.value);
+          const irs = parseCurrencyInput(irsInput.value);
+          const other = parseCurrencyInput(otherInput.value);
 
           const gross = base + meal + bonus;
           const ded = ss + irs + other;
@@ -905,9 +907,9 @@ export class RhRecibosModule {
           const days = this._countWorkedDays(emp.id, monthInput.value);
           modal.querySelector('#payWorkedHint').textContent = `${days} dias trabalhados registados no mês`;
           if (!isEdit) {
-            baseInput.value = emp.baseSalary;
-            mealInput.value = (days * (Number(emp.mealAllowance) || 0)).toFixed(2);
-            ssInput.value = ((emp.baseSalary + (Number(bonusInput.value) || 0)) * 0.11).toFixed(2);
+            baseInput.value = formatEuroInputValue(emp.baseSalary);
+            mealInput.value = formatEuroInputValue(days * (Number(emp.mealAllowance) || 0));
+            ssInput.value = formatEuroInputValue((Number(emp.baseSalary) + parseCurrencyInput(bonusInput.value)) * 0.11);
           }
           recalc();
         };
@@ -939,12 +941,12 @@ export class RhRecibosModule {
           const payload = {
             employeeId: empId,
             month: refMonth,
-            baseSalary: Number(baseInput.value) || 0,
-            mealAllowanceTotal: Number(mealInput.value) || 0,
-            overtimeBonus: Number(bonusInput.value) || 0,
-            socialSecurity: Number(ssInput.value) || 0,
-            irsRetention: Number(irsInput.value) || 0,
-            otherDeductions: Number(otherInput.value) || 0,
+            baseSalary: parseCurrencyInput(baseInput.value),
+            mealAllowanceTotal: parseCurrencyInput(mealInput.value),
+            overtimeBonus: parseCurrencyInput(bonusInput.value),
+            socialSecurity: parseCurrencyInput(ssInput.value),
+            irsRetention: parseCurrencyInput(irsInput.value),
+            otherDeductions: parseCurrencyInput(otherInput.value),
             netSalary: Number(net.toFixed(2)),
             paymentDate: modal.querySelector('#payDate').value,
             status: modal.querySelector('#payStatus').value,
