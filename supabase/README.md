@@ -18,6 +18,7 @@ Os scripts SQL estão separados por **schemas PostgreSQL distintos** e organizad
 - [`02-assiduidade.sql`](./02-recursos-humanos/02-assiduidade.sql) — Tabela `rh.assiduidade` (presenças diárias, faltas justificadas/injustificadas, férias e baixas).
 - [`03-recibos-vencimento.sql`](./02-recursos-humanos/03-recibos-vencimento.sql) — Tabela `rh.recibos_vencimento` (cálculo mensal de vencimentos, IRS, Segurança Social e líquido).
 - [`04-recibos-anexados.sql`](./02-recursos-humanos/04-recibos-anexados.sql) — Tabela `rh.recibos_anexados` (histórico de recibos anexados filtrados por funcionário, ano e mês).
+- [`05-remuneracao-e-adiantamentos.sql`](./02-recursos-humanos/05-remuneracao-e-adiantamentos.sql) — Modalidade salarial (`mensal`, `diaria`, `hora`), SS%, horas diárias e tabela `rh.adiantamentos` (vales).
 
 ### `03-operacional/` — Schema `operacional`
 - [`01-obras.sql`](./03-operacional/01-obras.sql) — Tabela `operacional.obras` (obras em andamento, a iniciar e concluídas).
@@ -37,12 +38,13 @@ Execute exatamente pela numeração das pastas e ficheiros:
 5. `02-recursos-humanos/02-assiduidade.sql`
 6. `02-recursos-humanos/03-recibos-vencimento.sql`
 7. `02-recursos-humanos/04-recibos-anexados.sql`
-8. `03-operacional/01-obras.sql`
-9. `03-operacional/02-orcamentos.sql`
-10. `03-operacional/03-pagamentos-obras.sql`
-11. `03-operacional/04-faturas-obras.sql`
-12. `03-operacional/05-regime-obra-e-contratos.sql`
-13. `03-operacional/06-responsaveis-tecnicos.sql`
+8. `02-recursos-humanos/05-remuneracao-e-adiantamentos.sql`
+9. `03-operacional/01-obras.sql`
+10. `03-operacional/02-orcamentos.sql`
+11. `03-operacional/03-pagamentos-obras.sql`
+12. `03-operacional/04-faturas-obras.sql`
+13. `03-operacional/05-regime-obra-e-contratos.sql`
+14. `03-operacional/06-responsaveis-tecnicos.sql`
 
 ## Expor os Schemas na API do Supabase
 

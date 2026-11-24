@@ -182,6 +182,7 @@ export async function getTechnicalCertificateFile(id) {
 const EMPTY_STATE = {
   employees: [],
   attendance: {},
+  employeeAdvances: [],
   payslips: [],
   attachedReceipts: [],
   projects: [],
@@ -218,6 +219,7 @@ class ErpStore {
     return {
       employees: Array.isArray(snapshot?.employees) ? snapshot.employees : [],
       attendance: snapshot?.attendance && typeof snapshot.attendance === 'object' ? snapshot.attendance : {},
+      employeeAdvances: Array.isArray(snapshot?.employeeAdvances) ? snapshot.employeeAdvances : [],
       payslips: Array.isArray(snapshot?.payslips) ? snapshot.payslips : [],
       attachedReceipts: Array.isArray(snapshot?.attachedReceipts) ? snapshot.attachedReceipts : [],
       projects: Array.isArray(snapshot?.projects) ? snapshot.projects : [],
@@ -289,6 +291,7 @@ class ErpStore {
   deleteEmployee(id) {
     this.state.employees = this.state.employees.filter((e) => e.id !== id);
     delete this.state.attendance[id];
+    this.state.employeeAdvances = (this.state.employeeAdvances || []).filter((a) => a.employeeId !== id);
     this.state.payslips = this.state.payslips.filter((p) => p.employeeId !== id);
     this.state.attachedReceipts = (this.state.attachedReceipts || []).filter((r) => r.employeeId !== id);
     this._notify();
@@ -301,20 +304,20 @@ class ErpStore {
   }
 
   /* ── Presenças e Faltas ── */
-  setAttendance(employeeId, dateISO, status, note = '') {
+  setAttendance(employeeId, dateISO, status, note = '', hours = 8) {
     if (!this.state.attendance[employeeId]) {
       this.state.attendance[employeeId] = {};
     }
     if (!status) {
       delete this.state.attendance[employeeId][dateISO];
     } else {
-      this.state.attendance[employeeId][dateISO] = { status, note };
+      this.state.attendance[employeeId][dateISO] = { status, note, hours: status === 'P' ? Number(hours) || 8 : 0 };
     }
     this._notify();
     this._syncMutation(
       '/api/erp/attendance',
       'PUT',
-      { employeeId, dateISO, status: status || '', note },
+      { employeeId, dateISO, status: status || '', note, hours: Number(hours) || 8 },
       'Erro ao guardar assiduidade na base de dados.'
     );
   }
@@ -327,7 +330,7 @@ class ErpStore {
           this.state.attendance[emp.id] = {};
         }
         if (!this.state.attendance[emp.id][dateISO]) {
-          this.state.attendance[emp.id][dateISO] = { status: 'P', note: '' };
+          this.state.attendance[emp.id][dateISO] = { status: 'P', note: '', hours: 8 };
         }
       });
     this._notify();
@@ -336,6 +339,32 @@ class ErpStore {
       'PUT',
       { action: 'mark_all_present', dateISO },
       'Erro ao registar presenças em lote na base de dados.'
+    );
+  }
+
+  /* ── Adiantamentos Salariais (Vales) ── */
+  addEmployeeAdvance(advance) {
+    if (!Array.isArray(this.state.employeeAdvances)) {
+      this.state.employeeAdvances = [];
+    }
+    this.state.employeeAdvances.unshift(advance);
+    this._notify();
+    return this._syncMutation(
+      '/api/erp/employee-advances',
+      'POST',
+      advance,
+      'Erro ao registar adiantamento salarial na base de dados.'
+    );
+  }
+
+  deleteEmployeeAdvance(id) {
+    this.state.employeeAdvances = (this.state.employeeAdvances || []).filter((a) => a.id !== id);
+    this._notify();
+    this._syncMutation(
+      `/api/erp/employee-advances/${encodeURIComponent(id)}`,
+      'DELETE',
+      null,
+      'Erro ao eliminar adiantamento salarial da base de dados.'
     );
   }
 

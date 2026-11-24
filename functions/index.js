@@ -899,6 +899,7 @@ exports.api = onRequest(
             snapshot || {
               employees: [],
               attendance: {},
+              employeeAdvances: [],
               payslips: [],
               attachedReceipts: [],
               projects: [],
@@ -1006,12 +1007,79 @@ exports.api = onRequest(
               p_status: body.status || '',
               p_note: body.note || '',
               p_actor: ctx.authUser.id,
+              p_hours: body.hours !== undefined ? Number(body.hours) : 8,
             });
             if (error) {
               res.status(400).json({ error: 'ATTENDANCE_SAVE_ERROR', message: error.message });
               return;
             }
           }
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        // ── ADIANTAMENTOS DE ORDENADO (POST / DELETE) ────────────────────────
+        if (req.method === 'POST' && requestPath === '/api/erp/employee-advances') {
+          const canAdvance =
+            hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar') ||
+            hasModuleAction(ctx.profile, 'rh_funcionarios', 'assiduidade');
+          if (!canAdvance) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para registar adiantamentos salariais.' });
+            return;
+          }
+          const body = req.body && typeof req.body === 'object' ? req.body : {};
+          const empId = String(body.employeeId || '').trim();
+          const amount = Number(body.amount);
+          if (!empId || Number.isNaN(amount) || amount <= 0) {
+            res.status(400).json({
+              error: 'INVALID_ADVANCE_PAYLOAD',
+              message: 'Indique o funcionário e um valor de adiantamento superior a € 0,00.',
+            });
+            return;
+          }
+          const { data, error } = await supabaseAdmin.rpc('spark_erp_add_advance', {
+            p_payload: body,
+            p_actor: ctx.authUser.id,
+          });
+          if (error) {
+            res.status(400).json({ error: 'ADVANCE_SAVE_ERROR', message: error.message });
+            return;
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'rh.adiantamentos',
+            acao: 'ADIANTAMENTO_ORDENADO',
+            entidadeId: data?.id || empId,
+            detalhes: { employeeId: empId, month: body.month, amount },
+          });
+          res.status(201).json(data);
+          return;
+        }
+
+        const advMatch = requestPath.match(/^\/api\/erp\/employee-advances\/([^/]+)$/);
+        if (advMatch && req.method === 'DELETE') {
+          const canDelAdv =
+            hasModuleAction(ctx.profile, 'rh_funcionarios', 'excluir') ||
+            hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar') ||
+            hasModuleAction(ctx.profile, 'rh_funcionarios', 'assiduidade');
+          if (!canDelAdv) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para remover adiantamentos.' });
+            return;
+          }
+          const advCode = decodeURIComponent(advMatch[1]);
+          const { error } = await supabaseAdmin.rpc('spark_erp_delete_advance', { p_code: advCode });
+          if (error) {
+            res.status(400).json({ error: 'ADVANCE_DELETE_ERROR', message: error.message });
+            return;
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'rh.adiantamentos',
+            acao: 'EXCLUIR_ADIANTAMENTO',
+            entidadeId: advCode,
+          });
           res.status(200).json({ ok: true });
           return;
         }

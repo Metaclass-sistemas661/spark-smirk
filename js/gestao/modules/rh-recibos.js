@@ -8,6 +8,7 @@ import {
   getAttachmentFile,
 } from '../core/store.js';
 import {
+  computeEmployeeMonthlyPayroll,
   downloadCSV,
   escapeHtml,
   formatCurrency,
@@ -904,12 +905,20 @@ export class RhRecibosModule {
         const syncEmployeeDefaults = () => {
           const emp = state.employees.find((e) => e.id === empSelect.value);
           if (!emp) return;
-          const days = this._countWorkedDays(emp.id, monthInput.value);
-          modal.querySelector('#payWorkedHint').textContent = `${days} dias trabalhados registados no mês`;
+          const payroll = computeEmployeeMonthlyPayroll(
+            emp,
+            store.getState().attendance,
+            store.getState().employeeAdvances,
+            monthInput.value
+          );
+          modal.querySelector('#payWorkedHint').textContent = `${payroll.present} dias trabalhados registados no mês`;
           if (!isEdit) {
-            baseInput.value = formatEuroInputValue(emp.baseSalary);
-            mealInput.value = formatEuroInputValue(days * (Number(emp.mealAllowance) || 0));
-            ssInput.value = formatEuroInputValue((Number(emp.baseSalary) + parseCurrencyInput(bonusInput.value)) * 0.11);
+            baseInput.value = formatEuroInputValue(payroll.earnedBase);
+            mealInput.value = formatEuroInputValue(payroll.mealEarned);
+            ssInput.value = formatEuroInputValue(
+              (payroll.earnedBase + parseCurrencyInput(bonusInput.value)) * (payroll.ssPercentage / 100)
+            );
+            otherInput.value = formatEuroInputValue(payroll.advancesTotal);
           }
           recalc();
         };

@@ -228,3 +228,89 @@ export function computeProjectInvoiceSummary(project, projectInvoices = []) {
     isWarningBudget,
   };
 }
+
+export function computeEmployeeMonthlyPayroll(employee, attendanceMap = {}, employeeAdvances = [], yearMonth = currentYearMonth()) {
+  const empAtt = attendanceMap[employee?.id] || {};
+  const daysCount = getDaysInMonth(yearMonth);
+  let workingDays = 0;
+  let present = 0;
+  let totalHours = 0;
+  let justified = 0;
+  let unjustified = 0;
+  let vacation = 0;
+
+  for (let d = 1; d <= daysCount; d += 1) {
+    const wd = getWeekdayShortPT(yearMonth, d);
+    if (wd !== 0 && wd !== 6) workingDays += 1;
+    const dateISO = `${yearMonth}-${String(d).padStart(2, '0')}`;
+    const rec = empAtt[dateISO];
+    if (!rec) continue;
+    if (rec.status === 'P') {
+      present += 1;
+      totalHours += Number(rec.hours) > 0 ? Number(rec.hours) : 8;
+    } else if (rec.status === 'FJ') {
+      justified += 1;
+    } else if (rec.status === 'FI') {
+      unjustified += 1;
+    } else if (rec.status === 'FE') {
+      vacation += 1;
+    }
+  }
+
+  const totalAbsences = justified + unjustified;
+  const accounted = present + totalAbsences;
+  const attendanceRate = accounted > 0 ? Math.round((present / accounted) * 100) : 100;
+
+  const remType = ['diaria', 'hora', 'mensal'].includes(employee?.remunerationType)
+    ? employee.remunerationType
+    : 'mensal';
+  const dailyRate = Number(employee?.dailyRate) || 0;
+  const hourlyRate = Number(employee?.hourlyRate) || 0;
+  const baseSalaryFixed = Number(employee?.baseSalary) || 0;
+
+  let earnedBase = baseSalaryFixed;
+  if (remType === 'diaria') {
+    earnedBase = present * dailyRate;
+  } else if (remType === 'hora') {
+    earnedBase = totalHours * hourlyRate;
+  }
+
+  const mealEarned = present * (Number(employee?.mealAllowance) || 0);
+  const grossPay = earnedBase + mealEarned;
+  const ssPercentage =
+    employee?.ssPercentage !== undefined && employee?.ssPercentage !== null && employee?.ssPercentage !== ''
+      ? Math.min(100, Math.max(0, Number(employee.ssPercentage) || 0))
+      : 11;
+  const ssDeduction = Number((earnedBase * (ssPercentage / 100)).toFixed(2));
+
+  const monthAdvances = (Array.isArray(employeeAdvances) ? employeeAdvances : []).filter(
+    (adv) => adv.employeeId === employee?.id && String(adv.month || adv.date || '').slice(0, 7) === yearMonth
+  );
+  const advancesTotal = monthAdvances.reduce((sum, adv) => sum + (Number(adv.amount) || 0), 0);
+  const rawNetPay = grossPay - ssDeduction - advancesTotal;
+  const netToPay = Math.max(0, Number(rawNetPay.toFixed(2)));
+
+  return {
+    workingDays,
+    present,
+    totalHours,
+    justified,
+    unjustified,
+    vacation,
+    totalAbsences,
+    attendanceRate,
+    remunerationType: remType,
+    dailyRate,
+    hourlyRate,
+    baseSalaryFixed,
+    earnedBase: Number(earnedBase.toFixed(2)),
+    mealEarned: Number(mealEarned.toFixed(2)),
+    grossPay: Number(grossPay.toFixed(2)),
+    ssPercentage,
+    ssDeduction,
+    monthAdvances,
+    advancesTotal: Number(advancesTotal.toFixed(2)),
+    rawNetPay: Number(rawNetPay.toFixed(2)),
+    netToPay,
+  };
+}
