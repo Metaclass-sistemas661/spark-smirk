@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const { createClient } = require('@supabase/supabase-js');
@@ -36,6 +38,237 @@ function isOriginAllowed(req) {
   const origin = req.headers.origin;
   if (!origin) return true; // Same-origin or server-to-server requests without Origin header
   return ALLOWED_ORIGINS.has(origin);
+}
+
+function getSafeRequestOrigin(req) {
+  const origin = (req.headers.origin || '').trim();
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    return origin;
+  }
+  return 'https://sparksmirk.pt';
+}
+
+function getClientIpHash(req) {
+  const rawForwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const rawIp = rawForwarded || String(req.ip || '').trim();
+  if (!rawIp) return '';
+  return crypto.createHash('sha256').update(rawIp).digest('hex').slice(0, 32);
+}
+
+function escapeEmailHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatLisbonTimestamp(date = new Date()) {
+  try {
+    return new Intl.DateTimeFormat('pt-PT', {
+      timeZone: 'Europe/Lisbon',
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(date);
+  } catch {
+    return date.toISOString();
+  }
+}
+
+function buildSparkRecoveryEmailContent({
+  nomeCompleto,
+  cargo,
+  departamento,
+  email,
+  actionUrl,
+  originUrl,
+}) {
+  const safeName = escapeEmailHtml(nomeCompleto || 'Colaborador(a)');
+  const safeRole = escapeEmailHtml([cargo, departamento].filter(Boolean).join(' · ') || 'Utilizador Interno');
+  const safeEmail = escapeEmailHtml(email);
+  const safeActionUrl = escapeEmailHtml(actionUrl);
+  const safePortalHost = escapeEmailHtml(originUrl.replace(/^https?:\/\//i, ''));
+  const safeWhen = escapeEmailHtml(formatLisbonTimestamp());
+
+  const subject = 'Spark & Smirk — Redefinição Segura de Palavra-passe';
+
+  const text = [
+    'SPARK & SMIRK, LDA. — SISTEMA DE GESTÃO INTERNO',
+    '',
+    `Olá, ${nomeCompleto || 'Colaborador(a)'}.`,
+    '',
+    `Recebemos um pedido para redefinir a palavra-passe da sua conta corporativa (${email}) em ${originUrl}.`,
+    `Data/hora do pedido (Lisboa): ${formatLisbonTimestamp()}`,
+    '',
+    'Para definir uma nova palavra-passe (ligação válida por 60 minutos), aceda ao link abaixo:',
+    actionUrl,
+    '',
+    'Se não solicitou esta alteração, ignore este email em segurança. A sua palavra-passe atual permanece ativa.',
+    '',
+    'Spark & Smirk, Lda. · Engenharia, Construção Civil & Jardinagem · Portugal',
+  ].join('\n');
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeEmailHtml(subject)}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0c1829;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+    Pedido personalizado de redefinição de palavra-passe para ${safeEmail} — Spark &amp; Smirk, Lda.
+  </div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:linear-gradient(180deg,#0c1829 0%,#10233d 100%);padding:36px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;background-color:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,0.38);">
+          <tr>
+            <td style="background:linear-gradient(135deg,#0c1829 0%,#162b47 65%,#0c1829 100%);padding:30px 36px;border-bottom:4px solid #e8650a;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td valign="middle">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="padding-right:12px;" valign="middle">
+                          <img src="https://sparksmirk.pt/logotipo.jpeg" alt="Spark &amp; Smirk, Lda." width="44" height="44" style="display:block;border-radius:10px;border:1px solid rgba(255,255,255,0.22);object-fit:cover;">
+                        </td>
+                        <td valign="middle">
+                          <div style="font-size:19px;font-weight:900;letter-spacing:0.02em;color:#ffffff;line-height:1.1;">
+                            SPARK<span style="color:#e8650a;">&amp;</span>SMIRK
+                          </div>
+                          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#ff8534;margin-top:4px;">
+                            Sistema de Gestão Interno
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td align="right" valign="middle">
+                    <span style="display:inline-block;padding:6px 12px;border-radius:999px;background-color:rgba(232,101,10,0.18);border:1px solid rgba(255,133,52,0.45);color:#ffb07a;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;">
+                      Acesso Seguro
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:34px 36px 28px 36px;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;font-weight:800;color:#0c1829;line-height:1.25;">
+                Olá, ${safeName}
+              </h1>
+              <p style="margin:0 0 16px 0;font-size:13px;font-weight:600;color:#e8650a;text-transform:uppercase;letter-spacing:0.06em;">
+                ${safeRole}
+              </p>
+              <p style="margin:0 0 22px 0;font-size:15px;line-height:1.65;color:#374151;">
+                Recebemos um pedido de redefinição de palavra-passe para a sua conta corporativa <strong style="color:#0c1829;">${safeEmail}</strong> no portal de gestão da <strong>Spark &amp; Smirk, Lda.</strong>
+              </p>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #e8650a;border-radius:10px;margin-bottom:26px;">
+                <tr>
+                  <td style="padding:16px 18px;font-size:13.5px;line-height:1.65;color:#334155;">
+                    <div style="font-weight:700;color:#0c1829;margin-bottom:6px;">Registo de Segurança do Pedido:</div>
+                    <div>• Portal solicitante: <strong>${safePortalHost}</strong></div>
+                    <div>• Data e hora (Lisboa): <strong>${safeWhen}</strong></div>
+                    <div>• Validade: utilização única durante <strong>60 minutos</strong></div>
+                  </td>
+                </tr>
+              </table>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:24px;">
+                <tr>
+                  <td align="center">
+                    <a href="${safeActionUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:15px 32px;background:linear-gradient(135deg,#e8650a 0%,#c24e00 100%);background-color:#e8650a;color:#ffffff;text-decoration:none;font-size:14px;font-weight:800;letter-spacing:0.05em;text-transform:uppercase;border-radius:11px;box-shadow:0 10px 24px rgba(232,101,10,0.32);">
+                      Definir Nova Palavra-passe
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 8px 0;font-size:12.5px;line-height:1.6;color:#64748b;">
+                Se o botão não funcionar, copie e cole este endereço no seu navegador:
+              </p>
+              <p style="margin:0 0 22px 0;padding:12px 14px;background-color:#f1f5f9;border-radius:8px;word-break:break-all;font-size:12px;color:#0f172a;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">
+                ${safeActionUrl}
+              </p>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#fff7ed;border:1px solid #fed7aa;border-radius:10px;">
+                <tr>
+                  <td style="padding:14px 16px;font-size:12.5px;line-height:1.55;color:#9a3412;">
+                    <strong>Não foi você que solicitou?</strong> Ignore esta mensagem em segurança. A sua palavra-passe atual continua protegida e não será alterada.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:#f8fafc;border-top:1px solid #e5e7eb;padding:22px 36px;text-align:center;">
+              <div style="font-size:12.5px;font-weight:700;color:#0c1829;margin-bottom:4px;">
+                Spark &amp; Smirk, Lda. · Engenharia, Construção Civil &amp; Jardinagem
+              </div>
+              <div style="font-size:11.5px;color:#64748b;line-height:1.6;">
+                Portugal · <a href="https://sparksmirk.pt" style="color:#e8650a;text-decoration:none;font-weight:600;">sparksmirk.pt</a> · Mensagem automática de segurança
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  return { subject, html, text };
+}
+
+async function sendCustomRecoveryEmail({ toEmail, subject, html, text }) {
+  const fromAddress = (process.env.SMTP_FROM || 'Spark & Smirk Segurança <no-reply@sparksmirk.pt>').trim();
+  const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
+
+  if (resendApiKey) {
+    const resp = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: fromAddress,
+        to: [toEmail],
+        subject,
+        html,
+        text,
+      }),
+    });
+    if (!resp.ok) {
+      const errBody = await resp.text().catch(() => '');
+      throw new Error(`RESEND_FAILED:${resp.status}:${errBody}`);
+    }
+    return { sent: true, channel: 'resend_api' };
+  }
+
+  const smtpHost = (process.env.SMTP_HOST || '').trim();
+  const smtpUser = (process.env.SMTP_USER || '').trim();
+  const smtpPass = (process.env.SMTP_PASS || '').trim();
+  const smtpPort = Number(process.env.SMTP_PORT || 587);
+  const smtpSecure = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
+
+  if (smtpHost && smtpUser && smtpPass) {
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      auth: { user: smtpUser, pass: smtpPass },
+    });
+    await transporter.sendMail({
+      from: fromAddress,
+      to: toEmail,
+      subject,
+      text,
+      html,
+    });
+    return { sent: true, channel: 'smtp_personalizado' };
+  }
+
+  return { sent: false, channel: 'none' };
 }
 
 function defaultPermissionsForRole(role = 'operador') {
@@ -456,6 +689,322 @@ exports.api = onRequest(
       } catch (err) {
         console.error('Erro na verificação de token Supabase:', err);
         res.status(500).json({ authenticated: false, error: 'VERIFICATION_INTERNAL_ERROR' });
+        return;
+      }
+    }
+
+    // ── POST /api/auth/forgot-password ───────────────────────────────────────
+    if (req.method === 'POST' && requestPath === '/api/auth/forgot-password') {
+      try {
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+        const email = String(body.email || '').trim().toLowerCase();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!email || !emailRegex.test(email)) {
+          res.status(400).json({
+            error: 'INVALID_EMAIL',
+            message: 'Introduza um endereço de email corporativo válido.',
+          });
+          return;
+        }
+
+        const safeOrigin = getSafeRequestOrigin(req);
+        const ipHash = getClientIpHash(req);
+        const redirectTo = `${safeOrigin}/login/`;
+
+        let checkResult = null;
+        try {
+          const { data: rpcCheck, error: rpcErr } = await supabaseAdmin.rpc(
+            'spark_check_password_recovery',
+            { p_email: email, p_ip_hash: ipHash || null }
+          );
+          if (!rpcErr && rpcCheck && typeof rpcCheck === 'object') {
+            checkResult = rpcCheck;
+          }
+        } catch {
+          // Fallback caso a migração SQL 04 ainda não tenha sido aplicada
+        }
+
+        if (!checkResult) {
+          const { rows } = await listDbProfiles(supabaseAdmin);
+          const matched = (rows || []).find(
+            (r) => String(r?.email || '').trim().toLowerCase() === email
+          );
+          checkResult = {
+            allowed: true,
+            reason: 'OK',
+            retry_after_seconds: 0,
+            user_exists: Boolean(matched),
+            user_active: matched ? matched.ativo !== false : false,
+            utilizador_id: matched?.id || null,
+            nome_completo: matched?.nome_completo || null,
+            cargo: matched?.cargo || null,
+            departamento: matched?.departamento || null,
+          };
+        }
+
+        if (!checkResult.allowed) {
+          const retryAfter = Number(checkResult.retry_after_seconds || 60);
+          try {
+            await supabaseAdmin.rpc('spark_log_password_recovery', {
+              p_payload: {
+                email,
+                canal_envio: 'bloqueado',
+                origem_url: safeOrigin,
+                ip_hash: ipHash,
+                estado: 'bloqueado',
+                detalhes: { reason: checkResult.reason, retry_after_seconds: retryAfter },
+              },
+            });
+          } catch {
+            // Non-blocking audit
+          }
+
+          res.status(429).json({
+            error: checkResult.reason || 'RATE_LIMIT_EXCEEDED',
+            retryAfterSeconds: retryAfter,
+            message:
+              checkResult.reason === 'COOLDOWN_ACTIVE'
+                ? `Aguarde ${retryAfter} segundos antes de solicitar um novo link para este email.`
+                : 'Demasiados pedidos de recuperação seguidos. Aguarde alguns minutos antes de tentar novamente.',
+          });
+          return;
+        }
+
+        if (!checkResult.user_exists || !checkResult.user_active) {
+          try {
+            await supabaseAdmin.rpc('spark_log_password_recovery', {
+              p_payload: {
+                utilizador_id: checkResult.utilizador_id || null,
+                email,
+                nome_completo: checkResult.nome_completo || null,
+                canal_envio: 'ignorado',
+                origem_url: safeOrigin,
+                ip_hash: ipHash,
+                estado: 'ignorado',
+                detalhes: {
+                  user_exists: Boolean(checkResult.user_exists),
+                  user_active: Boolean(checkResult.user_active),
+                },
+              },
+            });
+          } catch {
+            // Non-blocking audit
+          }
+
+          res.status(200).json({
+            ok: true,
+            message:
+              'Se o endereço corporativo estiver registado e ativo no sistema, enviaremos em instantes um email personalizado com as instruções de recuperação.',
+          });
+          return;
+        }
+
+        let deliveryChannel = 'auth_email';
+        let deliveredCustom = false;
+
+        const hasCustomTransport = Boolean(
+          (process.env.RESEND_API_KEY || '').trim() ||
+            ((process.env.SMTP_HOST || '').trim() &&
+              (process.env.SMTP_USER || '').trim() &&
+              (process.env.SMTP_PASS || '').trim())
+        );
+
+        if (hasCustomTransport) {
+          try {
+            const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
+              type: 'recovery',
+              email,
+              options: { redirectTo },
+            });
+            const hashedToken = linkData?.properties?.hashed_token;
+            if (!linkErr && hashedToken) {
+              const actionUrl = `${safeOrigin}/login/?token_hash=${encodeURIComponent(hashedToken)}&type=recovery`;
+              const mail = buildSparkRecoveryEmailContent({
+                nomeCompleto: checkResult.nome_completo,
+                cargo: checkResult.cargo,
+                departamento: checkResult.departamento,
+                email,
+                actionUrl,
+                originUrl: safeOrigin,
+              });
+              const sentRes = await sendCustomRecoveryEmail({
+                toEmail: email,
+                subject: mail.subject,
+                html: mail.html,
+                text: mail.text,
+              });
+              if (sentRes.sent) {
+                deliveredCustom = true;
+                deliveryChannel = sentRes.channel;
+              }
+            }
+          } catch (customMailErr) {
+            console.warn('Falha no envio SMTP/API personalizado, a tentar canal principal:', customMailErr?.message || customMailErr);
+          }
+        }
+
+        if (!deliveredCustom) {
+          if (!supabaseAnonKey) {
+            res.status(503).json({
+              error: 'RECOVERY_SERVICE_UNAVAILABLE',
+              message: 'Serviço de recuperação temporariamente indisponível.',
+            });
+            return;
+          }
+
+          const supabasePublic = createClient(supabaseUrl, supabaseAnonKey, {
+            auth: { autoRefreshToken: false, persistSession: false },
+          });
+          const { error: resetErr } = await supabasePublic.auth.resetPasswordForEmail(email, {
+            redirectTo,
+          });
+
+          if (resetErr) {
+            const errMsgLower = String(resetErr.message || '').toLowerCase();
+            try {
+              await supabaseAdmin.rpc('spark_log_password_recovery', {
+                p_payload: {
+                  utilizador_id: checkResult.utilizador_id || null,
+                  email,
+                  nome_completo: checkResult.nome_completo || null,
+                  canal_envio: 'auth_email',
+                  origem_url: safeOrigin,
+                  ip_hash: ipHash,
+                  estado: 'erro',
+                  detalhes: { error: resetErr.message },
+                },
+              });
+            } catch {
+              // Non-blocking audit
+            }
+
+            if (errMsgLower.includes('rate limit') || errMsgLower.includes('security purposes')) {
+              res.status(429).json({
+                error: 'PROVIDER_RATE_LIMIT',
+                message: 'Por motivos de segurança, aguarde alguns instantes antes de solicitar outro email de recuperação.',
+              });
+              return;
+            }
+
+            res.status(500).json({
+              error: 'RECOVERY_SEND_FAILED',
+              message: 'Não foi possível enviar o email de recuperação neste momento. Tente novamente dentro de instantes.',
+            });
+            return;
+          }
+        }
+
+        try {
+          await supabaseAdmin.rpc('spark_log_password_recovery', {
+            p_payload: {
+              utilizador_id: checkResult.utilizador_id || null,
+              email,
+              nome_completo: checkResult.nome_completo || null,
+              canal_envio: deliveryChannel,
+              origem_url: safeOrigin,
+              ip_hash: ipHash,
+              estado: 'email_enviado',
+              detalhes: { redirectTo },
+            },
+          });
+        } catch {
+          await writeAuditLog(supabaseAdmin, {
+            userId: checkResult.utilizador_id || null,
+            userEmail: email,
+            modulo: 'seguranca.recuperacao',
+            acao: 'SOLICITAR_RECUPERACAO_SENHA',
+            entidadeId: checkResult.utilizador_id || email,
+            detalhes: { canal_envio: deliveryChannel, origem_url: safeOrigin },
+          });
+        }
+
+        res.status(200).json({
+          ok: true,
+          deliveryChannel,
+          message:
+            'Enviámos as instruções personalizadas de recuperação para o seu email corporativo. Verifique também a pasta de spam ou correio não solicitado.',
+        });
+        return;
+      } catch (err) {
+        console.error('Erro no pedido de recuperação de palavra-passe:', err);
+        res.status(500).json({
+          error: 'FORGOT_PASSWORD_ERROR',
+          message: 'Erro interno ao processar o pedido de recuperação.',
+        });
+        return;
+      }
+    }
+
+    // ── POST /api/auth/complete-password-recovery ────────────────────────────
+    if (req.method === 'POST' && requestPath === '/api/auth/complete-password-recovery') {
+      try {
+        const ctx = await resolveCallerContext(req, supabaseAdmin);
+        if (ctx.errorStatus) {
+          res.status(ctx.errorStatus).json({ error: ctx.errorCode });
+          return;
+        }
+
+        const nowIso = new Date().toISOString();
+        const ipHash = getClientIpHash(req);
+
+        await supabaseAdmin.auth.admin.updateUserById(ctx.authUser.id, {
+          app_metadata: {
+            ...(ctx.authUser.app_metadata || {}),
+            must_change_password: false,
+          },
+        });
+
+        let dbSynced = false;
+        try {
+          const { error: completeErr } = await supabaseAdmin.rpc(
+            'spark_complete_password_recovery',
+            {
+              p_user_id: ctx.authUser.id,
+              p_email: ctx.authUser.email || ctx.profile.email,
+              p_ip_hash: ipHash || null,
+            }
+          );
+          dbSynced = !completeErr;
+        } catch {
+          dbSynced = false;
+        }
+
+        if (!dbSynced) {
+          const sync = await upsertDbProfile(supabaseAdmin, {
+            id: ctx.authUser.id,
+            nome_completo: ctx.profile.nome_completo,
+            email: ctx.profile.email,
+            cargo: ctx.profile.cargo,
+            departamento: ctx.profile.departamento,
+            telefone: ctx.profile.telefone,
+            nivel_acesso: ctx.profile.nivel_acesso,
+            permissoes: ctx.profile.permissoes,
+            ativo: ctx.profile.ativo,
+            senha_provisoria: false,
+            senha_alterada_em: nowIso,
+            ultimo_login_em: nowIso,
+          });
+          dbSynced = sync.synced;
+
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'seguranca.recuperacao',
+            acao: 'REDEFINIR_SENHA_EMAIL',
+            entidadeId: ctx.authUser.id,
+            detalhes: { senha_alterada_em: nowIso, ip_hash: ipHash },
+          });
+        }
+
+        res.status(200).json({
+          ok: true,
+          dbSynced,
+          message: 'Palavra-passe redefinida e registada com segurança.',
+        });
+        return;
+      } catch (err) {
+        console.error('Erro ao registar conclusão da recuperação de palavra-passe:', err);
+        res.status(500).json({ error: 'COMPLETE_PASSWORD_RECOVERY_ERROR' });
         return;
       }
     }

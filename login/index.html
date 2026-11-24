@@ -48,42 +48,107 @@
         </div>
       </div>
 
-      <!-- Painel Direito: Formulário de Login -->
+      <!-- Painel Direito: Formulário de Login / Recuperação -->
       <div class="login-form-pane">
-        <h2 class="login-form__title">Iniciar Sessão</h2>
-        <p class="login-form__subtitle">Introduza as suas credenciais corporativas para aceder ao painel interno.</p>
+        <h2 class="login-form__title" id="loginPaneTitle">Iniciar Sessão</h2>
+        <p class="login-form__subtitle" id="loginPaneSubtitle">Introduza as suas credenciais corporativas para aceder ao painel interno.</p>
 
         <div class="login-alert" id="loginAlert" role="alert"></div>
 
-        <form class="login-form" id="loginForm" autocomplete="on">
-          <div class="login-input-wrap">
-            <svg class="login-input-wrap__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            <input type="email" id="loginEmail" name="email" required autocomplete="email" placeholder="Email corporativo">
+        <!-- Vista 1: Login -->
+        <div class="login-view" id="loginView">
+          <form class="login-form" id="loginForm" autocomplete="on">
+            <div class="login-input-wrap">
+              <svg class="login-input-wrap__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <input type="email" id="loginEmail" name="email" required autocomplete="email" placeholder="Email corporativo">
+            </div>
+
+            <div class="login-input-wrap login-input-wrap--password">
+              <svg class="login-input-wrap__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <input type="password" id="loginPassword" name="password" required autocomplete="current-password" placeholder="Palavra-passe">
+              <button type="button" class="login-show-btn" id="btnTogglePassword">MOSTRAR</button>
+            </div>
+
+            <div class="login-options">
+              <label class="login-remember">
+                <input type="checkbox" id="loginRemember" checked>
+                <span>Lembrar email</span>
+              </label>
+              <button type="button" class="login-forgot" id="btnForgotPassword">Esqueceu a palavra-passe?</button>
+            </div>
+
+            <button type="submit" class="login-submit" id="btnLoginSubmit">Entrar no Sistema</button>
+          </form>
+
+          <div class="login-divider">ou</div>
+
+          <a href="/" class="login-secondary-btn">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            <span>Voltar ao Site Institucional</span>
+          </a>
+        </div>
+
+        <!-- Vista 2: Pedido de Recuperação de Palavra-passe -->
+        <div class="login-view" id="forgotView" hidden>
+          <form class="login-form" id="forgotForm" autocomplete="on">
+            <div class="login-input-wrap">
+              <svg class="login-input-wrap__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+              <input type="email" id="forgotEmail" name="forgotEmail" required autocomplete="email" placeholder="Introduza o seu email corporativo">
+            </div>
+
+            <div class="login-recovery-note">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <span>Enviaremos uma ligação personalizada e de utilização única (válida por 60 minutos) para redefinir a sua palavra-passe com segurança.</span>
+            </div>
+
+            <button type="submit" class="login-submit" id="btnForgotSubmit">Enviar Email de Recuperação</button>
+          </form>
+
+          <div class="login-divider">ou</div>
+
+          <button type="button" class="login-secondary-btn" id="btnBackToLoginFromForgot">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            <span>Voltar ao Iniciar Sessão</span>
+          </button>
+        </div>
+
+        <!-- Vista 3: Definir Nova Palavra-passe -->
+        <div class="login-view" id="resetView" hidden>
+          <div class="login-verifying-box" id="resetVerifyingBox" hidden>
+            <div class="login-verifying-spinner" aria-hidden="true"></div>
+            <span>A validar ligação de recuperação segura...</span>
           </div>
 
-          <div class="login-input-wrap login-input-wrap--password">
-            <svg class="login-input-wrap__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            <input type="password" id="loginPassword" name="password" required autocomplete="current-password" placeholder="Palavra-passe">
-            <button type="button" class="login-show-btn" id="btnTogglePassword">MOSTRAR</button>
-          </div>
+          <form class="login-form" id="resetForm" autocomplete="off">
+            <div class="login-input-wrap login-input-wrap--password">
+              <svg class="login-input-wrap__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <input type="password" id="resetNewPassword" name="newPassword" required minlength="8" autocomplete="new-password" placeholder="Nova palavra-passe (mín. 8 caracteres)">
+              <button type="button" class="login-show-btn" data-toggle-input="resetNewPassword">MOSTRAR</button>
+            </div>
 
-          <div class="login-options">
-            <label class="login-remember">
-              <input type="checkbox" id="loginRemember" checked>
-              <span>Lembrar email</span>
-            </label>
-            <button type="button" class="login-forgot" id="btnForgotPassword">Esqueceu a palavra-passe?</button>
-          </div>
+            <div class="login-input-wrap login-input-wrap--password">
+              <svg class="login-input-wrap__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <input type="password" id="resetConfirmPassword" name="confirmPassword" required minlength="8" autocomplete="new-password" placeholder="Confirmar nova palavra-passe">
+              <button type="button" class="login-show-btn" data-toggle-input="resetConfirmPassword">MOSTRAR</button>
+            </div>
 
-          <button type="submit" class="login-submit" id="btnLoginSubmit">Entrar no Sistema</button>
-        </form>
+            <ul class="login-pw-checklist" id="resetPwChecklist">
+              <li data-rule="len">Mínimo de 8 caracteres</li>
+              <li data-rule="letter">Pelo menos uma letra (A–Z / a–z)</li>
+              <li data-rule="digit">Pelo menos um número (0–9)</li>
+              <li data-rule="match">As palavras-passe coincidem</li>
+            </ul>
 
-        <div class="login-divider">ou</div>
+            <button type="submit" class="login-submit" id="btnResetSubmit">Guardar Nova Palavra-passe</button>
+          </form>
 
-        <a href="/" class="login-secondary-btn">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-          <span>Voltar ao Site Institucional</span>
-        </a>
+          <div class="login-divider">ou</div>
+
+          <button type="button" class="login-secondary-btn" id="btnBackToLoginFromReset">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            <span>Voltar ao Iniciar Sessão</span>
+          </button>
+        </div>
       </div>
     </section>
 

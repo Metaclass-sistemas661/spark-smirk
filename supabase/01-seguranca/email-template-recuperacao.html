@@ -1,0 +1,125 @@
+<!--
+  SPARK & SMIRK — TEMPLATE DE EMAIL PERSONALIZADO (RECUPERAÇÃO DE PALAVRA-PASSE)
+  Como usar no painel Authentication -> Email Templates -> Reset Password:
+  1. Assunto (Subject): Spark & Smirk — Redefinição Segura de Palavra-passe
+  2. Corpo (Message Body): Cole o HTML completo abaixo.
+-->
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spark &amp; Smirk — Redefinição de Palavra-passe</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0c1829;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+    Pedido de redefinição segura da sua palavra-passe no Sistema de Gestão Interno Spark &amp; Smirk, Lda.
+  </div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:linear-gradient(180deg,#0c1829 0%,#10233d 100%);padding:36px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;background-color:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,0.38);">
+          <!-- Cabeçalho Corporativo -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#0c1829 0%,#162b47 65%,#0c1829 100%);padding:32px 36px;border-bottom:4px solid #e8650a;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td valign="middle">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="padding-right:12px;" valign="middle">
+                          <img src="https://sparksmirk.pt/logotipo.jpeg" alt="Spark &amp; Smirk, Lda." width="44" height="44" style="display:block;border-radius:10px;border:1px solid rgba(255,255,255,0.22);object-fit:cover;">
+                        </td>
+                        <td valign="middle">
+                          <div style="font-size:19px;font-weight:900;letter-spacing:0.02em;color:#ffffff;line-height:1.1;">
+                            SPARK<span style="color:#e8650a;">&amp;</span>SMIRK
+                          </div>
+                          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#ff8534;margin-top:4px;">
+                            Sistema de Gestão Interno
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td align="right" valign="middle">
+                    <span style="display:inline-block;padding:6px 12px;border-radius:999px;background-color:rgba(232,101,10,0.18);border:1px solid rgba(255,133,52,0.45);color:#ffb07a;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;">
+                      Segurança
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Corpo Principal -->
+          <tr>
+            <td style="padding:36px 36px 28px 36px;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;font-weight:800;color:#0c1829;line-height:1.25;">
+                Redefinição Segura de Palavra-passe
+              </h1>
+              <p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">
+                Estimado(a) colaborador(a),
+              </p>
+              <p style="margin:0 0 22px 0;font-size:15px;line-height:1.65;color:#374151;">
+                Recebemos um pedido de recuperação de acesso para a conta corporativa <strong style="color:#0c1829;">{{ .Email }}</strong> no portal interno da <strong>Spark &amp; Smirk, Lda.</strong>
+              </p>
+
+              <!-- Caixa Informativa -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #e8650a;border-radius:10px;margin-bottom:26px;">
+                <tr>
+                  <td style="padding:16px 18px;font-size:13.5px;line-height:1.6;color:#334155;">
+                    <div style="font-weight:700;color:#0c1829;margin-bottom:6px;">Detalhes de Verificação:</div>
+                    <div>• Portal: <strong>sparksmirk.pt</strong> (Acesso Corporativo)</div>
+                    <div>• Utilização única: este link expira automaticamente após <strong>60 minutos</strong> ou logo após a alteração.</div>
+                    <div>• Requisito: a nova palavra-passe deve conter no mínimo 8 caracteres, com letras e números.</div>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Botão CTA Principal -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:26px;">
+                <tr>
+                  <td align="center">
+                    <a href="https://sparksmirk.pt/login/?token_hash={{ .TokenHash }}&amp;type=recovery" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:15px 32px;background:linear-gradient(135deg,#e8650a 0%,#c24e00 100%);background-color:#e8650a;color:#ffffff;text-decoration:none;font-size:14px;font-weight:800;letter-spacing:0.05em;text-transform:uppercase;border-radius:11px;box-shadow:0 10px 24px rgba(232,101,10,0.32);">
+                      Definir Nova Palavra-passe
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Fallback Link -->
+              <p style="margin:0 0 8px 0;font-size:12.5px;line-height:1.6;color:#64748b;">
+                Se o botão acima não abrir automaticamente, copie e cole este endereço seguro no seu navegador:
+              </p>
+              <p style="margin:0 0 22px 0;padding:12px 14px;background-color:#f1f5f9;border-radius:8px;word-break:break-all;font-size:12px;color:#0f172a;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">
+                https://sparksmirk.pt/login/?token_hash={{ .TokenHash }}&amp;type=recovery
+              </p>
+
+              <!-- Aviso de Segurança -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#fff7ed;border:1px solid #fed7aa;border-radius:10px;">
+                <tr>
+                  <td style="padding:14px 16px;font-size:12.5px;line-height:1.55;color:#9a3412;">
+                    <strong>Não solicitou esta alteração?</strong> Pode ignorar este email com total segurança. A sua palavra-passe atual permanecerá intacta e nenhuma alteração será efetuada. Em caso de dúvida, contacte a administração técnica da Spark &amp; Smirk.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Rodapé -->
+          <tr>
+            <td style="background-color:#f8fafc;border-top:1px solid #e5e7eb;padding:22px 36px;text-align:center;">
+              <div style="font-size:12.5px;font-weight:700;color:#0c1829;margin-bottom:4px;">
+                Spark &amp; Smirk, Lda. · Engenharia, Construção Civil &amp; Jardinagem
+              </div>
+              <div style="font-size:11.5px;color:#64748b;line-height:1.6;">
+                Portugal · <a href="https://sparksmirk.pt" style="color:#e8650a;text-decoration:none;font-weight:600;">sparksmirk.pt</a> · Email automático de segurança — não responda a esta mensagem.
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

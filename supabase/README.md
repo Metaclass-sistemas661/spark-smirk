@@ -12,6 +12,8 @@ Os scripts SQL estão separados por **schemas PostgreSQL distintos** e organizad
 - [`01-utilizadores-perfil.sql`](./01-seguranca/01-utilizadores-perfil.sql) — Tabela `seguranca.perfis_utilizadores` (papéis, permissões granulares JSONB, controlo de senha provisória e ligação a `auth.users`).
 - [`02-registos-auditoria.sql`](./01-seguranca/02-registos-auditoria.sql) — Tabela `seguranca.registos_auditoria` (histórico de alterações e acessos).
 - [`03-permissoes-e-senha-provisoria.sql`](./01-seguranca/03-permissoes-e-senha-provisoria.sql) — Migração incremental para atualizar `perfis_utilizadores` sem apagar dados existentes.
+- [`04-recuperacao-palavra-passe.sql`](./01-seguranca/04-recuperacao-palavra-passe.sql) — Tabela `seguranca.recuperacao_senhas`, rate limit na base de dados e RPCs seguras para recuperação e redefinição de palavra-passe.
+- [`email-template-recuperacao.html`](./01-seguranca/email-template-recuperacao.html) — Modelo HTML corporativo personalizado Spark & Smirk para emails de recuperação.
 
 ### `02-recursos-humanos/` — Schema `rh`
 - [`01-funcionarios.sql`](./02-recursos-humanos/01-funcionarios.sql) — Tabela `rh.funcionarios` (dados cadastrais, NIF, NISS, IBAN, contrato e salário base).
@@ -47,6 +49,7 @@ Execute exatamente pela numeração das pastas e ficheiros:
 13. `03-operacional/05-regime-obra-e-contratos.sql`
 14. `03-operacional/06-responsaveis-tecnicos.sql`
 15. `02-recursos-humanos/06-contratos-funcionarios.sql`
+16. `01-seguranca/04-recuperacao-palavra-passe.sql`
 
 ## Expor os Schemas na API do Supabase
 
