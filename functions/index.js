@@ -903,6 +903,7 @@ exports.api = onRequest(
               attachedReceipts: [],
               projects: [],
               projectInvoices: [],
+              projectContracts: [],
             }
           );
           return;
@@ -1451,6 +1452,165 @@ exports.api = onRequest(
             modulo: 'operacional.faturas_obras',
             acao: 'EXCLUIR_FATURA_OBRA',
             entidadeId: invCode,
+          });
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        // ── CONTRATOS DA OBRA (PDF / Storage Privado) ─────────────────────────
+        if (req.method === 'POST' && requestPath === '/api/erp/project-contracts') {
+          const canManageContract =
+            hasModuleAction(ctx.profile, 'op_obras', 'criar') ||
+            hasModuleAction(ctx.profile, 'op_obras', 'editar');
+          if (!canManageContract) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para anexar contratos de obra.' });
+            return;
+          }
+
+          const body = req.body && typeof req.body === 'object' ? req.body : {};
+          const projectId = String(body.projectId || '').trim();
+          const title = String(body.title || '').trim();
+          if (!projectId || !title) {
+            res.status(400).json({
+              error: 'INVALID_CONTRACT_PAYLOAD',
+              message: 'Indique a obra e o título do contrato.',
+            });
+            return;
+          }
+
+          const ctrCode = String(body.id || `CTR-${Date.now()}`);
+          let storagePath = null;
+          let uploadedBucketPath = null;
+          let fileName = null;
+          let mime = null;
+          let fileSize = 0;
+
+          const rawB64 = String(body.fileBase64 || '');
+          if (rawB64) {
+            const fileBuffer = Buffer.from(rawB64, 'base64');
+            if (fileBuffer.length > 10 * 1024 * 1024) {
+              res.status(400).json({ error: 'FILE_TOO_LARGE', message: 'O ficheiro do contrato excede o limite de 10 MB.' });
+              return;
+            }
+            mime = String(body.fileType || 'application/pdf');
+            const allowedMime = mime === 'application/pdf' || mime.startsWith('image/');
+            if (!allowedMime) {
+              res.status(400).json({ error: 'INVALID_MIME', message: 'Apenas ficheiros PDF ou imagem são permitidos.' });
+              return;
+            }
+
+            const safeProj = projectId.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const safeName = String(body.fileName || `${ctrCode}.pdf`).replace(/[^a-zA-Z0-9._-]/g, '_');
+            storagePath = `${safeProj}/${ctrCode}_${safeName}`;
+            fileName = String(body.fileName || safeName);
+            fileSize = fileBuffer.length;
+
+            const { error: uploadErr } = await supabaseAdmin.storage
+              .from('contratos-obras')
+              .upload(storagePath, fileBuffer, { contentType: mime, upsert: true });
+
+            if (uploadErr) {
+              res.status(400).json({ error: 'STORAGE_UPLOAD_ERROR', message: uploadErr.message });
+              return;
+            }
+            uploadedBucketPath = storagePath;
+          }
+
+          const { data: metaRow, error: dbErr } = await supabaseAdmin.rpc('spark_erp_upsert_contract', {
+            p_payload: {
+              id: ctrCode,
+              projectId,
+              title,
+              contractNumber: body.contractNumber || '',
+              contractDate: body.contractDate || null,
+              notes: body.notes || '',
+              fileName,
+              fileType: mime,
+              fileSize,
+              storagePath,
+            },
+            p_actor: ctx.authUser.id,
+          });
+
+          if (dbErr) {
+            if (uploadedBucketPath) {
+              await supabaseAdmin.storage.from('contratos-obras').remove([uploadedBucketPath]).catch(() => {});
+            }
+            res.status(400).json({ error: 'CONTRACT_SAVE_ERROR', message: dbErr.message });
+            return;
+          }
+
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'operacional.contratos_obras',
+            acao: 'ANEXAR_CONTRATO_OBRA',
+            entidadeId: metaRow?.id || ctrCode,
+            detalhes: { projectId, title, hasFile: Boolean(storagePath) },
+          });
+
+          res.status(201).json(metaRow);
+          return;
+        }
+
+        const ctrFileMatch = requestPath.match(/^\/api\/erp\/project-contracts\/([^/]+)\/file$/);
+        if (ctrFileMatch && req.method === 'GET') {
+          if (!canOpVer) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para visualizar contratos.' });
+            return;
+          }
+          const ctrCode = decodeURIComponent(ctrFileMatch[1]);
+          const { data: meta, error: metaErr } = await supabaseAdmin.rpc('spark_erp_get_contract_file', {
+            p_code: ctrCode,
+          });
+          if (metaErr || !meta?.storagePath) {
+            res.status(404).json({ error: 'CONTRACT_FILE_NOT_FOUND', message: 'PDF do contrato não encontrado.' });
+            return;
+          }
+          const { data: fileBlob, error: dlErr } = await supabaseAdmin.storage
+            .from('contratos-obras')
+            .download(meta.storagePath);
+          if (dlErr || !fileBlob) {
+            res.status(404).json({ error: 'STORAGE_READ_ERROR', message: 'Não foi possível transferir o contrato.' });
+            return;
+          }
+          const arrayBuf = await fileBlob.arrayBuffer();
+          res.status(200).json({
+            id: meta.id,
+            name: meta.fileName,
+            type: meta.fileType,
+            size: meta.fileSize || arrayBuf.byteLength,
+            base64: Buffer.from(arrayBuf).toString('base64'),
+          });
+          return;
+        }
+
+        const ctrMatch = requestPath.match(/^\/api\/erp\/project-contracts\/([^/]+)$/);
+        if (ctrMatch && req.method === 'DELETE') {
+          const canDeleteCtr =
+            hasModuleAction(ctx.profile, 'op_obras', 'excluir') ||
+            hasModuleAction(ctx.profile, 'op_obras', 'editar');
+          if (!canDeleteCtr) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para remover contratos da obra.' });
+            return;
+          }
+          const ctrCode = decodeURIComponent(ctrMatch[1]);
+          const { data: removedPath, error: delErr } = await supabaseAdmin.rpc('spark_erp_delete_contract', {
+            p_code: ctrCode,
+          });
+          if (delErr) {
+            res.status(400).json({ error: 'CONTRACT_DELETE_ERROR', message: delErr.message });
+            return;
+          }
+          if (removedPath) {
+            await supabaseAdmin.storage.from('contratos-obras').remove([removedPath]).catch(() => {});
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'operacional.contratos_obras',
+            acao: 'EXCLUIR_CONTRATO_OBRA',
+            entidadeId: ctrCode,
           });
           res.status(200).json({ ok: true });
           return;

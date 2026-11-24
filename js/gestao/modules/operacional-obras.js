@@ -2,7 +2,13 @@
    SPARK & SMIRK ERP — Operacional: Obras, Orçamentos & Pagamentos
    ═══════════════════════════════════════════════════════════ */
 
-import { store, saveInvoiceFile, getProjectInvoiceFile } from '../core/store.js';
+import {
+  store,
+  saveInvoiceFile,
+  getProjectInvoiceFile,
+  saveContractFile,
+  getProjectContractFile,
+} from '../core/store.js';
 import {
   computeBudgetTotals,
   computeProjectFinancials,
@@ -202,6 +208,10 @@ export class OperacionalObrasModule {
                   .map((proj) => {
                     const fin = computeProjectFinancials(proj);
                     const invSum = computeProjectInvoiceSummary(proj, state.projectInvoices);
+                    const projRefs = new Set([proj.id, proj.code].filter(Boolean));
+                    const contractsCount = (state.projectContracts || []).filter((c) => projRefs.has(c.projectId)).length;
+                    const isLaborOnly = proj.costRegime === 'somente_funcionarios';
+                    const dailyRate = Number(proj.dailyRatePerWorker) || 0;
                     const mgr = empMap.get(proj.managerId);
                     const barWidth = Math.min(100, Math.max(0, invSum.spentPct));
                     const barClass = invSum.isOverBudget
@@ -210,10 +220,16 @@ export class OperacionalObrasModule {
                         ? 'erp-budget-meter__fill--warning'
                         : '';
                     return `
-                    <tr>
+                    <tr class="erp-proj-row" data-proj-row="${escapeHtml(proj.id)}" title="Clique para abrir Faturas ou Contratos desta obra">
                       <td>
                         <div class="erp-cell-title">${escapeHtml(proj.name)}</div>
                         <div class="erp-cell-sub">${escapeHtml(proj.code)} · ${escapeHtml(proj.type)} · ${escapeHtml(proj.district)}</div>
+                        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">
+                          <span class="erp-badge ${isLaborOnly ? 'erp-badge--info' : 'erp-badge--neutral'}">
+                            ${isLaborOnly ? 'Somente Funcionários' : 'Materiais &amp; Funcionários'}${dailyRate > 0 ? ` · ${escapeHtml(formatCurrency(dailyRate))}/dia` : ''}
+                          </span>
+                          ${contractsCount > 0 ? `<span class="erp-badge erp-badge--neutral">${contractsCount} contrato(s) PDF</span>` : ''}
+                        </div>
                       </td>
                       <td>
                         <div class="erp-cell-title">${escapeHtml(proj.clientName)}</div>
@@ -278,6 +294,13 @@ export class OperacionalObrasModule {
       this._openProjectFormModal(null, statusFilter);
     });
 
+    container.querySelectorAll('[data-proj-row]').forEach((row) => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.erp-row-actions, button, a')) return;
+        this._openProjectHubPopup(row.dataset.projRow);
+      });
+    });
+
     container.querySelectorAll('[data-proj-invoice]').forEach((btn) => {
       btn.addEventListener('click', () => this.openLaunchInvoiceModal(btn.dataset.projInvoice));
     });
@@ -309,6 +332,74 @@ export class OperacionalObrasModule {
     });
   }
 
+  _openProjectHubPopup(projectId) {
+    const state = store.getState();
+    const proj = state.projects.find((p) => p.id === projectId);
+    if (!proj) return;
+
+    const invSum = computeProjectInvoiceSummary(proj, state.projectInvoices);
+    const projRefs = new Set([proj.id, proj.code].filter(Boolean));
+    const projContracts = (state.projectContracts || []).filter((c) => projRefs.has(c.projectId));
+    const isLaborOnly = proj.costRegime === 'somente_funcionarios';
+    const dailyRate = Number(proj.dailyRatePerWorker) || 0;
+
+    openModal({
+      title: `${proj.code} — ${proj.name}`,
+      subtitle: `${isLaborOnly ? 'Somente Funcionários' : 'Materiais & Funcionários'}${dailyRate > 0 ? ` · Diária/Func.: ${formatCurrency(dailyRate)}` : ''} · Cliente: ${proj.clientName}`,
+      bodyHtml: `
+        <div class="erp-summary-box" style="margin-bottom:10px;">
+          <div>
+            <div class="erp-summary-item__label">Orçamento Geral</div>
+            <div class="erp-summary-item__val">${escapeHtml(formatCurrency(invSum.budgetTotal))}</div>
+          </div>
+          <div>
+            <div class="erp-summary-item__label">Total em Faturas</div>
+            <div class="erp-summary-item__val erp-summary-item__val--warning">${escapeHtml(formatCurrency(invSum.spentOnInvoices))}</div>
+          </div>
+          <div>
+            <div class="erp-summary-item__label">Saldo Disponível</div>
+            <div class="erp-summary-item__val ${invSum.isOverBudget ? 'erp-summary-item__val--danger' : 'erp-summary-item__val--success'}">${escapeHtml(formatCurrency(invSum.remainingBudget))}</div>
+          </div>
+          <div>
+            <div class="erp-summary-item__label">Diária por Func.</div>
+            <div class="erp-summary-item__val">${dailyRate > 0 ? escapeHtml(formatCurrency(dailyRate)) : '—'}</div>
+          </div>
+        </div>
+
+        <p style="font-size:13px;color:var(--erp-text-secondary);margin-bottom:4px;">Selecione o que pretende consultar ou gerir nesta obra:</p>
+
+        <div class="erp-hub-choices">
+          <button type="button" class="erp-hub-card" data-hub-choice="invoices">
+            <span class="erp-hub-card__icon">${ICONS.receipt}</span>
+            <span class="erp-hub-card__title">Faturas (${invSum.invoiceCount})</span>
+            <span class="erp-hub-card__meta">Ver todas as faturas lançadas na obra, visualizar PDFs, lançar novas faturas e acompanhar o saldo em tempo real.</span>
+          </button>
+
+          <button type="button" class="erp-hub-card" data-hub-choice="contracts">
+            <span class="erp-hub-card__icon">${ICONS.paperclip}</span>
+            <span class="erp-hub-card__title">Contratos (${projContracts.length})</span>
+            <span class="erp-hub-card__meta">Ver os contratos em PDF anexados a esta obra, descarregar ou adicionar novos documentos contratuais.</span>
+          </button>
+        </div>
+      `,
+      footerHtml: `
+        <button type="button" class="erp-btn erp-btn--outline" id="btnHubOverview">${ICONS.eye}<span>Dados Técnicos &amp; Orçamento</span></button>
+        <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Fechar</button>
+      `,
+      onMount: (modal) => {
+        modal.querySelector('[data-hub-choice="invoices"]')?.addEventListener('click', () => {
+          this._openProjectDetailModal(proj.id, 'invoices');
+        });
+        modal.querySelector('[data-hub-choice="contracts"]')?.addEventListener('click', () => {
+          this._openProjectDetailModal(proj.id, 'contracts');
+        });
+        modal.querySelector('#btnHubOverview')?.addEventListener('click', () => {
+          this._openProjectDetailModal(proj.id, 'overview');
+        });
+      },
+    });
+  }
+
   openProjectDetail(projectId, initialTab = 'invoices') {
     this._openProjectDetailModal(projectId, initialTab);
   }
@@ -321,13 +412,17 @@ export class OperacionalObrasModule {
     const empMap = new Map(state.employees.map((e) => [e.id, e]));
     const fin = computeProjectFinancials(proj);
     const invSum = computeProjectInvoiceSummary(proj, state.projectInvoices);
+    const projRefs = new Set([proj.id, proj.code].filter(Boolean));
+    const projContracts = (state.projectContracts || []).filter((c) => projRefs.has(c.projectId));
     const statusInfo = STATUS_META[proj.status] || STATUS_META.em_andamento;
     const today = todayISO();
 
     const canBudget = !this._can || this._can('op_obras', 'orcamentos');
     const canPayments = !this._can || this._can('op_obras', 'pagamentos');
     const canInvoices = !this._can || this._can('op_obras', 'faturas');
+    const canEditProj = !this._can || this._can('op_obras', 'editar') || (!this._can || this._can('op_obras', 'criar'));
     const canDeleteInvoice = !this._can || this._can('op_obras', 'excluir') || canInvoices;
+    const canDeleteContract = !this._can || this._can('op_obras', 'excluir') || canEditProj;
 
     const activeTab =
       initialTab === 'budget' && !canBudget
@@ -346,6 +441,8 @@ export class OperacionalObrasModule {
     const filteredInvoices = invSum.invoices.filter(
       (inv) => this.invoiceCatFilter === 'all' || inv.category === this.invoiceCatFilter
     );
+    const isLaborOnly = proj.costRegime === 'somente_funcionarios';
+    const dailyRate = Number(proj.dailyRatePerWorker) || 0;
 
     const bodyHtml = `
       <div class="erp-summary-box" style="margin-bottom:18px;">
@@ -364,19 +461,26 @@ export class OperacionalObrasModule {
           </div>
         </div>
         <div>
-          <div class="erp-summary-item__label">Recebido Cliente</div>
-          <div class="erp-summary-item__val erp-summary-item__val--accent">${escapeHtml(formatCurrency(fin.paidAmount))} (${fin.paidPct}%)</div>
+          <div class="erp-summary-item__label">${dailyRate > 0 ? 'Diária por Funcionário' : 'Recebido Cliente'}</div>
+          <div class="erp-summary-item__val erp-summary-item__val--accent">${dailyRate > 0 ? `${escapeHtml(formatCurrency(dailyRate))}/dia` : `${escapeHtml(formatCurrency(fin.paidAmount))} (${fin.paidPct}%)`}</div>
         </div>
       </div>
 
       <div class="erp-detail-tabs">
         <button type="button" class="erp-detail-tab ${activeTab === 'overview' ? 'is-active' : ''}" data-det-tab="overview">Dados Técnicos &amp; Equipa</button>
         <button type="button" class="erp-detail-tab ${activeTab === 'invoices' ? 'is-active' : ''}" data-det-tab="invoices">Faturas &amp; Materiais (${invSum.invoiceCount})</button>
+        <button type="button" class="erp-detail-tab ${activeTab === 'contracts' ? 'is-active' : ''}" data-det-tab="contracts">Contratos PDF (${projContracts.length})</button>
         ${canBudget ? `<button type="button" class="erp-detail-tab ${activeTab === 'budget' ? 'is-active' : ''}" data-det-tab="budget">Orçamento Detalhado (${proj.budget?.items?.length || 0})</button>` : ''}
         ${canPayments ? `<button type="button" class="erp-detail-tab ${activeTab === 'payments' ? 'is-active' : ''}" data-det-tab="payments">Recebimentos Cliente (${proj.payments?.length || 0})</button>` : ''}
       </div>
 
       <div id="detPaneOverview" style="display:${activeTab === 'overview' ? 'block' : 'none'};">
+        <div style="margin-bottom:12px;">
+          <span class="erp-badge ${isLaborOnly ? 'erp-badge--info' : 'erp-badge--neutral'}">
+            Modalidade: ${isLaborOnly ? 'Somente Funcionários (Mão de Obra à Diária)' : 'Materiais e Funcionários'}
+          </span>
+          ${dailyRate > 0 ? `<span class="erp-badge erp-badge--success" style="margin-left:6px;">Valor Diário/Func.: ${escapeHtml(formatCurrency(dailyRate))} (${(proj.teamIds || []).length} alocado(s) = ${escapeHtml(formatCurrency(dailyRate * (proj.teamIds || []).length))}/dia)</span>` : ''}
+        </div>
         <div class="erp-form-grid" style="margin-bottom:14px;">
           <div>
             <div class="erp-cell-sub">Cliente</div>
@@ -584,6 +688,68 @@ export class OperacionalObrasModule {
           </table>
         </div>
       </div>
+
+      <div id="detPaneContracts" style="display:${activeTab === 'contracts' ? 'block' : 'none'};">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+          <span class="erp-cell-sub">Contratos adjudicados e documentos em PDF associados à obra ${escapeHtml(proj.code)}.</span>
+          ${
+            canEditProj
+              ? `<button type="button" class="erp-btn erp-btn--primary erp-btn--sm" id="btnDetAddContract">
+                  ${ICONS.plus}<span>Anexar Contrato (PDF)</span>
+                </button>`
+              : ''
+          }
+        </div>
+        ${
+          projContracts.length === 0
+            ? `<div class="erp-empty" style="padding:28px 16px;">${ICONS.paperclip}<div class="erp-empty__title">Nenhum contrato PDF anexado</div><p>Anexe o contrato da obra ao criar/editar ou clicando em "Anexar Contrato (PDF)".</p></div>`
+            : `
+          <div class="erp-table-wrap">
+            <table class="erp-table">
+              <thead>
+                <tr>
+                  <th>Data / Referência</th>
+                  <th>Título do Contrato</th>
+                  <th>Ficheiro PDF</th>
+                  <th style="text-align:right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${projContracts
+                  .map(
+                    (ctr) => `
+                  <tr>
+                    <td>
+                      <div class="erp-cell-title">${escapeHtml(ctr.contractNumber || ctr.id)}</div>
+                      <div class="erp-cell-sub">${escapeHtml(formatDatePT(ctr.contractDate))}</div>
+                    </td>
+                    <td>
+                      <div class="erp-cell-title">${escapeHtml(ctr.title)}</div>
+                      <div class="erp-cell-sub">${escapeHtml(ctr.notes || 'Contrato da empreitada')}</div>
+                    </td>
+                    <td>
+                      ${
+                        ctr.hasFile
+                          ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                              <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-ctr-view="${escapeHtml(ctr.id)}">${ICONS.eye}<span>Ver PDF</span></button>
+                              <button type="button" class="erp-icon-btn" data-ctr-dl="${escapeHtml(ctr.id)}" title="Descarregar Contrato">${ICONS.download}</button>
+                            </div>`
+                          : '<span class="erp-badge erp-badge--neutral">Sem PDF</span>'
+                      }
+                    </td>
+                    <td style="text-align:right">
+                      <div class="erp-row-actions">
+                        ${canDeleteContract ? `<button type="button" class="erp-icon-btn erp-icon-btn--danger" title="Remover Contrato" data-ctr-del="${escapeHtml(ctr.id)}">${ICONS.trash}</button>` : '—'}
+                      </div>
+                    </td>
+                  </tr>`
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+          </div>`
+        }
+      </div>
     `;
 
     openModal({
@@ -599,6 +765,7 @@ export class OperacionalObrasModule {
         const panes = {
           overview: modal.querySelector('#detPaneOverview'),
           invoices: modal.querySelector('#detPaneInvoices'),
+          contracts: modal.querySelector('#detPaneContracts'),
           budget: modal.querySelector('#detPaneBudget'),
           payments: modal.querySelector('#detPanePayments'),
         };
@@ -667,8 +834,202 @@ export class OperacionalObrasModule {
           closeModal();
           this._openProjectFormModal(proj, proj.status);
         });
+
+        modal.querySelector('#btnDetAddContract')?.addEventListener('click', () => {
+          this.openLaunchContractModal(proj.id, proj.id);
+        });
+
+        modal.querySelectorAll('[data-ctr-view]').forEach((btn) => {
+          btn.addEventListener('click', () => this._previewContractFileById(btn.dataset.ctrView));
+        });
+
+        modal.querySelectorAll('[data-ctr-dl]').forEach((btn) => {
+          btn.addEventListener('click', () => this._downloadContractFileById(btn.dataset.ctrDl));
+        });
+
+        modal.querySelectorAll('[data-ctr-del]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const ctr = projContracts.find((c) => c.id === btn.dataset.ctrDel);
+            if (!ctr) return;
+            confirmAction({
+              title: 'Remover Contrato da Obra',
+              message: `Tem a certeza de que pretende eliminar o contrato "${ctr.title}"?`,
+              onConfirm: () => {
+                store.deleteProjectContract(ctr.id);
+                showToast('Contrato removido.');
+                this._openProjectDetailModal(proj.id, 'contracts');
+              },
+            });
+          });
+        });
       },
     });
+  }
+
+  openLaunchContractModal(defaultProjectId = null, returnToDetailId = null) {
+    const state = store.getState();
+    const proj = state.projects.find((p) => p.id === defaultProjectId || p.code === defaultProjectId) || state.projects[0];
+    if (!proj) {
+      showToast('Cadastre primeiro uma obra antes de anexar contratos.', 'warning');
+      return;
+    }
+
+    let selectedFile = null;
+
+    openModal({
+      title: 'Anexar Contrato da Obra (PDF)',
+      subtitle: `${proj.code} — ${proj.name}`,
+      bodyHtml: `
+        <form id="projectContractForm">
+          <div class="erp-form-grid">
+            <div class="erp-field erp-field--full">
+              <label for="ctrTitle">Título do Contrato *</label>
+              <input type="text" id="ctrTitle" required placeholder="Ex.: Contrato de Empreitada Geral / Subempreitada Mão de Obra">
+            </div>
+            <div class="erp-field">
+              <label for="ctrNumber">N.º / Referência</label>
+              <input type="text" id="ctrNumber" placeholder="Ex.: CTR-2026/001">
+            </div>
+            <div class="erp-field">
+              <label for="ctrDate">Data do Contrato</label>
+              <input type="date" id="ctrDate" value="${todayISO()}">
+            </div>
+            <div class="erp-field erp-field--full">
+              <label for="ctrNotes">Observações</label>
+              <input type="text" id="ctrNotes" placeholder="Ex.: Condições de diária, prazo ou cláusulas principais">
+            </div>
+            <div class="erp-field erp-field--full">
+              <label>Ficheiro do Contrato (PDF ou Imagem até 10 MB) *</label>
+              <div class="erp-dropzone" id="ctrDropzone">
+                <input type="file" id="ctrFileInput" accept=".pdf,image/*" style="display:none;">
+                <div class="erp-dropzone__title" id="ctrDropTitle">Clique para selecionar ou arraste o PDF do contrato</div>
+                <div class="erp-dropzone__hint">Formatos aceites: PDF, PNG, JPG, WEBP</div>
+              </div>
+            </div>
+          </div>
+        </form>
+      `,
+      footerHtml: `
+        <button type="button" class="erp-btn erp-btn--outline" id="btnCancelContract">Cancelar</button>
+        <button type="submit" form="projectContractForm" class="erp-btn erp-btn--primary" id="btnSubmitContract">${ICONS.plus}<span>Guardar Contrato PDF</span></button>
+      `,
+      onMount: (modal) => {
+        const dropzone = modal.querySelector('#ctrDropzone');
+        const fileInput = modal.querySelector('#ctrFileInput');
+        const dropTitle = modal.querySelector('#ctrDropTitle');
+
+        const handleFile = (f) => {
+          if (!f) return;
+          if (f.size > 10 * 1024 * 1024) {
+            showToast('O ficheiro do contrato excede o limite de 10 MB.', 'danger');
+            return;
+          }
+          selectedFile = f;
+          dropTitle.textContent = `Selecionado: ${f.name} (${Math.max(1, Math.round(f.size / 1024))} KB)`;
+        };
+
+        dropzone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => handleFile(e.target.files?.[0]));
+        dropzone.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          dropzone.classList.add('is-dragover');
+        });
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('is-dragover'));
+        dropzone.addEventListener('drop', (e) => {
+          e.preventDefault();
+          dropzone.classList.remove('is-dragover');
+          handleFile(e.dataTransfer?.files?.[0]);
+        });
+
+        modal.querySelector('#btnCancelContract').addEventListener('click', () => {
+          if (returnToDetailId) {
+            this._openProjectDetailModal(returnToDetailId, 'contracts');
+          } else {
+            closeModal();
+          }
+        });
+
+        modal.querySelector('#projectContractForm').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          if (!selectedFile) {
+            showToast('Anexe o ficheiro PDF do contrato antes de guardar.', 'danger');
+            return;
+          }
+          const btn = modal.querySelector('#btnSubmitContract');
+          btn.disabled = true;
+          btn.textContent = 'A guardar...';
+
+          const contractId = generateId('CTR');
+          let meta;
+          try {
+            meta = await saveContractFile(contractId, selectedFile);
+          } catch (err) {
+            btn.disabled = false;
+            btn.textContent = 'Guardar Contrato PDF';
+            showToast(err?.message || 'Erro ao preparar o ficheiro do contrato.', 'danger');
+            return;
+          }
+
+          await store.addProjectContract({
+            id: contractId,
+            projectId: proj.code || proj.id,
+            title: modal.querySelector('#ctrTitle').value.trim(),
+            contractNumber: modal.querySelector('#ctrNumber').value.trim(),
+            contractDate: modal.querySelector('#ctrDate').value || todayISO(),
+            notes: modal.querySelector('#ctrNotes').value.trim(),
+            fileName: meta.name,
+            fileType: meta.type,
+            fileSize: meta.size,
+            hasFile: true,
+            createdAt: todayISO(),
+          });
+
+          showToast(`Contrato "${modal.querySelector('#ctrTitle').value.trim()}" anexado à obra ${proj.code}.`);
+          if (returnToDetailId) {
+            this._openProjectDetailModal(returnToDetailId, 'contracts');
+          } else {
+            closeModal();
+          }
+        });
+      },
+    });
+  }
+
+  async _previewContractFileById(contractId) {
+    const record = await getProjectContractFile(contractId);
+    if (!record) return;
+
+    const blob = new window.Blob([record.data], { type: record.type });
+    const url = window.URL.createObjectURL(blob);
+    const isPdf = (record.type || '').includes('pdf') || record.name.toLowerCase().endsWith('.pdf');
+
+    openModal({
+      title: `Contrato da Obra — ${record.name}`,
+      subtitle: `${Math.max(1, Math.round(record.size / 1024))} KB`,
+      size: 'wide',
+      bodyHtml: isPdf
+        ? `<iframe class="erp-attachment-preview" src="${url}" title="Pré-visualização do contrato"></iframe>`
+        : `<img class="erp-attachment-img" src="${url}" alt="Contrato da obra">`,
+      footerHtml: `
+        <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Fechar</button>
+        <a href="${url}" download="${escapeHtml(record.name)}" class="erp-btn erp-btn--primary">${ICONS.download}<span>Descarregar Contrato</span></a>
+      `,
+    });
+  }
+
+  async _downloadContractFileById(contractId) {
+    const record = await getProjectContractFile(contractId);
+    if (!record) return;
+
+    const blob = new window.Blob([record.data], { type: record.type });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = record.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
   }
 
   openLaunchInvoiceModal(defaultProjectId = null, returnToDetailId = null) {
@@ -974,6 +1335,8 @@ export class OperacionalObrasModule {
           actualEndDate: '',
           progress: defaultStatus === 'concluida' ? 100 : 0,
           manualBudgetCap: 0,
+          costRegime: 'materiais_funcionarios',
+          dailyRatePerWorker: 0,
           description: '',
           budget: {
             vatRate: 23,
@@ -1165,6 +1528,41 @@ export class OperacionalObrasModule {
                   .join('')}
               </div>
             </div>
+
+            <div class="erp-field erp-field--full" style="margin-top:6px;">
+              <label>Esta obra terá gastos com: *</label>
+              <div class="erp-regime-group" id="projRegimeGroup">
+                <label class="erp-regime-option ${(proj.costRegime || 'materiais_funcionarios') === 'materiais_funcionarios' ? 'is-selected' : ''}">
+                  <input type="radio" name="costRegime" value="materiais_funcionarios" ${(proj.costRegime || 'materiais_funcionarios') === 'materiais_funcionarios' ? 'checked' : ''}>
+                  <div>
+                    <div class="erp-cell-title">Materiais e Funcionários</div>
+                    <div class="erp-cell-sub">A Spark &amp; Smirk fornece os materiais e a equipa de mão de obra.</div>
+                  </div>
+                </label>
+                <label class="erp-regime-option ${proj.costRegime === 'somente_funcionarios' ? 'is-selected' : ''}">
+                  <input type="radio" name="costRegime" value="somente_funcionarios" ${proj.costRegime === 'somente_funcionarios' ? 'checked' : ''}>
+                  <div>
+                    <div class="erp-cell-title">Somente Funcionários</div>
+                    <div class="erp-cell-sub">Obra de outra construtora: apenas fornecimento de mão de obra à diária.</div>
+                  </div>
+                </label>
+              </div>
+
+              <div class="erp-worker-daily-card" id="projDailyRateBox">
+                <div class="erp-form-grid">
+                  <div class="erp-field">
+                    <label for="projDailyRate">Valor por Funcionário na Obra — Diária (€/dia) *</label>
+                    <input type="text" inputmode="numeric" data-currency-euro id="projDailyRate" name="dailyRatePerWorker" value="${escapeHtml(proj.dailyRatePerWorker || '')}" placeholder="€ 0,00">
+                    <span class="erp-field__hint">Indique quanto custa ou é cobrado por cada funcionário por dia nesta obra.</span>
+                  </div>
+                  <div class="erp-field">
+                    <label>Previsão Diária da Equipa</label>
+                    <div class="erp-cred-box__code" id="projDailyEstimate" style="margin-top:2px;">0 func. × € 0,00 = € 0,00/dia</div>
+                    <span class="erp-field__hint" id="projRegimeHint">Atualizado automaticamente conforme os funcionários selecionados.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1263,7 +1661,39 @@ export class OperacionalObrasModule {
             <div><div class="erp-summary-item__label">Consumido</div><div class="erp-summary-item__val" id="formInvPct">0%</div></div>
             <div><div class="erp-summary-item__label">Saldo Disponível (Real Time)</div><div class="erp-summary-item__val erp-summary-item__val--success" id="formInvRemaining">€0,00</div></div>
           </div>
+          <div id="projRegimeNotice" class="erp-cell-sub" style="margin-bottom:8px;"></div>
           <div id="formInvoicesList"></div>
+        </div>
+
+        <div class="erp-form-section">
+          <div class="erp-form-section__title">6. Contratos da Obra (PDF)</div>
+          <div class="erp-inline-invoice-box">
+            <div class="erp-form-grid erp-form-grid--3">
+              <div class="erp-field">
+                <label for="formCtrTitle">Título do Contrato *</label>
+                <input type="text" id="formCtrTitle" placeholder="Ex.: Contrato Empreitada / Subempreitada">
+              </div>
+              <div class="erp-field">
+                <label for="formCtrNumber">N.º / Referência</label>
+                <input type="text" id="formCtrNumber" placeholder="Ex.: CTR-2026/01">
+              </div>
+              <div class="erp-field">
+                <label for="formCtrDate">Data do Contrato</label>
+                <input type="date" id="formCtrDate" value="${todayISO()}">
+              </div>
+              <div class="erp-field" style="grid-column:span 2;">
+                <label for="formCtrFile">Anexar Contrato em PDF / Imagem (até 10 MB)</label>
+                <input type="file" id="formCtrFile" accept=".pdf,image/*">
+              </div>
+              <div class="erp-field" style="justify-content:flex-end;">
+                <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" id="btnAddFormContract">
+                  ${ICONS.plus}<span>Anexar Contrato PDF</span>
+                </button>
+              </div>
+            </div>
+            <div class="erp-cell-sub" id="formCtrFileLabel" style="margin-top:6px;">Anexe o contrato assinado em PDF para ficar disponível na lista de contratos da obra.</div>
+          </div>
+          <div id="formContractsList"></div>
         </div>
       </form>
     `;
@@ -1274,7 +1704,13 @@ export class OperacionalObrasModule {
           .filter((inv) => existingProjRefs.has(inv.projectId))
           .map((inv) => ({ ...inv, isNew: false }))
       : [];
+    const formContracts = isEdit
+      ? (state.projectContracts || [])
+          .filter((ctr) => existingProjRefs.has(ctr.projectId))
+          .map((ctr) => ({ ...ctr, isNew: false }))
+      : [];
     const deletedExistingIds = [];
+    const deletedContractIds = [];
 
     openModal({
       title: isEdit ? `Editar Obra — ${proj.code}` : 'Cadastrar Nova Obra & Orçamento',
@@ -1294,6 +1730,153 @@ export class OperacionalObrasModule {
         const invListEl = modal.querySelector('#formInvoicesList');
         const invFileInput = modal.querySelector('#formInvFile');
         const invFileLabel = modal.querySelector('#formInvFileLabel');
+        const ctrListEl = modal.querySelector('#formContractsList');
+        const ctrFileInput = modal.querySelector('#formCtrFile');
+        const ctrFileLabel = modal.querySelector('#formCtrFileLabel');
+        const dailyRateInput = modal.querySelector('#projDailyRate');
+        const dailyEstimateEl = modal.querySelector('#projDailyEstimate');
+        const regimeNoticeEl = modal.querySelector('#projRegimeNotice');
+
+        const updateRegimeUI = () => {
+          const selectedRegime = modal.querySelector('input[name="costRegime"]:checked')?.value || 'materiais_funcionarios';
+          modal.querySelectorAll('#projRegimeGroup .erp-regime-option').forEach((lbl) => {
+            const radio = lbl.querySelector('input[name="costRegime"]');
+            lbl.classList.toggle('is-selected', Boolean(radio?.checked));
+          });
+          const teamCount = modal.querySelectorAll('input[name="teamIds"]:checked').length;
+          const dailyVal = parseCurrencyInput(dailyRateInput?.value);
+          const totalDaily = teamCount * dailyVal;
+          if (dailyEstimateEl) {
+            dailyEstimateEl.textContent = `${teamCount} func. × ${formatCurrency(dailyVal)} = ${formatCurrency(totalDaily)}/dia`;
+          }
+          if (regimeNoticeEl) {
+            regimeNoticeEl.textContent =
+              selectedRegime === 'somente_funcionarios'
+                ? 'Nota: Esta obra está definida como "Somente Funcionários" (mão de obra à diária, sem fornecimento de materiais pela Spark & Smirk).'
+                : '';
+          }
+        };
+
+        modal.querySelectorAll('input[name="costRegime"]').forEach((r) => {
+          r.addEventListener('change', updateRegimeUI);
+        });
+        modal.querySelectorAll('input[name="teamIds"]').forEach((chk) => {
+          chk.addEventListener('change', updateRegimeUI);
+        });
+        dailyRateInput?.addEventListener('input', updateRegimeUI);
+        updateRegimeUI();
+
+        const renderFormContracts = () => {
+          if (!ctrListEl) return;
+          if (formContracts.length === 0) {
+            ctrListEl.innerHTML = '<div class="erp-cell-sub" style="padding:8px 4px;">Ainda não existem contratos PDF anexados a esta obra.</div>';
+            return;
+          }
+          ctrListEl.innerHTML = `
+            <div class="erp-table-wrap">
+              <table class="erp-table">
+                <thead>
+                  <tr>
+                    <th>Data / Ref.</th>
+                    <th>Título do Contrato</th>
+                    <th>Ficheiro PDF</th>
+                    <th style="text-align:right">Remover</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${formContracts
+                    .map(
+                      (ctr, idx) => `
+                    <tr>
+                      <td>
+                        <div class="erp-cell-title">${escapeHtml(ctr.contractNumber || ctr.id)}</div>
+                        <div class="erp-cell-sub">${escapeHtml(formatDatePT(ctr.contractDate))}</div>
+                      </td>
+                      <td><div class="erp-cell-title">${escapeHtml(ctr.title)}</div></td>
+                      <td><span class="erp-badge erp-badge--info">${escapeHtml(ctr.fileName || 'PDF Anexado')}</span></td>
+                      <td style="text-align:right">
+                        <button type="button" class="erp-icon-btn erp-icon-btn--danger" data-form-ctr-del="${idx}" title="Remover contrato">${ICONS.trash}</button>
+                      </td>
+                    </tr>`
+                    )
+                    .join('')}
+                </tbody>
+              </table>
+            </div>
+          `;
+          ctrListEl.querySelectorAll('[data-form-ctr-del]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+              const idx = Number(btn.dataset.formCtrDel);
+              const removed = formContracts.splice(idx, 1)[0];
+              if (removed && !removed.isNew && removed.id) {
+                deletedContractIds.push(removed.id);
+              }
+              renderFormContracts();
+            });
+          });
+        };
+
+        if (ctrFileInput && ctrFileLabel) {
+          ctrFileInput.addEventListener('change', () => {
+            const f = ctrFileInput.files?.[0];
+            ctrFileLabel.textContent = f
+              ? `Contrato selecionado: ${f.name} (${Math.max(1, Math.round(f.size / 1024))} KB)`
+              : 'Anexe o contrato assinado em PDF para ficar disponível na lista de contratos da obra.';
+          });
+        }
+
+        modal.querySelector('#btnAddFormContract')?.addEventListener('click', async () => {
+          const titleEl = modal.querySelector('#formCtrTitle');
+          const numEl = modal.querySelector('#formCtrNumber');
+          const dateEl = modal.querySelector('#formCtrDate');
+          const file = ctrFileInput?.files?.[0] || null;
+          const title = titleEl.value.trim();
+
+          if (!title) {
+            showToast('Indique o título do contrato antes de anexar.', 'danger');
+            titleEl.focus();
+            return;
+          }
+          if (!file) {
+            showToast('Selecione o ficheiro PDF do contrato.', 'danger');
+            return;
+          }
+
+          const ctrId = generateId('CTR');
+          let meta;
+          try {
+            meta = await saveContractFile(ctrId, file);
+          } catch (err) {
+            showToast(err?.message || 'Erro ao preparar o ficheiro do contrato.', 'danger');
+            return;
+          }
+
+          formContracts.unshift({
+            id: ctrId,
+            title,
+            contractNumber: numEl.value.trim(),
+            contractDate: dateEl.value || todayISO(),
+            notes: '',
+            fileName: meta.name,
+            fileType: meta.type,
+            fileSize: meta.size,
+            hasFile: true,
+            createdAt: todayISO(),
+            isNew: true,
+          });
+
+          titleEl.value = '';
+          numEl.value = '';
+          if (ctrFileInput) ctrFileInput.value = '';
+          if (ctrFileLabel) {
+            ctrFileLabel.textContent = 'Anexe o contrato assinado em PDF para ficar disponível na lista de contratos da obra.';
+          }
+
+          renderFormContracts();
+          showToast(`Contrato "${title}" anexado à lista da obra.`);
+        });
+
+        renderFormContracts();
 
         const renderFormInvoices = () => {
           if (!invListEl) return;
@@ -1613,6 +2196,8 @@ export class OperacionalObrasModule {
             managerId: modal.querySelector('#projManager').value,
             teamIds: checkedTeam,
             manualBudgetCap: Math.max(0, parseCurrencyInput(modal.querySelector('#projManualCap').value)),
+            costRegime: modal.querySelector('input[name="costRegime"]:checked')?.value || 'materiais_funcionarios',
+            dailyRatePerWorker: Math.max(0, parseCurrencyInput(dailyRateInput?.value)),
             budget: proj.budget,
             payments: proj.payments,
           };
@@ -1629,10 +2214,22 @@ export class OperacionalObrasModule {
             store.deleteProjectInvoice(delId);
           }
 
+          for (const delCtrId of deletedContractIds) {
+            store.deleteProjectContract(delCtrId);
+          }
+
           const newInvoices = formInvoices.filter((inv) => inv.isNew);
           for (const inv of newInvoices) {
             await store.addProjectInvoice({
               ...inv,
+              projectId: payload.code || savedProjectRef,
+            });
+          }
+
+          const newContracts = formContracts.filter((ctr) => ctr.isNew);
+          for (const ctr of newContracts) {
+            await store.addProjectContract({
+              ...ctr,
               projectId: payload.code || savedProjectRef,
             });
           }

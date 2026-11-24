@@ -9,6 +9,7 @@ import { showToast } from './ui.js';
 
 const pendingAttachmentPayloads = new Map();
 const pendingInvoicePayloads = new Map();
+const pendingContractPayloads = new Map();
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -107,6 +108,41 @@ export async function getProjectInvoiceFile(id) {
   }
 }
 
+export async function saveContractFile(id, file) {
+  if (!id || !file) throw new Error('Ficheiro de contrato inválido.');
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error('O ficheiro do contrato excede o limite máximo de 10 MB.');
+  }
+  const base64 = await fileToBase64(file);
+  pendingContractPayloads.set(id, {
+    name: file.name,
+    type: file.type || 'application/pdf',
+    size: file.size,
+    base64,
+  });
+  return { id, name: file.name, type: file.type || 'application/pdf', size: file.size };
+}
+
+export async function getProjectContractFile(id) {
+  if (!id) return null;
+  try {
+    const res = await authenticatedApiFetch(`/api/erp/project-contracts/${encodeURIComponent(id)}/file`, {
+      method: 'GET',
+    });
+    if (!res?.base64) return null;
+    return {
+      id: res.id,
+      name: res.name,
+      type: res.type || 'application/pdf',
+      size: res.size || 0,
+      data: base64ToArrayBuffer(res.base64),
+    };
+  } catch (err) {
+    showToast(err?.message || 'Não foi possível transferir o PDF do contrato.', 'error');
+    return null;
+  }
+}
+
 const EMPTY_STATE = {
   employees: [],
   attendance: {},
@@ -114,6 +150,7 @@ const EMPTY_STATE = {
   attachedReceipts: [],
   projects: [],
   projectInvoices: [],
+  projectContracts: [],
 };
 
 class ErpStore {
@@ -147,6 +184,7 @@ class ErpStore {
       attachedReceipts: Array.isArray(snapshot?.attachedReceipts) ? snapshot.attachedReceipts : [],
       projects: Array.isArray(snapshot?.projects) ? snapshot.projects : [],
       projectInvoices: Array.isArray(snapshot?.projectInvoices) ? snapshot.projectInvoices : [],
+      projectContracts: Array.isArray(snapshot?.projectContracts) ? snapshot.projectContracts : [],
     };
   }
 
@@ -360,6 +398,9 @@ class ErpStore {
     this.state.projectInvoices = (this.state.projectInvoices || []).filter(
       (inv) => inv.projectId !== id && inv.projectId !== code
     );
+    this.state.projectContracts = (this.state.projectContracts || []).filter(
+      (ctr) => ctr.projectId !== id && ctr.projectId !== code
+    );
     this._notify();
     this._syncMutation(
       `/api/erp/projects/${encodeURIComponent(code)}`,
@@ -402,6 +443,42 @@ class ErpStore {
       'DELETE',
       null,
       'Erro ao eliminar a fatura da base de dados.'
+    );
+  }
+
+  /* ── Contratos da Obra (PDF) ── */
+  addProjectContract(contract) {
+    if (!Array.isArray(this.state.projectContracts)) {
+      this.state.projectContracts = [];
+    }
+    this.state.projectContracts.unshift(contract);
+    this._notify();
+
+    const pending = pendingContractPayloads.get(contract.id);
+    pendingContractPayloads.delete(contract.id);
+
+    return this._syncMutation(
+      '/api/erp/project-contracts',
+      'POST',
+      {
+        ...contract,
+        fileBase64: pending?.base64 || '',
+        fileName: pending?.name || contract.fileName || '',
+        fileType: pending?.type || contract.fileType || '',
+        fileSize: pending?.size || contract.fileSize || 0,
+      },
+      'Erro ao registar o contrato da obra na base de dados.'
+    );
+  }
+
+  deleteProjectContract(id) {
+    this.state.projectContracts = (this.state.projectContracts || []).filter((c) => c.id !== id);
+    this._notify();
+    this._syncMutation(
+      `/api/erp/project-contracts/${encodeURIComponent(id)}`,
+      'DELETE',
+      null,
+      'Erro ao eliminar o contrato da base de dados.'
     );
   }
 }
