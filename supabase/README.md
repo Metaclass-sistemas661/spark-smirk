@@ -13,6 +13,7 @@ Os scripts SQL estão separados por **schemas PostgreSQL distintos** e organizad
 - [`02-registos-auditoria.sql`](./01-seguranca/02-registos-auditoria.sql) — Tabela `seguranca.registos_auditoria` (histórico de alterações e acessos).
 - [`03-permissoes-e-senha-provisoria.sql`](./01-seguranca/03-permissoes-e-senha-provisoria.sql) — Migração incremental para atualizar `perfis_utilizadores` sem apagar dados existentes.
 - [`04-recuperacao-palavra-passe.sql`](./01-seguranca/04-recuperacao-palavra-passe.sql) — Tabela `seguranca.recuperacao_senhas`, rate limit na base de dados e RPCs seguras para recuperação e redefinição de palavra-passe.
+- [`05-conta-configuracoes-e-adminspark.sql`](./01-seguranca/05-conta-configuracoes-e-adminspark.sql) — Dados cadastrais próprios (`username`, `nif`, `morada`, `email_recuperacao`), login por utilizador e criação direta do administrador `adminspark`.
 - [`email-template-recuperacao.html`](./01-seguranca/email-template-recuperacao.html) — Modelo HTML corporativo personalizado Spark & Smirk para emails de recuperação.
 
 ### `02-recursos-humanos/` — Schema `rh`
@@ -50,6 +51,7 @@ Execute exatamente pela numeração das pastas e ficheiros:
 14. `03-operacional/06-responsaveis-tecnicos.sql`
 15. `02-recursos-humanos/06-contratos-funcionarios.sql`
 16. `01-seguranca/04-recuperacao-palavra-passe.sql`
+17. `01-seguranca/05-conta-configuracoes-e-adminspark.sql`
 
 ## Expor os Schemas na API do Supabase
 

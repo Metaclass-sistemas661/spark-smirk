@@ -893,3 +893,122 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Conta Pessoal & Configurações ── */
+.erp-account-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 20px 24px;
+  margin-bottom: 18px;
+  border-radius: var(--erp-radius-lg);
+  border: 1px solid var(--erp-border);
+  background: var(--erp-surface);
+  box-shadow: var(--erp-shadow-sm);
+}
+
+.erp-account-hero__identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.erp-account-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--erp-navy), var(--erp-navy-light));
+  color: #fff;
+  font-family: var(--erp-font-heading);
+  font-size: 18px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.erp-account-hero__kicker {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--erp-primary);
+}
+
+.erp-account-hero__name {
+  margin: 2px 0 6px;
+  font-family: var(--erp-font-heading);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--erp-heading);
+}
+
+.erp-account-hero__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.erp-account-hero__status {
+  flex: 1 1 320px;
+  max-width: 520px;
+}
+
+.erp-account-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--erp-radius-md);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.erp-account-notice svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.erp-account-notice strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.erp-account-notice--warn {
+  background: var(--erp-warning-soft);
+  border: 1px solid rgba(217, 119, 6, 0.28);
+  color: var(--erp-warning);
+}
+
+.erp-account-notice--ok {
+  background: var(--erp-success-soft);
+  border: 1px solid rgba(5, 150, 105, 0.28);
+  color: var(--erp-success);
+}
+
+.erp-account-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.erp-account-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--erp-border);
+}
+
+@media (width <= 960px) {
+  .erp-account-grid {
+    grid-template-columns: 1fr;
+  }
+}

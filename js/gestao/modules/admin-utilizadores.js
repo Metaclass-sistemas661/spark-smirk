@@ -274,7 +274,19 @@ export class AdminUtilizadoresModule {
                                       ${escapeHtml(u.nome_completo)}
                                       ${isSelf ? '<span class="erp-badge erp-badge--neutral" style="margin-left:4px;">Você</span>' : ''}
                                     </div>
-                                    <div style="font-size:12px;color:var(--erp-text-muted);">${escapeHtml(u.email)}</div>
+                                    <div style="font-size:12px;color:var(--erp-text-muted);">
+                                      ${escapeHtml(
+                                        u.username
+                                          ? `@${u.username}${
+                                              u.email_recuperacao
+                                                ? ` · ${u.email_recuperacao}`
+                                                : ' · Email por configurar'
+                                            }`
+                                          : String(u.email || '').endsWith('@sistema.sparksmirk.internal')
+                                            ? u.email_recuperacao || 'Email por configurar'
+                                            : u.email
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </td>

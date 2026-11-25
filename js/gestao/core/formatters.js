@@ -12,7 +12,33 @@ export function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+export const ERP_PRIVACY_MASK_KEY = 'spark_erp_values_masked';
+
+export function isValuesMasked() {
+  try {
+    return window.localStorage.getItem(ERP_PRIVACY_MASK_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setValuesMasked(masked) {
+  try {
+    window.localStorage.setItem(ERP_PRIVACY_MASK_KEY, masked ? '1' : '0');
+  } catch {
+    // Ignore storage error
+  }
+  if (masked) {
+    document.documentElement.setAttribute('data-erp-values-masked', 'true');
+  } else {
+    document.documentElement.removeAttribute('data-erp-values-masked');
+  }
+}
+
 export function formatCurrency(amount) {
+  if (isValuesMasked()) {
+    return '•••• €';
+  }
   const num = Number(amount) || 0;
   return new Intl.NumberFormat('pt-PT', {
     style: 'currency',

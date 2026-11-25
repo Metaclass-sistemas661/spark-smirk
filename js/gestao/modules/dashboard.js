@@ -13,6 +13,7 @@ import {
   formatMonthLabel,
   getDaysInMonth,
   getWeekdayShortPT,
+  isValuesMasked,
   todayISO,
 } from '../core/formatters.js';
 import { ICONS, showToast } from '../core/ui.js';
@@ -422,9 +423,10 @@ export class DashboardModule {
       const ratio = i / 4;
       const y = padT + plotH - ratio * plotH;
       const labelVal = Math.round((niceMax * ratio) / 1000);
+      const axisText = isValuesMasked() ? '•• €' : `${labelVal}k €`;
       gridHtml += `
         <line x1="${padL}" y1="${y}" x2="${svgW - padR}" y2="${y}" stroke="var(--erp-border)" stroke-dasharray="${i === 0 ? 'none' : '4 4'}" />
-        <text x="${padL - 10}" y="${y + 4}" text-anchor="end" font-size="10.5" fill="var(--erp-text-muted)" font-weight="600">${labelVal}k €</text>
+        <text x="${padL - 10}" y="${y + 4}" text-anchor="end" font-size="10.5" fill="var(--erp-text-muted)" font-weight="600">${axisText}</text>
       `;
     }
 

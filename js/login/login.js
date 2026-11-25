@@ -23,11 +23,11 @@ let recoveryEmail = '';
 const VIEW_META = {
   login: {
     title: 'Iniciar Sessão',
-    subtitle: 'Introduza as suas credenciais corporativas para aceder ao painel interno.',
+    subtitle: 'Introduza o seu utilizador ou email corporativo para aceder ao painel interno.',
   },
   forgot: {
     title: 'Recuperar Acesso',
-    subtitle: 'Introduza o seu email corporativo para receber uma ligação segura de redefinição.',
+    subtitle: 'Introduza o email registado nas Configurações ou o seu nome de utilizador.',
   },
 };
 
@@ -364,14 +364,14 @@ async function resolveRecoveryModalFlow(recoveryCtx, existingSession = null) {
   document.getElementById('resetNewPassword')?.focus();
 }
 
-async function requestPersonalizedRecoveryEmail(email) {
+async function requestPersonalizedRecoveryEmail(identifier) {
   const response = await window.fetch('/api/auth/forgot-password', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ identifier, email: identifier }),
     cache: 'no-store',
   });
 
@@ -382,6 +382,21 @@ async function requestPersonalizedRecoveryEmail(email) {
     throw err;
   }
   return payload;
+}
+
+async function loginWithIdentifierAndPassword(identifier, password) {
+  const response = await window.fetch('/api/auth/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({ identifier, password }),
+    cache: 'no-store',
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  return { ok: response.ok, status: response.status, payload };
 }
 
 async function notifyBackendRecoveryCompleted(accessToken) {
@@ -531,9 +546,9 @@ async function initLoginPage() {
       e.preventDefault();
       clearAlert();
 
-      const email = (forgotEmailInput?.value || '').trim().toLowerCase();
-      if (!email) {
-        showAlert('error', 'Introduza o seu email corporativo para recuperar o acesso.');
+      const identifier = (forgotEmailInput?.value || '').trim().toLowerCase();
+      if (!identifier) {
+        showAlert('error', 'Introduza o seu email de recuperação ou nome de utilizador.');
         forgotEmailInput?.focus();
         return;
       }
@@ -544,11 +559,11 @@ async function initLoginPage() {
       }
 
       try {
-        const res = await requestPersonalizedRecoveryEmail(email);
+        const res = await requestPersonalizedRecoveryEmail(identifier);
         showAlert(
           'success',
           res.message ||
-            `Enviámos instruções personalizadas de recuperação para ${email}. Verifique a sua caixa de entrada e a pasta de spam.`
+            'Enviámos instruções personalizadas de recuperação para o email associado à sua conta. Verifique também a pasta de spam.'
         );
       } catch (err) {
         showAlert('error', err?.message || 'Erro ao solicitar recuperação de palavra-passe.');
@@ -643,18 +658,18 @@ async function initLoginPage() {
     });
   }
 
-  // Submissão de login normal
+  // Submissão de login normal (suporta nome de utilizador ex: adminspark ou email)
   if (form) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (Date.now() < cooldownUntil) return;
 
       clearAlert();
-      const email = emailInput?.value.trim() || '';
+      const identifier = emailInput?.value.trim() || '';
       const password = passwordInput?.value || '';
 
-      if (!email || !password) {
-        showAlert('error', 'Preencha o email corporativo e a palavra-passe.');
+      if (!identifier || !password) {
+        showAlert('error', 'Preencha o utilizador (ou email) e a palavra-passe.');
         return;
       }
 
@@ -673,24 +688,34 @@ async function initLoginPage() {
       }
 
       try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (error || !data?.session || !data?.user) {
+        const authRes = await loginWithIdentifierAndPassword(identifier, password);
+        if (!authRes.ok || !authRes.payload?.session?.access_token) {
           failedAttempts += 1;
           if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
             startCooldown(submitBtn);
             return;
           }
-          showAlert('error', translateAuthError(error));
+          showAlert(
+            'error',
+            authRes.payload?.message ||
+              'Utilizador ou palavra-passe inválidos. Verifique as suas credenciais e tente novamente.'
+          );
+          return;
+        }
+
+        const { error: setSessErr } = await supabase.auth.setSession({
+          access_token: authRes.payload.session.access_token,
+          refresh_token: authRes.payload.session.refresh_token,
+        });
+
+        if (setSessErr) {
+          showAlert('error', translateAuthError(setSessErr));
           return;
         }
 
         try {
           if (rememberCheckbox?.checked) {
-            window.localStorage.setItem(REMEMBER_EMAIL_KEY, email);
+            window.localStorage.setItem(REMEMBER_EMAIL_KEY, identifier);
           } else {
             window.localStorage.removeItem(REMEMBER_EMAIL_KEY);
           }

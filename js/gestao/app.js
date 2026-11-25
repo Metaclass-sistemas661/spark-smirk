@@ -3,7 +3,12 @@
    ═══════════════════════════════════════════════════════════ */
 
 import { store } from './core/store.js';
-import { currentYearMonth, getInitials } from './core/formatters.js';
+import {
+  currentYearMonth,
+  getInitials,
+  isValuesMasked,
+  setValuesMasked,
+} from './core/formatters.js';
 import { confirmAction, showToast } from './core/ui.js';
 import { DashboardModule } from './modules/dashboard.js';
 import { RhFuncionariosModule } from './modules/rh-funcionarios.js';
@@ -11,6 +16,7 @@ import { RhRecibosModule } from './modules/rh-recibos.js';
 import { OperacionalObrasModule } from './modules/operacional-obras.js';
 import { OperacionalResponsaveisModule } from './modules/operacional-responsaveis.js';
 import { AdminUtilizadoresModule } from './modules/admin-utilizadores.js';
+import { ContaConfiguracoesModule } from './modules/conta-configuracoes.js';
 import { hasPermission, ROLE_LABELS } from '../shared/permissions.js';
 import {
   getSupabaseClient,
@@ -69,6 +75,11 @@ const ROUTES = {
     kicker: 'Administração',
     title: 'Utilizadores & Acessos',
     perm: ['admin_utilizadores', 'ver'],
+  },
+  'conta-configuracoes': {
+    kicker: 'Conta Pessoal',
+    title: 'Configurações da Conta',
+    perm: null,
   },
 };
 
@@ -135,6 +146,16 @@ class ErpApp {
         }
       },
     });
+    this.contaConfiguracoes = new ContaConfiguracoesModule({
+      onProfileUpdated: (updatedProfile) => {
+        if (!updatedProfile) return;
+        this.currentProfile = { ...(this.currentProfile || {}), ...updatedProfile };
+        this.adminUtilizadores.setCurrentProfile(this.currentProfile);
+        this._renderOperatorInfo();
+        this._applyPermissionsUi();
+        this.render();
+      },
+    });
   }
 
   init(user = null, profile = null) {
@@ -155,6 +176,7 @@ class ErpApp {
 
     this._restoreSidebarCollapse();
     this._restoreTheme();
+    this._restorePrivacyMask();
     this._bindAuthWatchers();
     this._bindInactivityWatch();
     this._renderOperatorInfo();
@@ -198,6 +220,20 @@ class ErpApp {
       themeBtn.addEventListener('click', () => this._toggleTheme());
     }
 
+    const privacyBtn = document.getElementById('btnToggleValuesVisibility');
+    if (privacyBtn) {
+      privacyBtn.addEventListener('click', () => this._togglePrivacyMask());
+    }
+
+    const operatorCard = document.getElementById('erpOperatorCard');
+    if (operatorCard) {
+      operatorCard.addEventListener('click', () => {
+        this.activeRoute = 'conta-configuracoes';
+        this._closeMobileSidebar();
+        this.render();
+      });
+    }
+
     document.querySelectorAll('[data-quick]').forEach((btn) => {
       btn.addEventListener('click', () => this._handleQuickAction(btn.dataset.quick));
     });
@@ -226,8 +262,14 @@ class ErpApp {
 
     const logoutBtn = document.getElementById('btnLogout');
     if (logoutBtn) {
-      if (this.currentUser?.email) {
-        logoutBtn.title = `Terminar sessão (${this.currentUser.email})`;
+      const opHint =
+        this.currentProfile?.email_recuperacao ||
+        (this.currentProfile?.username ? `@${this.currentProfile.username}` : '') ||
+        (!String(this.currentUser?.email || '').endsWith('@sistema.sparksmirk.internal')
+          ? this.currentUser?.email
+          : '');
+      if (opHint) {
+        logoutBtn.title = `Terminar sessão (${opHint})`;
       }
       logoutBtn.addEventListener('click', () => {
         confirmAction({
@@ -261,6 +303,7 @@ class ErpApp {
   _canAccessRoute(routeKey) {
     const spec = ROUTES[routeKey];
     if (!spec || !this.currentProfile) return false;
+    if (!spec.perm) return true;
     return hasPermission(this.currentProfile, spec.perm[0], spec.perm[1]);
   }
 
@@ -366,6 +409,36 @@ class ErpApp {
       // Ignore storage error
     }
     showToast(next === 'dark' ? 'Modo escuro ativado no sistema de gestão.' : 'Modo claro ativado no sistema de gestão.');
+  }
+
+  _restorePrivacyMask() {
+    this._applyPrivacyMask(isValuesMasked());
+  }
+
+  _applyPrivacyMask(masked) {
+    setValuesMasked(Boolean(masked));
+    const btn = document.getElementById('btnToggleValuesVisibility');
+    const label = document.getElementById('erpPrivacyLabel');
+    if (btn) {
+      btn.setAttribute('aria-pressed', masked ? 'true' : 'false');
+      const tip = masked ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros';
+      btn.setAttribute('data-tooltip', tip);
+      btn.setAttribute('title', tip);
+    }
+    if (label) {
+      label.textContent = masked ? 'Valores Ocultos' : 'Ocultar Valores';
+    }
+  }
+
+  _togglePrivacyMask() {
+    const next = !isValuesMasked();
+    this._applyPrivacyMask(next);
+    this.render();
+    showToast(
+      next
+        ? 'Modo privacidade ativo: todos os valores foram ocultados.'
+        : 'Modo privacidade desativado: valores financeiros visíveis.'
+    );
   }
 
   async _bindAuthWatchers() {
@@ -520,6 +593,11 @@ class ErpApp {
       this.adminUtilizadores.render(this.workspace, ctx);
     } else if (this.activeRoute === 'op-responsaveis') {
       this.opResponsaveis.render(this.workspace, ctx);
+    } else if (this.activeRoute === 'conta-configuracoes') {
+      this.contaConfiguracoes.render(this.workspace, {
+        currentProfile: this.currentProfile,
+        currentUser: this.currentUser,
+      });
     } else {
       this.opObras.render(this.workspace, { ...ctx, statusFilter: route.status });
     }

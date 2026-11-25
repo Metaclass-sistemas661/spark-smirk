@@ -674,6 +674,19 @@ function buildEffectiveProfile(authUser, dbRow) {
     cargo: dbRow?.cargo || userMeta.cargo || 'Gestor Interno',
     departamento: dbRow?.departamento || userMeta.departamento || 'Geral',
     telefone: dbRow?.telefone || userMeta.telefone || '',
+    username: dbRow?.username || appMeta.username || userMeta.username || '',
+    email_recuperacao:
+      dbRow?.email_recuperacao ||
+      userMeta.email_recuperacao ||
+      (authUser.email && !String(authUser.email).endsWith('@sistema.sparksmirk.internal')
+        ? authUser.email
+        : ''),
+    is_placeholder_email: Boolean(
+      !dbRow?.email_recuperacao &&
+        String(dbRow?.email || authUser.email || '').endsWith('@sistema.sparksmirk.internal')
+    ),
+    nif: dbRow?.nif || userMeta.nif || '',
+    morada: dbRow?.morada || userMeta.morada || '',
     nivel_acesso: role,
     permissoes: normalizePermissions(permsSource, role),
     senha_provisoria: Boolean(dbRow?.senha_provisoria ?? appMeta.must_change_password),
@@ -808,6 +821,127 @@ exports.api = onRequest(
       },
     });
 
+    // ── POST /api/auth/login (Utilizador ou Email + Senha) ───────────────────
+    if (req.method === 'POST' && requestPath === '/api/auth/login') {
+      try {
+        if (!supabaseAnonKey) {
+          res.status(503).json({
+            error: 'AUTH_SERVICE_UNAVAILABLE',
+            message: 'Serviço de autenticação temporariamente indisponível.',
+          });
+          return;
+        }
+
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+        const rawIdentifier = String(body.identifier || body.username || body.email || '')
+          .trim()
+          .toLowerCase();
+        const password = String(body.password || '');
+
+        if (!rawIdentifier || !password) {
+          res.status(400).json({
+            error: 'MISSING_CREDENTIALS',
+            message: 'Preencha o nome de utilizador (ou email) e a palavra-passe.',
+          });
+          return;
+        }
+
+        let resolvedAuthEmail = rawIdentifier.includes('@') ? rawIdentifier : '';
+
+        try {
+          const { data: resolved, error: resolveErr } = await supabaseAdmin.rpc(
+            'spark_resolve_login_identifier',
+            { p_identifier: rawIdentifier }
+          );
+          if (!resolveErr && resolved?.found) {
+            if (resolved.ativo === false) {
+              res.status(403).json({
+                error: 'ACCOUNT_DISABLED',
+                message: 'A sua conta encontra-se desativada ou bloqueada. Contacte a administração.',
+              });
+              return;
+            }
+            if (resolved.auth_email) {
+              resolvedAuthEmail = String(resolved.auth_email).trim().toLowerCase();
+            }
+          }
+        } catch {
+          // Fallback abaixo caso a migração 05 ainda não tenha sido aplicada
+        }
+
+        if (!resolvedAuthEmail && !rawIdentifier.includes('@')) {
+          const { rows } = await listDbProfiles(supabaseAdmin);
+          const matched = (rows || []).find(
+            (r) => String(r?.username || '').trim().toLowerCase() === rawIdentifier
+          );
+          if (matched?.email) {
+            resolvedAuthEmail = String(matched.email).trim().toLowerCase();
+          }
+        }
+
+        if (!resolvedAuthEmail) {
+          res.status(401).json({
+            error: 'INVALID_CREDENTIALS',
+            message: 'Utilizador ou palavra-passe inválidos. Verifique as suas credenciais e tente novamente.',
+          });
+          return;
+        }
+
+        const supabasePublic = createClient(supabaseUrl, supabaseAnonKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+
+        const { data: loginData, error: loginErr } = await supabasePublic.auth.signInWithPassword({
+          email: resolvedAuthEmail,
+          password,
+        });
+
+        if (loginErr || !loginData?.session || !loginData?.user) {
+          const msgLower = String(loginErr?.message || '').toLowerCase();
+          if (msgLower.includes('too many requests') || msgLower.includes('rate limit')) {
+            res.status(429).json({
+              error: 'RATE_LIMITED',
+              message: 'Demasiadas tentativas seguidas. Aguarde alguns instantes antes de tentar novamente.',
+            });
+            return;
+          }
+          res.status(401).json({
+            error: 'INVALID_CREDENTIALS',
+            message: 'Utilizador ou palavra-passe inválidos. Verifique as suas credenciais e tente novamente.',
+          });
+          return;
+        }
+
+        const { data: existingRow } = await fetchDbProfile(supabaseAdmin, loginData.user.id);
+        const profile = buildEffectiveProfile(loginData.user, existingRow);
+
+        if (!profile.ativo) {
+          res.status(403).json({
+            error: 'ACCOUNT_DISABLED',
+            message: 'A sua conta encontra-se desativada ou bloqueada.',
+          });
+          return;
+        }
+
+        await touchDbLogin(supabaseAdmin, loginData.user.id);
+
+        res.status(200).json({
+          authenticated: true,
+          session: loginData.session,
+          user: loginData.user,
+          profile,
+        });
+        return;
+      } catch (err) {
+        console.error('Erro no login do sistema:', err);
+        res.status(500).json({
+          error: 'LOGIN_INTERNAL_ERROR',
+          message: 'Não foi possível validar o acesso neste momento.',
+        });
+        return;
+      }
+    }
+
     // ── POST /api/auth/verify ────────────────────────────────────────────────
     if (req.method === 'POST' && requestPath === '/api/auth/verify') {
       try {
@@ -841,12 +975,13 @@ exports.api = onRequest(
     if (req.method === 'POST' && requestPath === '/api/auth/forgot-password') {
       try {
         const body = req.body && typeof req.body === 'object' ? req.body : {};
-        const email = String(body.email || '').trim().toLowerCase();
+        const identifier = String(body.identifier || body.email || '').trim().toLowerCase();
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!email || !emailRegex.test(email)) {
+        const usernameRegex = /^[a-zA-Z0-9._-]{3,64}$/;
+        if (!identifier || (!emailRegex.test(identifier) && !usernameRegex.test(identifier))) {
           res.status(400).json({
-            error: 'INVALID_EMAIL',
-            message: 'Introduza um endereço de email corporativo válido.',
+            error: 'INVALID_IDENTIFIER',
+            message: 'Introduza um email válido ou o seu nome de utilizador (ex.: adminspark).',
           });
           return;
         }
@@ -859,20 +994,27 @@ exports.api = onRequest(
         try {
           const { data: rpcCheck, error: rpcErr } = await supabaseAdmin.rpc(
             'spark_check_password_recovery',
-            { p_email: email, p_ip_hash: ipHash || null }
+            { p_email: identifier, p_ip_hash: ipHash || null }
           );
           if (!rpcErr && rpcCheck && typeof rpcCheck === 'object') {
             checkResult = rpcCheck;
           }
         } catch {
-          // Fallback caso a migração SQL 04 ainda não tenha sido aplicada
+          // Fallback caso a migração SQL 04/05 ainda não tenha sido aplicada
         }
 
         if (!checkResult) {
           const { rows } = await listDbProfiles(supabaseAdmin);
           const matched = (rows || []).find(
-            (r) => String(r?.email || '').trim().toLowerCase() === email
+            (r) =>
+              String(r?.username || '').trim().toLowerCase() === identifier ||
+              String(r?.email_recuperacao || '').trim().toLowerCase() === identifier ||
+              String(r?.email || '').trim().toLowerCase() === identifier
           );
+          const fallbackAuthEmail = matched?.email ? String(matched.email).trim().toLowerCase() : identifier;
+          const fallbackDelivery = matched?.email_recuperacao
+            ? String(matched.email_recuperacao).trim().toLowerCase()
+            : fallbackAuthEmail;
           checkResult = {
             allowed: true,
             reason: 'OK',
@@ -883,6 +1025,9 @@ exports.api = onRequest(
             nome_completo: matched?.nome_completo || null,
             cargo: matched?.cargo || null,
             departamento: matched?.departamento || null,
+            auth_email: fallbackAuthEmail,
+            delivery_email: fallbackDelivery,
+            is_placeholder_only: fallbackDelivery.endsWith('@sistema.sparksmirk.internal'),
           };
         }
 
@@ -891,7 +1036,7 @@ exports.api = onRequest(
           try {
             await supabaseAdmin.rpc('spark_log_password_recovery', {
               p_payload: {
-                email,
+                email: checkResult.delivery_email || identifier,
                 canal_envio: 'bloqueado',
                 origem_url: safeOrigin,
                 ip_hash: ipHash,
@@ -908,18 +1053,21 @@ exports.api = onRequest(
             retryAfterSeconds: retryAfter,
             message:
               checkResult.reason === 'COOLDOWN_ACTIVE'
-                ? `Aguarde ${retryAfter} segundos antes de solicitar um novo link para este email.`
+                ? `Aguarde ${retryAfter} segundos antes de solicitar um novo link.`
                 : 'Demasiados pedidos de recuperação seguidos. Aguarde alguns minutos antes de tentar novamente.',
           });
           return;
         }
 
-        if (!checkResult.user_exists || !checkResult.user_active) {
+        const targetDeliveryEmail = String(checkResult.delivery_email || identifier).trim().toLowerCase();
+        const authAccountEmail = String(checkResult.auth_email || targetDeliveryEmail).trim().toLowerCase();
+
+        if (!checkResult.user_exists || !checkResult.user_active || checkResult.is_placeholder_only) {
           try {
             await supabaseAdmin.rpc('spark_log_password_recovery', {
               p_payload: {
                 utilizador_id: checkResult.utilizador_id || null,
-                email,
+                email: targetDeliveryEmail || identifier,
                 nome_completo: checkResult.nome_completo || null,
                 canal_envio: 'ignorado',
                 origem_url: safeOrigin,
@@ -928,6 +1076,7 @@ exports.api = onRequest(
                 detalhes: {
                   user_exists: Boolean(checkResult.user_exists),
                   user_active: Boolean(checkResult.user_active),
+                  placeholder_only: Boolean(checkResult.is_placeholder_only),
                 },
               },
             });
@@ -935,10 +1084,19 @@ exports.api = onRequest(
             // Non-blocking audit
           }
 
+          if (checkResult.user_exists && checkResult.is_placeholder_only) {
+            res.status(400).json({
+              error: 'RECOVERY_EMAIL_NOT_CONFIGURED',
+              message:
+                'Este utilizador ainda não registou um email de recuperação na aba Configurações. Contacte o administrador para redefinir o acesso.',
+            });
+            return;
+          }
+
           res.status(200).json({
             ok: true,
             message:
-              'Se o endereço corporativo estiver registado e ativo no sistema, enviaremos em instantes um email personalizado com as instruções de recuperação.',
+              'Se a conta estiver registada, ativa e com email configurado, enviaremos em instantes as instruções personalizadas de recuperação.',
           });
           return;
         }
@@ -957,7 +1115,7 @@ exports.api = onRequest(
           try {
             const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
               type: 'recovery',
-              email,
+              email: authAccountEmail,
               options: { redirectTo },
             });
             const hashedToken = linkData?.properties?.hashed_token;
@@ -967,12 +1125,12 @@ exports.api = onRequest(
                 nomeCompleto: checkResult.nome_completo,
                 cargo: checkResult.cargo,
                 departamento: checkResult.departamento,
-                email,
+                email: targetDeliveryEmail,
                 actionUrl,
                 originUrl: safeOrigin,
               });
               const sentRes = await sendCustomRecoveryEmail({
-                toEmail: email,
+                toEmail: targetDeliveryEmail,
                 subject: mail.subject,
                 html: mail.html,
                 text: mail.text,
@@ -996,12 +1154,23 @@ exports.api = onRequest(
             return;
           }
 
+          // Caso auth_email ainda difira do email_recuperacao configurado, sincroniza primeiro
+          if (targetDeliveryEmail && targetDeliveryEmail !== authAccountEmail && checkResult.utilizador_id) {
+            await supabaseAdmin.auth.admin
+              .updateUserById(checkResult.utilizador_id, {
+                email: targetDeliveryEmail,
+                email_confirm: true,
+              })
+              .catch(() => {});
+          }
+
           const supabasePublic = createClient(supabaseUrl, supabaseAnonKey, {
             auth: { autoRefreshToken: false, persistSession: false },
           });
-          const { error: resetErr } = await supabasePublic.auth.resetPasswordForEmail(email, {
-            redirectTo,
-          });
+          const { error: resetErr } = await supabasePublic.auth.resetPasswordForEmail(
+            targetDeliveryEmail,
+            { redirectTo }
+          );
 
           if (resetErr) {
             const errMsgLower = String(resetErr.message || '').toLowerCase();
@@ -1009,7 +1178,7 @@ exports.api = onRequest(
               await supabaseAdmin.rpc('spark_log_password_recovery', {
                 p_payload: {
                   utilizador_id: checkResult.utilizador_id || null,
-                  email,
+                  email: targetDeliveryEmail,
                   nome_completo: checkResult.nome_completo || null,
                   canal_envio: 'auth_email',
                   origem_url: safeOrigin,
@@ -1042,23 +1211,23 @@ exports.api = onRequest(
           await supabaseAdmin.rpc('spark_log_password_recovery', {
             p_payload: {
               utilizador_id: checkResult.utilizador_id || null,
-              email,
+              email: targetDeliveryEmail,
               nome_completo: checkResult.nome_completo || null,
               canal_envio: deliveryChannel,
               origem_url: safeOrigin,
               ip_hash: ipHash,
               estado: 'email_enviado',
-              detalhes: { redirectTo },
+              detalhes: { redirectTo, identifier },
             },
           });
         } catch {
           await writeAuditLog(supabaseAdmin, {
             userId: checkResult.utilizador_id || null,
-            userEmail: email,
+            userEmail: targetDeliveryEmail,
             modulo: 'seguranca.recuperacao',
             acao: 'SOLICITAR_RECUPERACAO_SENHA',
-            entidadeId: checkResult.utilizador_id || email,
-            detalhes: { canal_envio: deliveryChannel, origem_url: safeOrigin },
+            entidadeId: checkResult.utilizador_id || targetDeliveryEmail,
+            detalhes: { canal_envio: deliveryChannel, origem_url: safeOrigin, identifier },
           });
         }
 
@@ -1066,7 +1235,7 @@ exports.api = onRequest(
           ok: true,
           deliveryChannel,
           message:
-            'Enviámos as instruções personalizadas de recuperação para o seu email corporativo. Verifique também a pasta de spam ou correio não solicitado.',
+            'Enviámos as instruções personalizadas de recuperação para o email registado na sua conta. Verifique também a pasta de spam ou correio não solicitado.',
         });
         return;
       } catch (err) {
@@ -1212,6 +1381,200 @@ exports.api = onRequest(
       } catch (err) {
         console.error('Erro ao concluir alteração de senha provisória:', err);
         res.status(500).json({ error: 'COMPLETE_PASSWORD_CHANGE_ERROR' });
+        return;
+      }
+    }
+
+    // ── PUT /api/account/profile (Aba Configurações — Próprio Utilizador) ────
+    if (req.method === 'PUT' && requestPath === '/api/account/profile') {
+      try {
+        const ctx = await resolveCallerContext(req, supabaseAdmin);
+        if (ctx.errorStatus) {
+          res.status(ctx.errorStatus).json({ error: ctx.errorCode });
+          return;
+        }
+
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+        const nomeCompleto = String(body.nome_completo ?? ctx.profile.nome_completo).trim();
+        const emailRecuperacao = String(body.email_recuperacao ?? ctx.profile.email_recuperacao ?? '')
+          .trim()
+          .toLowerCase();
+        const cleanNif = String(body.nif ?? ctx.profile.nif ?? '').replace(/\D/g, '');
+        const telefone = String(body.telefone ?? ctx.profile.telefone ?? '').trim();
+        const morada = String(body.morada ?? ctx.profile.morada ?? '').trim();
+        const cargo = String(body.cargo ?? ctx.profile.cargo ?? 'Gestor Interno').trim();
+        const departamento = String(body.departamento ?? ctx.profile.departamento ?? 'Geral').trim();
+
+        if (!nomeCompleto || nomeCompleto.length < 2) {
+          res.status(400).json({
+            error: 'INVALID_NAME',
+            message: 'Introduza o seu nome completo.',
+          });
+          return;
+        }
+
+        if (emailRecuperacao) {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(emailRecuperacao) || emailRecuperacao.endsWith('@sistema.sparksmirk.internal')) {
+            res.status(400).json({
+              error: 'INVALID_RECOVERY_EMAIL',
+              message: 'Introduza um endereço de email válido para contacto e recuperação de palavra-passe.',
+            });
+            return;
+          }
+        }
+
+        if (cleanNif) {
+          let invalidNif = cleanNif.length !== 9 || !/^[1235689]/.test(cleanNif);
+          if (!invalidNif) {
+            let sum = 0;
+            for (let i = 0; i < 8; i += 1) sum += Number(cleanNif[i]) * (9 - i);
+            const rem = sum % 11;
+            const checkDigit = rem < 2 ? 0 : 11 - rem;
+            invalidNif = checkDigit !== Number(cleanNif[8]);
+          }
+          if (invalidNif) {
+            res.status(400).json({
+              error: 'INVALID_NIF',
+              message: 'O NIF introduzido é inválido. Verifique os 9 dígitos.',
+            });
+            return;
+          }
+        }
+
+        const currentAuthEmail = String(ctx.authUser.email || '').trim().toLowerCase();
+        let shouldSyncAuthEmail = false;
+
+        if (emailRecuperacao && emailRecuperacao !== currentAuthEmail) {
+          const { rows: allRows } = await listDbProfiles(supabaseAdmin);
+          const conflict = (allRows || []).find(
+            (r) =>
+              r.id !== ctx.authUser.id &&
+              (String(r.email || '').trim().toLowerCase() === emailRecuperacao ||
+                String(r.email_recuperacao || '').trim().toLowerCase() === emailRecuperacao)
+          );
+          if (conflict) {
+            res.status(400).json({
+              error: 'EMAIL_ALREADY_IN_USE',
+              message: 'Este endereço de email já está associado a outra conta do sistema.',
+            });
+            return;
+          }
+
+          const { error: authEmailErr } = await supabaseAdmin.auth.admin.updateUserById(
+            ctx.authUser.id,
+            {
+              email: emailRecuperacao,
+              email_confirm: true,
+              user_metadata: {
+                ...(ctx.authUser.user_metadata || {}),
+                nome_completo: nomeCompleto,
+                email_recuperacao: emailRecuperacao,
+                telefone,
+                nif: cleanNif,
+                morada,
+                cargo,
+                departamento,
+              },
+            }
+          );
+
+          if (authEmailErr) {
+            res.status(400).json({
+              error: 'AUTH_EMAIL_UPDATE_FAILED',
+              message: authEmailErr.message || 'Não foi possível associar o novo email à conta.',
+            });
+            return;
+          }
+          shouldSyncAuthEmail = true;
+        } else {
+          await supabaseAdmin.auth.admin
+            .updateUserById(ctx.authUser.id, {
+              user_metadata: {
+                ...(ctx.authUser.user_metadata || {}),
+                nome_completo: nomeCompleto,
+                email_recuperacao: emailRecuperacao || null,
+                telefone,
+                nif: cleanNif,
+                morada,
+                cargo,
+                departamento,
+              },
+            })
+            .catch(() => {});
+        }
+
+        let updatedRow = null;
+        try {
+          const { data: rpcRow, error: rpcErr } = await supabaseAdmin.rpc(
+            'spark_update_own_profile',
+            {
+              p_user_id: ctx.authUser.id,
+              p_payload: {
+                nome_completo: nomeCompleto,
+                email_recuperacao: emailRecuperacao || null,
+                sync_primary_email: shouldSyncAuthEmail,
+                nif: cleanNif || null,
+                telefone: telefone || null,
+                morada: morada || null,
+                cargo,
+                departamento,
+              },
+            }
+          );
+          if (!rpcErr && rpcRow) {
+            updatedRow = rpcRow;
+          }
+        } catch {
+          // Fallback caso migração 05 ainda não tenha sido executada
+        }
+
+        if (!updatedRow) {
+          const fallbackSync = await upsertDbProfile(supabaseAdmin, {
+            id: ctx.authUser.id,
+            username: ctx.profile.username || null,
+            nome_completo: nomeCompleto,
+            email: shouldSyncAuthEmail ? emailRecuperacao : ctx.profile.email,
+            email_recuperacao: emailRecuperacao || null,
+            cargo,
+            departamento,
+            telefone,
+            nif: cleanNif || null,
+            morada: morada || null,
+            nivel_acesso: ctx.profile.nivel_acesso,
+            permissoes: ctx.profile.permissoes,
+            ativo: ctx.profile.ativo,
+          });
+          updatedRow = fallbackSync.data;
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: emailRecuperacao || ctx.authUser.email,
+            modulo: 'seguranca.conta',
+            acao: 'ATUALIZAR_PERFIL_PROPRIO',
+            entidadeId: ctx.authUser.id,
+            detalhes: { nome_completo: nomeCompleto, email_recuperacao: emailRecuperacao, nif: cleanNif },
+          });
+        }
+
+        const freshAuth = await supabaseAdmin.auth.admin.getUserById(ctx.authUser.id);
+        const freshProfile = buildEffectiveProfile(
+          freshAuth?.data?.user || ctx.authUser,
+          updatedRow
+        );
+
+        res.status(200).json({
+          ok: true,
+          profile: freshProfile,
+          emailSynced: shouldSyncAuthEmail,
+          message: 'Dados do seu cadastro atualizados e guardados com segurança.',
+        });
+        return;
+      } catch (err) {
+        console.error('Erro ao atualizar cadastro próprio:', err);
+        res.status(500).json({
+          error: 'PROFILE_UPDATE_ERROR',
+          message: 'Não foi possível guardar os dados do cadastro.',
+        });
         return;
       }
     }
