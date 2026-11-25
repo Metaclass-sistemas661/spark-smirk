@@ -30,18 +30,18 @@ begin
   end if;
 end $$;
 
-create unique index if not exists idx_recibos_codigo_unique
-  on rh.recibos_vencimento (codigo_recibo)
-  where codigo_recibo is not null;
+drop index if exists rh.idx_recibos_codigo_unique;
+create unique index idx_recibos_codigo_unique
+  on rh.recibos_vencimento (codigo_recibo);
 
 alter table rh.recibos_anexados
   add column if not exists codigo_anexo text,
   add column if not exists codigo_recibo_ref text,
   add column if not exists tamanho_bytes bigint default 0;
 
-create unique index if not exists idx_anexados_codigo_unique
-  on rh.recibos_anexados (codigo_anexo)
-  where codigo_anexo is not null;
+drop index if exists rh.idx_anexados_codigo_unique;
+create unique index idx_anexados_codigo_unique
+  on rh.recibos_anexados (codigo_anexo);
 
 alter table operacional.obras
   add column if not exists prioridade text default 'Normal',
@@ -57,9 +57,9 @@ alter table operacional.obras
 alter table operacional.pagamentos_obras
   add column if not exists codigo_pagamento text;
 
-create unique index if not exists idx_pagamentos_codigo_unique
-  on operacional.pagamentos_obras (codigo_pagamento)
-  where codigo_pagamento is not null;
+drop index if exists operacional.idx_pagamentos_codigo_unique;
+create unique index idx_pagamentos_codigo_unique
+  on operacional.pagamentos_obras (codigo_pagamento);
 
 -- ----------------------------------------------------------------------------
 -- 2. BUCKET PRIVADO DE STORAGE PARA RECIBOS DE VENCIMENTO (PDF / IMAGENS)

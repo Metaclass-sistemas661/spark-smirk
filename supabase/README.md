@@ -23,6 +23,7 @@ Os scripts SQL estão separados por **schemas PostgreSQL distintos** e organizad
 - [`04-recibos-anexados.sql`](./02-recursos-humanos/04-recibos-anexados.sql) — Tabela `rh.recibos_anexados` (histórico de recibos anexados filtrados por funcionário, ano e mês).
 - [`05-remuneracao-e-adiantamentos.sql`](./02-recursos-humanos/05-remuneracao-e-adiantamentos.sql) — Modalidade salarial (`mensal`, `diaria`, `hora`), SS%, horas diárias e tabela `rh.adiantamentos` (vales).
 - [`06-contratos-funcionarios.sql`](./02-recursos-humanos/06-contratos-funcionarios.sql) — Tabela `rh.funcionarios_contratos`, bucket privado `contratos-funcionarios` e RPCs para anexo/leitura de contratos de trabalho em PDF.
+- [`07-fix-recibos-constraints.sql`](./02-recursos-humanos/07-fix-recibos-constraints.sql) — Substitui os índices parciais de recibos/anexos/pagamentos por índices `UNIQUE` completos e blinda as RPCs contra erros `ON CONFLICT`.
 
 ### `03-operacional/` — Schema `operacional`
 - [`01-obras.sql`](./03-operacional/01-obras.sql) — Tabela `operacional.obras` (obras em andamento, a iniciar e concluídas).
@@ -52,6 +53,7 @@ Execute exatamente pela numeração das pastas e ficheiros:
 15. `02-recursos-humanos/06-contratos-funcionarios.sql`
 16. `01-seguranca/04-recuperacao-palavra-passe.sql`
 17. `01-seguranca/05-conta-configuracoes-e-adminspark.sql`
+18. `02-recursos-humanos/07-fix-recibos-constraints.sql`
 
 ## Expor os Schemas na API do Supabase
 

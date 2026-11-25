@@ -208,6 +208,23 @@ export async function verifyWithBackendEndpoint(accessToken) {
   }
 }
 
+function sanitizeUserErrorMessage(rawMessage, statusCode = 400) {
+  const raw = String(rawMessage || '').trim();
+  if (!raw) {
+    return statusCode >= 500
+      ? 'Ocorreu um erro temporário no servidor. Tente novamente dentro de instantes.'
+      : 'Não foi possível concluir a operação solicitada.';
+  }
+  const hasTechnicalPattern =
+    /\b(on conflict|exclusion constraint|unique constraint|foreign key|check constraint|violates|relation\s+"|column\s+"|schema\s+"|syntax error|pgrst|postgres|postgresql|supabase|tuple|null value in column|exception|stack|sqlstate)\b/i.test(
+      raw
+    );
+  if (hasTechnicalPattern) {
+    return 'Não foi possível guardar os dados neste momento. Verifique as informações e tente novamente.';
+  }
+  return raw;
+}
+
 /**
  * Performs an authenticated JSON request to /api/** using the current Supabase access token.
  */
@@ -244,7 +261,7 @@ export async function authenticatedApiFetch(endpoint, options = {}) {
 
   const payload = await response.json();
   if (!response.ok) {
-    throw new Error(payload?.message || payload?.error || `Erro HTTP ${response.status}`);
+    throw new Error(sanitizeUserErrorMessage(payload?.message || payload?.error, response.status));
   }
   return payload;
 }

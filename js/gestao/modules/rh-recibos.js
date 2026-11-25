@@ -521,9 +521,11 @@ export class RhRecibosModule {
         confirmAction({
           title: 'Excluir Vencimento',
           message: `Tem a certeza de que pretende eliminar o registo ${pay.id}?`,
-          onConfirm: () => {
-            store.deletePayslip(pay.id);
-            showToast('Registo eliminado.');
+          onConfirm: async () => {
+            const res = await store.deletePayslip(pay.id);
+            if (res !== null) {
+              showToast('Registo eliminado.');
+            }
           },
         });
       });
@@ -560,9 +562,11 @@ export class RhRecibosModule {
         confirmAction({
           title: 'Remover Recibo Anexado',
           message: `Pretende remover o ficheiro "${rec.fileName}" de ${formatMonthLabel(rec.month)}?`,
-          onConfirm: () => {
-            store.deleteAttachedReceipt(rec.id);
-            showToast('Anexo removido.');
+          onConfirm: async () => {
+            const res = await store.deleteAttachedReceipt(rec.id);
+            if (res !== null) {
+              showToast('Anexo removido.');
+            }
           },
         });
       });
@@ -607,11 +611,12 @@ export class RhRecibosModule {
       bodyHtml,
       footerHtml: `
         <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Cancelar</button>
-        <button type="submit" form="quickAttachForm" class="erp-btn erp-btn--primary">Anexar Recibo</button>
+        <button type="submit" form="quickAttachForm" id="btnQuickAttachSubmit" class="erp-btn erp-btn--primary">Anexar Recibo</button>
       `,
       onMount: (modal) => {
         const dropzone = modal.querySelector('#qaDropzone');
         const fileInput = modal.querySelector('#qaFileInput');
+        const submitBtn = modal.querySelector('#btnQuickAttachSubmit');
         dropzone.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', () => {
           if (fileInput.files && fileInput.files[0]) {
@@ -630,20 +635,36 @@ export class RhRecibosModule {
           const refMonth = modal.querySelector('#qaMonth').value;
           const fileId = generateId('ATT');
 
-          await saveAttachmentFile(fileId, chosenFile);
-          store.addAttachedReceipt({
-            id: fileId,
-            employeeId: empId,
-            month: refMonth,
-            payslipId: payslipId || null,
-            fileName: chosenFile.name,
-            fileType: chosenFile.type || 'application/pdf',
-            fileSize: chosenFile.size,
-            uploadedAt: todayISO(),
-          });
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'A enviar...';
+          }
 
-          closeModal();
-          showToast('Recibo anexado com sucesso.');
+          try {
+            await saveAttachmentFile(fileId, chosenFile);
+            const res = await store.addAttachedReceipt({
+              id: fileId,
+              employeeId: empId,
+              month: refMonth,
+              payslipId: payslipId || null,
+              fileName: chosenFile.name,
+              fileType: chosenFile.type || 'application/pdf',
+              fileSize: chosenFile.size,
+              uploadedAt: todayISO(),
+            });
+
+            if (res !== null) {
+              closeModal();
+              showToast('Recibo anexado com sucesso.');
+            }
+          } catch (err) {
+            showToast(err?.message || 'Não foi possível anexar o ficheiro selecionado.', 'error');
+          } finally {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Anexar Recibo';
+            }
+          }
         });
       },
     });
@@ -869,7 +890,7 @@ export class RhRecibosModule {
       bodyHtml,
       footerHtml: `
         <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Cancelar</button>
-        <button type="submit" form="payslipForm" class="erp-btn erp-btn--primary">${isEdit ? 'Guardar' : 'Emitir Vencimento'}</button>
+        <button type="submit" form="payslipForm" id="btnPayslipSubmit" class="erp-btn erp-btn--primary">${isEdit ? 'Guardar' : 'Emitir Vencimento'}</button>
       `,
       onMount: (modal) => {
         const form = modal.querySelector('#payslipForm');
@@ -942,6 +963,8 @@ export class RhRecibosModule {
 
         form.addEventListener('submit', async (e) => {
           e.preventDefault();
+          const submitBtn = modal.querySelector('#btnPayslipSubmit');
+          const originalLabel = isEdit ? 'Guardar' : 'Emitir Vencimento';
           const net = recalc();
           const payslipId = isEdit ? pay.id : generateId('REC');
           const empId = isEdit ? pay.employeeId : empSelect.value;
@@ -962,32 +985,51 @@ export class RhRecibosModule {
             notes: modal.querySelector('#payNotes').value,
           };
 
-          if (isEdit) {
-            store.updatePayslip(pay.id, payload);
-          } else {
-            store.addPayslip({ id: payslipId, ...payload });
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'A guardar...';
           }
 
-          if (selectedFile) {
-            const fileId = generateId('ATT');
-            await saveAttachmentFile(fileId, selectedFile);
-            store.addAttachedReceipt({
-              id: fileId,
-              employeeId: empId,
-              month: refMonth,
-              payslipId,
-              fileName: selectedFile.name,
-              fileType: selectedFile.type || 'application/pdf',
-              fileSize: selectedFile.size,
-              uploadedAt: todayISO(),
-            });
+          try {
+            const payRes = await (isEdit
+              ? store.updatePayslip(pay.id, payload)
+              : store.addPayslip({ id: payslipId, ...payload }));
+
+            if (payRes === null) {
+              return;
+            }
+
+            if (selectedFile) {
+              const fileId = generateId('ATT');
+              await saveAttachmentFile(fileId, selectedFile);
+              const attRes = await store.addAttachedReceipt({
+                id: fileId,
+                employeeId: empId,
+                month: refMonth,
+                payslipId,
+                fileName: selectedFile.name,
+                fileType: selectedFile.type || 'application/pdf',
+                fileSize: selectedFile.size,
+                uploadedAt: todayISO(),
+              });
+              if (attRes === null) {
+                return;
+              }
+              closeModal();
+              showToast('Vencimento guardado e recibo anexado com sucesso.');
+              return;
+            }
+
             closeModal();
-            showToast('Recibo anexado com sucesso.');
-            return;
+            showToast(isEdit ? `Vencimento ${pay.id} atualizado.` : `Vencimento ${payslipId} emitido com sucesso.`);
+          } catch (err) {
+            showToast(err?.message || 'Não foi possível guardar o vencimento ou anexo.', 'error');
+          } finally {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = originalLabel;
+            }
           }
-
-          closeModal();
-          showToast(isEdit ? `Vencimento ${pay.id} atualizado.` : `Vencimento ${payslipId} emitido com sucesso.`);
         });
       },
     });

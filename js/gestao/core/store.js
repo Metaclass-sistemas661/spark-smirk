@@ -447,16 +447,21 @@ class ErpStore {
   addPayslip(payslip) {
     this.state.payslips.unshift(payslip);
     this._notify();
-    this._syncMutation('/api/erp/payslips', 'POST', payslip, 'Erro ao guardar vencimento na base de dados.');
+    return this._syncMutation(
+      '/api/erp/payslips',
+      'POST',
+      payslip,
+      'Erro ao guardar vencimento na base de dados.'
+    );
   }
 
   updatePayslip(id, patch) {
     const idx = this.state.payslips.findIndex((p) => p.id === id);
-    if (idx === -1) return;
+    if (idx === -1) return Promise.resolve(null);
     const updated = { ...this.state.payslips[idx], ...patch };
     this.state.payslips[idx] = updated;
     this._notify();
-    this._syncMutation(
+    return this._syncMutation(
       `/api/erp/payslips/${encodeURIComponent(id)}`,
       'PUT',
       updated,
@@ -467,7 +472,7 @@ class ErpStore {
   deletePayslip(id) {
     this.state.payslips = this.state.payslips.filter((p) => p.id !== id);
     this._notify();
-    this._syncMutation(
+    return this._syncMutation(
       `/api/erp/payslips/${encodeURIComponent(id)}`,
       'DELETE',
       null,
@@ -486,7 +491,7 @@ class ErpStore {
     const pending = pendingAttachmentPayloads.get(receipt.id);
     pendingAttachmentPayloads.delete(receipt.id);
 
-    this._syncMutation(
+    return this._syncMutation(
       '/api/erp/attachments',
       'POST',
       {
@@ -500,7 +505,7 @@ class ErpStore {
   deleteAttachedReceipt(id) {
     this.state.attachedReceipts = (this.state.attachedReceipts || []).filter((r) => r.id !== id);
     this._notify();
-    this._syncMutation(
+    return this._syncMutation(
       `/api/erp/attachments/${encodeURIComponent(id)}`,
       'DELETE',
       null,

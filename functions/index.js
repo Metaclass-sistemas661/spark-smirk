@@ -79,6 +79,277 @@ function escapeEmailHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function isOnConflictConstraintError(err) {
+  const code = String(err?.code || '').trim();
+  const raw = String(err?.message || '');
+  return (
+    code === '42P10' ||
+    /no unique or exclusion constraint matching the on conflict specification/i.test(raw)
+  );
+}
+
+function formatUserSafeError(err, fallbackMessage, contextTag = 'API_DB_ERROR') {
+  const code = String(err?.code || '').trim();
+  const raw = String(err?.message || '').trim();
+
+  console.error(`[${contextTag}]`, {
+    code: code || undefined,
+    message: raw || undefined,
+    details: err?.details || undefined,
+    hint: err?.hint || undefined,
+  });
+
+  if (!raw) {
+    return fallbackMessage;
+  }
+
+  // Bloqueia terminologia técnica SQL/PostgreSQL/PostgREST antes de avaliar mensagens
+  const hasTechnicalSqlTerms =
+    /\b(on conflict|exclusion constraint|unique constraint|foreign key|check constraint|violates|relation|column|schema|syntax error|pgrst|postgres|postgresql|supabase|rpc|tuple|null value in column)\b/i.test(
+      raw
+    );
+
+  if (code === '23505' || /duplicate key|already exists|unique/i.test(raw)) {
+    if (/nif/i.test(raw)) return 'Já existe um registo com este NIF na base de dados.';
+    if (/email/i.test(raw)) return 'Este endereço de email já se encontra registado no sistema.';
+    if (/username/i.test(raw)) return 'Este nome de utilizador já está em utilização.';
+    if (/codigo_interno/i.test(raw)) return 'Já existe um registo com este código interno.';
+    return 'Já existe um registo equivalente guardado na base de dados.';
+  }
+
+  if (code === '23503' || /foreign key/i.test(raw)) {
+    return 'O registo associado não foi encontrado ou possui dependências ativas.';
+  }
+
+  if (code === '22P02' || /invalid input syntax/i.test(raw)) {
+    return 'Um dos dados enviados apresenta formato inválido. Verifique datas, números ou valores.';
+  }
+
+  if (code === '23514' || /check constraint/i.test(raw)) {
+    return 'Um dos valores fornecidos encontra-se fora das regras permitidas pelo sistema.';
+  }
+
+  if (isOnConflictConstraintError(err)) {
+    return 'Não foi possível guardar por uma inconsistência técnica temporária na base de dados. Tente novamente.';
+  }
+
+  if (/already been registered|already exists/i.test(raw)) {
+    return 'Já existe uma conta registada com este endereço de email.';
+  }
+
+  if (/password.*weak|at least \d+ characters/i.test(raw)) {
+    return 'A palavra-passe não cumpre os requisitos mínimos de segurança.';
+  }
+
+  if (
+    !hasTechnicalSqlTerms &&
+    /^(Funcionário|Obra|Responsável técnico|Este endereço|Indique|Preencha|O NIF|A senha|A palavra-passe|Sem permissão|Apenas ficheiros|Não foi possível|Não pode|Já existe)/i.test(
+      raw
+    )
+  ) {
+    return raw.slice(0, 220);
+  }
+
+  return fallbackMessage;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function resolveRhEmployeeUuid(supabaseAdmin, empCode) {
+  const clean = String(empCode || '').trim();
+  if (!clean) return null;
+
+  const { data: byCode } = await supabaseAdmin
+    .schema('rh')
+    .from('funcionarios')
+    .select('id')
+    .eq('codigo_interno', clean)
+    .limit(1)
+    .maybeSingle();
+  if (byCode?.id) return byCode.id;
+
+  if (UUID_RE.test(clean)) {
+    const { data: byId } = await supabaseAdmin
+      .schema('rh')
+      .from('funcionarios')
+      .select('id')
+      .eq('id', clean)
+      .limit(1)
+      .maybeSingle();
+    if (byId?.id) return byId.id;
+  }
+
+  return null;
+}
+
+async function resolveRhPayslipUuid(supabaseAdmin, payCode) {
+  const clean = String(payCode || '').trim();
+  if (!clean) return null;
+
+  const { data: byCode } = await supabaseAdmin
+    .schema('rh')
+    .from('recibos_vencimento')
+    .select('id')
+    .eq('codigo_recibo', clean)
+    .limit(1)
+    .maybeSingle();
+  if (byCode?.id) return byCode.id;
+
+  if (UUID_RE.test(clean)) {
+    const { data: byId } = await supabaseAdmin
+      .schema('rh')
+      .from('recibos_vencimento')
+      .select('id')
+      .eq('id', clean)
+      .limit(1)
+      .maybeSingle();
+    if (byId?.id) return byId.id;
+  }
+
+  return null;
+}
+
+async function addAttachmentFallback(supabaseAdmin, payload, actorId) {
+  const code = String(payload?.id || `ATT-${Date.now()}`).trim();
+  const empUuid = await resolveRhEmployeeUuid(supabaseAdmin, payload?.employeeId);
+  if (!empUuid) {
+    return { error: { message: 'Funcionário associado ao recibo não encontrado.' } };
+  }
+
+  const payslipCode = payload?.payslipId ? String(payload.payslipId).trim() : null;
+  const recUuid = payslipCode ? await resolveRhPayslipUuid(supabaseAdmin, payslipCode) : null;
+
+  const monthStr = String(payload?.month || new Date().toISOString().slice(0, 7));
+  const [anoRaw, mesRaw] = monthStr.split('-');
+  const ano = Number(anoRaw) || new Date().getFullYear();
+  const mes = Math.min(12, Math.max(1, Number(mesRaw) || new Date().getMonth() + 1));
+  const fileSize = Number(payload?.fileSize) || 0;
+  const fileName = String(payload?.fileName || 'recibo.pdf');
+  const fileType = String(payload?.fileType || 'application/pdf');
+  const storagePath = String(payload?.storagePath || '');
+  const sizeLabel = `${Math.round(fileSize / 1024)} KB`;
+
+  const rhTable = supabaseAdmin.schema('rh').from('recibos_anexados');
+  const { data: existing } = await rhTable
+    .select('id, codigo_anexo')
+    .eq('codigo_anexo', code)
+    .limit(1)
+    .maybeSingle();
+
+  if (existing?.id) {
+    const { data: updated, error: updErr } = await rhTable
+      .update({
+        funcionario_id: empUuid,
+        recibo_id: recUuid,
+        codigo_recibo_ref: payslipCode,
+        ano,
+        mes,
+        nome_ficheiro: fileName,
+        tamanho_legivel: sizeLabel,
+        tamanho_bytes: fileSize,
+        tipo_mime: fileType,
+        caminho_storage: storagePath,
+      })
+      .eq('id', existing.id)
+      .select('id, codigo_anexo, caminho_storage')
+      .single();
+    if (updErr) return { error: updErr };
+    return {
+      data: {
+        id: updated?.codigo_anexo || updated?.id || code,
+        storagePath: updated?.caminho_storage || storagePath,
+      },
+    };
+  }
+
+  const { data: inserted, error: insErr } = await rhTable
+    .insert({
+      codigo_anexo: code,
+      funcionario_id: empUuid,
+      recibo_id: recUuid,
+      codigo_recibo_ref: payslipCode,
+      ano,
+      mes,
+      nome_ficheiro: fileName,
+      tamanho_legivel: sizeLabel,
+      tamanho_bytes: fileSize,
+      tipo_mime: fileType,
+      caminho_storage: storagePath,
+      anexado_por: actorId || null,
+    })
+    .select('id, codigo_anexo, caminho_storage')
+    .single();
+  if (insErr) return { error: insErr };
+
+  return {
+    data: {
+      id: inserted?.codigo_anexo || inserted?.id || code,
+      storagePath: inserted?.caminho_storage || storagePath,
+    },
+  };
+}
+
+async function upsertPayslipFallback(supabaseAdmin, payload, actorId) {
+  const code = String(payload?.id || `REC-${Date.now()}`).trim();
+  const empUuid = await resolveRhEmployeeUuid(supabaseAdmin, payload?.employeeId);
+  if (!empUuid) {
+    return { error: { message: 'Funcionário associado ao recibo não encontrado.' } };
+  }
+
+  const monthStr = String(payload?.month || new Date().toISOString().slice(0, 7));
+  const [anoRaw, mesRaw] = monthStr.split('-');
+  const ano = Number(anoRaw) || new Date().getFullYear();
+  const mes = Math.min(12, Math.max(1, Number(mesRaw) || new Date().getMonth() + 1));
+  const baseSalary = Number(payload?.baseSalary) || 0;
+  const mealAllowance = Number(payload?.mealAllowanceTotal) || 0;
+  const overtimeBonus = Number(payload?.overtimeBonus) || 0;
+  const ssVal = Number(payload?.socialSecurity) || 0;
+  const irsVal = Number(payload?.irsRetention) || 0;
+  const otherDed = Number(payload?.otherDeductions) || 0;
+  const netVal = Number(payload?.netSalary) || 0;
+  const statusVal = String(payload?.status || 'pendente').toLowerCase() === 'pago' ? 'Pago' : 'Emitido';
+  const payDate = payload?.paymentDate ? String(payload.paymentDate).trim() || null : null;
+  const notes = payload?.notes ? String(payload.notes).trim() || null : null;
+
+  const rhTable = supabaseAdmin.schema('rh').from('recibos_vencimento');
+  const existingId = await resolveRhPayslipUuid(supabaseAdmin, code);
+
+  const rowValues = {
+    codigo_recibo: code,
+    funcionario_id: empUuid,
+    ano,
+    mes,
+    salario_base: baseSalary,
+    subsidio_alimentacao: mealAllowance,
+    horas_extra_valor: overtimeBonus,
+    ss_valor: ssVal,
+    irs_valor: irsVal,
+    outras_deducoes: otherDed,
+    total_bruto: baseSalary + mealAllowance + overtimeBonus,
+    total_liquido: netVal,
+    estado_pagamento: statusVal,
+    data_pagamento: payDate,
+    notas: notes,
+  };
+
+  if (existingId) {
+    const { data: updated, error: updErr } = await rhTable
+      .update(rowValues)
+      .eq('id', existingId)
+      .select('id, codigo_recibo')
+      .single();
+    if (updErr) return { error: updErr };
+    return { data: { id: updated?.codigo_recibo || code, dbId: updated?.id || existingId } };
+  }
+
+  const { data: inserted, error: insErr } = await rhTable
+    .insert({ ...rowValues, emitido_por: actorId || null })
+    .select('id, codigo_recibo')
+    .single();
+  if (insErr) return { error: insErr };
+  return { data: { id: inserted?.codigo_recibo || code, dbId: inserted?.id } };
+}
+
 function formatLisbonTimestamp(date = new Date()) {
   try {
     return new Intl.DateTimeFormat('pt-PT', {
@@ -1345,7 +1616,14 @@ exports.api = onRequest(
         );
 
         if (authUpdateErr) {
-          res.status(400).json({ error: 'AUTH_UPDATE_FAILED', message: authUpdateErr.message });
+          res.status(400).json({
+            error: 'AUTH_UPDATE_FAILED',
+            message: formatUserSafeError(
+              authUpdateErr,
+              'Não foi possível atualizar a palavra-passe. Tente novamente.',
+              'AUTH_UPDATE_FAILED'
+            ),
+          });
           return;
         }
 
@@ -1482,7 +1760,11 @@ exports.api = onRequest(
           if (authEmailErr) {
             res.status(400).json({
               error: 'AUTH_EMAIL_UPDATE_FAILED',
-              message: authEmailErr.message || 'Não foi possível associar o novo email à conta.',
+              message: formatUserSafeError(
+                authEmailErr,
+                'Não foi possível associar o novo email à conta.',
+                'AUTH_EMAIL_UPDATE_FAILED'
+              ),
             });
             return;
           }
@@ -1602,7 +1884,10 @@ exports.api = onRequest(
         });
 
         if (listErr) {
-          res.status(500).json({ error: 'LIST_USERS_FAILED', message: listErr.message });
+          res.status(500).json({
+            error: 'LIST_USERS_FAILED',
+            message: formatUserSafeError(listErr, 'Não foi possível carregar a lista de utilizadores.', 'LIST_USERS_FAILED'),
+          });
           return;
         }
 
@@ -1688,7 +1973,7 @@ exports.api = onRequest(
         if (createErr || !created?.user) {
           res.status(400).json({
             error: 'CREATE_USER_FAILED',
-            message: createErr?.message || 'Não foi possível criar a conta de utilizador.',
+            message: formatUserSafeError(createErr, 'Não foi possível criar a conta de utilizador.', 'CREATE_USER_FAILED'),
           });
           return;
         }
@@ -1839,7 +2124,11 @@ exports.api = onRequest(
           if (updateErr || !updatedAuth?.user) {
             res.status(400).json({
               error: 'UPDATE_USER_FAILED',
-              message: updateErr?.message || 'Não foi possível atualizar os dados do utilizador.',
+              message: formatUserSafeError(
+                updateErr,
+                'Não foi possível atualizar os dados do utilizador.',
+                'UPDATE_USER_FAILED'
+              ),
             });
             return;
           }
@@ -1901,7 +2190,7 @@ exports.api = onRequest(
         if (deleteErr) {
           res.status(400).json({
             error: 'SUPABASE_DELETE_FAILED',
-            message: deleteErr.message,
+            message: formatUserSafeError(deleteErr, 'Não foi possível remover o utilizador.', 'SUPABASE_DELETE_FAILED'),
           });
           return;
         }
@@ -1994,7 +2283,10 @@ exports.api = onRequest(
             p_actor: ctx.authUser.id,
           });
           if (error) {
-            res.status(400).json({ error: 'EMPLOYEE_SAVE_ERROR', message: error.message });
+            res.status(400).json({
+              error: 'EMPLOYEE_SAVE_ERROR',
+              message: formatUserSafeError(error, 'Não foi possível guardar os dados do funcionário.', 'EMPLOYEE_SAVE_ERROR'),
+            });
             return;
           }
           await writeAuditLog(supabaseAdmin, {
@@ -2048,7 +2340,10 @@ exports.api = onRequest(
               p_actor: ctx.authUser.id,
             });
             if (error) {
-              res.status(400).json({ error: 'EMPLOYEE_UPDATE_ERROR', message: error.message });
+              res.status(400).json({
+                error: 'EMPLOYEE_UPDATE_ERROR',
+                message: formatUserSafeError(error, 'Não foi possível atualizar os dados do funcionário.', 'EMPLOYEE_UPDATE_ERROR'),
+              });
               return;
             }
             await writeAuditLog(supabaseAdmin, {
@@ -2072,7 +2367,10 @@ exports.api = onRequest(
           }
           const { data: contractPaths, error } = await supabaseAdmin.rpc('spark_erp_delete_employee', { p_code: empCode });
           if (error) {
-            res.status(400).json({ error: 'EMPLOYEE_DELETE_ERROR', message: error.message });
+            res.status(400).json({
+              error: 'EMPLOYEE_DELETE_ERROR',
+              message: formatUserSafeError(error, 'Não foi possível excluir o funcionário.', 'EMPLOYEE_DELETE_ERROR'),
+            });
             return;
           }
           if (Array.isArray(contractPaths) && contractPaths.length > 0) {
@@ -2102,7 +2400,10 @@ exports.api = onRequest(
               p_actor: ctx.authUser.id,
             });
             if (error) {
-              res.status(400).json({ error: 'ATTENDANCE_BATCH_ERROR', message: error.message });
+              res.status(400).json({
+                error: 'ATTENDANCE_BATCH_ERROR',
+                message: formatUserSafeError(error, 'Não foi possível registar as presenças em lote.', 'ATTENDANCE_BATCH_ERROR'),
+              });
               return;
             }
           } else {
@@ -2115,7 +2416,10 @@ exports.api = onRequest(
               p_hours: body.hours !== undefined ? Number(body.hours) : 8,
             });
             if (error) {
-              res.status(400).json({ error: 'ATTENDANCE_SAVE_ERROR', message: error.message });
+              res.status(400).json({
+                error: 'ATTENDANCE_SAVE_ERROR',
+                message: formatUserSafeError(error, 'Não foi possível guardar o registo de assiduidade.', 'ATTENDANCE_SAVE_ERROR'),
+              });
               return;
             }
           }
@@ -2148,7 +2452,10 @@ exports.api = onRequest(
             p_actor: ctx.authUser.id,
           });
           if (error) {
-            res.status(400).json({ error: 'ADVANCE_SAVE_ERROR', message: error.message });
+            res.status(400).json({
+              error: 'ADVANCE_SAVE_ERROR',
+              message: formatUserSafeError(error, 'Não foi possível registar o adiantamento salarial.', 'ADVANCE_SAVE_ERROR'),
+            });
             return;
           }
           await writeAuditLog(supabaseAdmin, {
@@ -2177,7 +2484,10 @@ exports.api = onRequest(
           const advCode = decodeURIComponent(advMatch[1]);
           const { error } = await supabaseAdmin.rpc('spark_erp_delete_advance', { p_code: advCode });
           if (error) {
-            res.status(400).json({ error: 'ADVANCE_DELETE_ERROR', message: error.message });
+            res.status(400).json({
+              error: 'ADVANCE_DELETE_ERROR',
+              message: formatUserSafeError(error, 'Não foi possível remover o adiantamento salarial.', 'ADVANCE_DELETE_ERROR'),
+            });
             return;
           }
           await writeAuditLog(supabaseAdmin, {
@@ -2240,7 +2550,10 @@ exports.api = onRequest(
               .upload(storagePath, fileBuffer, { contentType: mime, upsert: true });
 
             if (uploadErr) {
-              res.status(400).json({ error: 'STORAGE_UPLOAD_ERROR', message: uploadErr.message });
+              res.status(400).json({
+                error: 'STORAGE_UPLOAD_ERROR',
+                message: formatUserSafeError(uploadErr, 'Não foi possível guardar o ficheiro selecionado.', 'STORAGE_UPLOAD_ERROR'),
+              });
               return;
             }
             uploadedBucketPath = storagePath;
@@ -2266,7 +2579,10 @@ exports.api = onRequest(
             if (uploadedBucketPath) {
               await supabaseAdmin.storage.from('contratos-funcionarios').remove([uploadedBucketPath]).catch(() => {});
             }
-            res.status(400).json({ error: 'EMP_CONTRACT_SAVE_ERROR', message: dbErr.message });
+            res.status(400).json({
+              error: 'EMP_CONTRACT_SAVE_ERROR',
+              message: formatUserSafeError(dbErr, 'Não foi possível guardar os dados do contrato.', 'EMP_CONTRACT_SAVE_ERROR'),
+            });
             return;
           }
 
@@ -2329,7 +2645,10 @@ exports.api = onRequest(
             p_code: ctrCode,
           });
           if (delErr) {
-            res.status(400).json({ error: 'EMP_CONTRACT_DELETE_ERROR', message: delErr.message });
+            res.status(400).json({
+              error: 'EMP_CONTRACT_DELETE_ERROR',
+              message: formatUserSafeError(delErr, 'Não foi possível remover o contrato do funcionário.', 'EMP_CONTRACT_DELETE_ERROR'),
+            });
             return;
           }
           if (removedPath) {
@@ -2352,12 +2671,20 @@ exports.api = onRequest(
             res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para emitir vencimentos.' });
             return;
           }
-          const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_payslip', {
+          let { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_payslip', {
             p_payload: req.body || {},
             p_actor: ctx.authUser.id,
           });
+          if (error && isOnConflictConstraintError(error)) {
+            const fb = await upsertPayslipFallback(supabaseAdmin, req.body || {}, ctx.authUser.id);
+            data = fb.data;
+            error = fb.error;
+          }
           if (error) {
-            res.status(400).json({ error: 'PAYSLIP_SAVE_ERROR', message: error.message });
+            res.status(400).json({
+              error: 'PAYSLIP_SAVE_ERROR',
+              message: formatUserSafeError(error, 'Não foi possível registar o vencimento na base de dados.', 'PAYSLIP_SAVE_ERROR'),
+            });
             return;
           }
           await writeAuditLog(supabaseAdmin, {
@@ -2379,12 +2706,24 @@ exports.api = onRequest(
               res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para editar vencimentos.' });
               return;
             }
-            const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_payslip', {
+            let { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_payslip', {
               p_payload: { ...(req.body || {}), id: payCode },
               p_actor: ctx.authUser.id,
             });
+            if (error && isOnConflictConstraintError(error)) {
+              const fb = await upsertPayslipFallback(
+                supabaseAdmin,
+                { ...(req.body || {}), id: payCode },
+                ctx.authUser.id
+              );
+              data = fb.data;
+              error = fb.error;
+            }
             if (error) {
-              res.status(400).json({ error: 'PAYSLIP_UPDATE_ERROR', message: error.message });
+              res.status(400).json({
+                error: 'PAYSLIP_UPDATE_ERROR',
+                message: formatUserSafeError(error, 'Não foi possível atualizar o vencimento na base de dados.', 'PAYSLIP_UPDATE_ERROR'),
+              });
               return;
             }
             res.status(200).json(data);
@@ -2397,7 +2736,10 @@ exports.api = onRequest(
           }
           const { error } = await supabaseAdmin.rpc('spark_erp_delete_payslip', { p_code: payCode });
           if (error) {
-            res.status(400).json({ error: 'PAYSLIP_DELETE_ERROR', message: error.message });
+            res.status(400).json({
+              error: 'PAYSLIP_DELETE_ERROR',
+              message: formatUserSafeError(error, 'Não foi possível eliminar o vencimento da base de dados.', 'PAYSLIP_DELETE_ERROR'),
+            });
             return;
           }
           await writeAuditLog(supabaseAdmin, {
@@ -2446,27 +2788,41 @@ exports.api = onRequest(
             .upload(storagePath, fileBuffer, { contentType: mime, upsert: true });
 
           if (uploadErr) {
-            res.status(400).json({ error: 'STORAGE_UPLOAD_ERROR', message: uploadErr.message });
+            res.status(400).json({
+              error: 'STORAGE_UPLOAD_ERROR',
+              message: formatUserSafeError(uploadErr, 'Não foi possível enviar o ficheiro selecionado.', 'ATTACHMENT_UPLOAD_ERROR'),
+            });
             return;
           }
 
-          const { data: metaRow, error: dbErr } = await supabaseAdmin.rpc('spark_erp_add_attachment', {
-            p_payload: {
-              id: fileCode,
-              employeeId: body.employeeId,
-              month: body.month,
-              payslipId: body.payslipId || null,
-              fileName: body.fileName || safeName,
-              fileType: mime,
-              fileSize: fileBuffer.length,
-              storagePath,
-            },
+          const attachmentPayload = {
+            id: fileCode,
+            employeeId: body.employeeId,
+            month: body.month,
+            payslipId: body.payslipId || null,
+            fileName: body.fileName || safeName,
+            fileType: mime,
+            fileSize: fileBuffer.length,
+            storagePath,
+          };
+
+          let { data: metaRow, error: dbErr } = await supabaseAdmin.rpc('spark_erp_add_attachment', {
+            p_payload: attachmentPayload,
             p_actor: ctx.authUser.id,
           });
 
+          if (dbErr && isOnConflictConstraintError(dbErr)) {
+            const fb = await addAttachmentFallback(supabaseAdmin, attachmentPayload, ctx.authUser.id);
+            metaRow = fb.data;
+            dbErr = fb.error;
+          }
+
           if (dbErr) {
             await supabaseAdmin.storage.from('recibos-vencimentos').remove([storagePath]).catch(() => {});
-            res.status(400).json({ error: 'ATTACHMENT_META_ERROR', message: dbErr.message });
+            res.status(400).json({
+              error: 'ATTACHMENT_META_ERROR',
+              message: formatUserSafeError(dbErr, 'Não foi possível anexar o recibo na base de dados.', 'ATTACHMENT_META_ERROR'),
+            });
             return;
           }
 
@@ -2524,7 +2880,10 @@ exports.api = onRequest(
             p_code: attCode,
           });
           if (delErr) {
-            res.status(400).json({ error: 'ATTACHMENT_DELETE_ERROR', message: delErr.message });
+            res.status(400).json({
+              error: 'ATTACHMENT_DELETE_ERROR',
+              message: formatUserSafeError(delErr, 'Não foi possível remover o ficheiro anexo.', 'ATTACHMENT_DELETE_ERROR'),
+            });
             return;
           }
           if (removedPath) {
@@ -2552,7 +2911,10 @@ exports.api = onRequest(
             p_actor: ctx.authUser.id,
           });
           if (error) {
-            res.status(400).json({ error: 'PROJECT_CREATE_ERROR', message: error.message });
+            res.status(400).json({
+              error: 'PROJECT_CREATE_ERROR',
+              message: formatUserSafeError(error, 'Não foi possível criar a obra na base de dados.', 'PROJECT_CREATE_ERROR'),
+            });
             return;
           }
           await writeAuditLog(supabaseAdmin, {
@@ -2608,7 +2970,10 @@ exports.api = onRequest(
               p_actor: ctx.authUser.id,
             });
             if (error) {
-              res.status(400).json({ error: 'PROJECT_UPDATE_ERROR', message: error.message });
+              res.status(400).json({
+                error: 'PROJECT_UPDATE_ERROR',
+                message: formatUserSafeError(error, 'Não foi possível atualizar a obra na base de dados.', 'PROJECT_UPDATE_ERROR'),
+              });
               return;
             }
             await writeAuditLog(supabaseAdmin, {
@@ -2632,7 +2997,10 @@ exports.api = onRequest(
           }
           const { error } = await supabaseAdmin.rpc('spark_erp_delete_project', { p_code: projCode });
           if (error) {
-            res.status(400).json({ error: 'PROJECT_DELETE_ERROR', message: error.message });
+            res.status(400).json({
+              error: 'PROJECT_DELETE_ERROR',
+              message: formatUserSafeError(error, 'Não foi possível excluir a obra da base de dados.', 'PROJECT_DELETE_ERROR'),
+            });
             return;
           }
           await writeAuditLog(supabaseAdmin, {
@@ -2699,7 +3067,10 @@ exports.api = onRequest(
               .upload(storagePath, fileBuffer, { contentType: mime, upsert: true });
 
             if (uploadErr) {
-              res.status(400).json({ error: 'STORAGE_UPLOAD_ERROR', message: uploadErr.message });
+              res.status(400).json({
+                error: 'STORAGE_UPLOAD_ERROR',
+                message: formatUserSafeError(uploadErr, 'Não foi possível guardar o ficheiro selecionado.', 'STORAGE_UPLOAD_ERROR'),
+              });
               return;
             }
             uploadedBucketPath = storagePath;
@@ -2728,7 +3099,10 @@ exports.api = onRequest(
             if (uploadedBucketPath) {
               await supabaseAdmin.storage.from('faturas-obras').remove([uploadedBucketPath]).catch(() => {});
             }
-            res.status(400).json({ error: 'INVOICE_SAVE_ERROR', message: dbErr.message });
+            res.status(400).json({
+              error: 'INVOICE_SAVE_ERROR',
+              message: formatUserSafeError(dbErr, 'Não foi possível registar a fatura da obra.', 'INVOICE_SAVE_ERROR'),
+            });
             return;
           }
 
@@ -2797,7 +3171,10 @@ exports.api = onRequest(
             p_code: invCode,
           });
           if (delErr) {
-            res.status(400).json({ error: 'INVOICE_DELETE_ERROR', message: delErr.message });
+            res.status(400).json({
+              error: 'INVOICE_DELETE_ERROR',
+              message: formatUserSafeError(delErr, 'Não foi possível remover a fatura da obra.', 'INVOICE_DELETE_ERROR'),
+            });
             return;
           }
           if (removedPath) {
@@ -2867,7 +3244,10 @@ exports.api = onRequest(
               .upload(storagePath, fileBuffer, { contentType: mime, upsert: true });
 
             if (uploadErr) {
-              res.status(400).json({ error: 'STORAGE_UPLOAD_ERROR', message: uploadErr.message });
+              res.status(400).json({
+                error: 'STORAGE_UPLOAD_ERROR',
+                message: formatUserSafeError(uploadErr, 'Não foi possível guardar o ficheiro selecionado.', 'STORAGE_UPLOAD_ERROR'),
+              });
               return;
             }
             uploadedBucketPath = storagePath;
@@ -2893,7 +3273,10 @@ exports.api = onRequest(
             if (uploadedBucketPath) {
               await supabaseAdmin.storage.from('contratos-obras').remove([uploadedBucketPath]).catch(() => {});
             }
-            res.status(400).json({ error: 'CONTRACT_SAVE_ERROR', message: dbErr.message });
+            res.status(400).json({
+              error: 'CONTRACT_SAVE_ERROR',
+              message: formatUserSafeError(dbErr, 'Não foi possível guardar o contrato da obra.', 'CONTRACT_SAVE_ERROR'),
+            });
             return;
           }
 
@@ -2956,7 +3339,10 @@ exports.api = onRequest(
             p_code: ctrCode,
           });
           if (delErr) {
-            res.status(400).json({ error: 'CONTRACT_DELETE_ERROR', message: delErr.message });
+            res.status(400).json({
+              error: 'CONTRACT_DELETE_ERROR',
+              message: formatUserSafeError(delErr, 'Não foi possível remover o contrato da obra.', 'CONTRACT_DELETE_ERROR'),
+            });
             return;
           }
           if (removedPath) {
@@ -2989,7 +3375,10 @@ exports.api = onRequest(
             p_actor: ctx.authUser.id,
           });
           if (error) {
-            res.status(400).json({ error: 'TECH_MANAGER_SAVE_ERROR', message: error.message });
+            res.status(400).json({
+              error: 'TECH_MANAGER_SAVE_ERROR',
+              message: formatUserSafeError(error, 'Não foi possível cadastrar o responsável técnico.', 'TECH_MANAGER_SAVE_ERROR'),
+            });
             return;
           }
           await writeAuditLog(supabaseAdmin, {
@@ -3017,7 +3406,10 @@ exports.api = onRequest(
               p_actor: ctx.authUser.id,
             });
             if (error) {
-              res.status(400).json({ error: 'TECH_MANAGER_UPDATE_ERROR', message: error.message });
+              res.status(400).json({
+                error: 'TECH_MANAGER_UPDATE_ERROR',
+                message: formatUserSafeError(error, 'Não foi possível atualizar o responsável técnico.', 'TECH_MANAGER_UPDATE_ERROR'),
+              });
               return;
             }
             await writeAuditLog(supabaseAdmin, {
@@ -3039,7 +3431,10 @@ exports.api = onRequest(
             p_code: techCode,
           });
           if (delErr) {
-            res.status(400).json({ error: 'TECH_MANAGER_DELETE_ERROR', message: delErr.message });
+            res.status(400).json({
+              error: 'TECH_MANAGER_DELETE_ERROR',
+              message: formatUserSafeError(delErr, 'Não foi possível remover o responsável técnico.', 'TECH_MANAGER_DELETE_ERROR'),
+            });
             return;
           }
           if (Array.isArray(certPaths) && certPaths.length > 0) {
@@ -3104,7 +3499,10 @@ exports.api = onRequest(
               .upload(storagePath, fileBuffer, { contentType: mime, upsert: true });
 
             if (uploadErr) {
-              res.status(400).json({ error: 'STORAGE_UPLOAD_ERROR', message: uploadErr.message });
+              res.status(400).json({
+                error: 'STORAGE_UPLOAD_ERROR',
+                message: formatUserSafeError(uploadErr, 'Não foi possível guardar o ficheiro selecionado.', 'STORAGE_UPLOAD_ERROR'),
+              });
               return;
             }
             uploadedBucketPath = storagePath;
@@ -3133,7 +3531,10 @@ exports.api = onRequest(
             if (uploadedBucketPath) {
               await supabaseAdmin.storage.from('certificados-tecnicos').remove([uploadedBucketPath]).catch(() => {});
             }
-            res.status(400).json({ error: 'CERTIFICATE_SAVE_ERROR', message: dbErr.message });
+            res.status(400).json({
+              error: 'CERTIFICATE_SAVE_ERROR',
+              message: formatUserSafeError(dbErr, 'Não foi possível guardar o certificado técnico.', 'CERTIFICATE_SAVE_ERROR'),
+            });
             return;
           }
 
@@ -3193,7 +3594,10 @@ exports.api = onRequest(
             p_code: certCode,
           });
           if (delErr) {
-            res.status(400).json({ error: 'CERT_DELETE_ERROR', message: delErr.message });
+            res.status(400).json({
+              error: 'CERT_DELETE_ERROR',
+              message: formatUserSafeError(delErr, 'Não foi possível remover o certificado técnico.', 'CERT_DELETE_ERROR'),
+            });
             return;
           }
           if (removedPath) {
