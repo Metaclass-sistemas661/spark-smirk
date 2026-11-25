@@ -208,9 +208,25 @@ a.footer__contact-item:hover .footer__contact-icon {
   padding: var(--space-xl) 0;
 }
 
+.footer__legal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .footer__copyright {
   font-size: var(--fs-sm);
   color: rgba(249, 250, 251, 0.45);
+}
+
+.footer__developer {
+  font-size: var(--fs-xs);
+  color: rgba(249, 250, 251, 0.55);
+}
+
+.footer__developer strong {
+  color: rgba(249, 250, 251, 0.82);
+  font-weight: var(--fw-semibold);
 }
 
 .footer__back-top {

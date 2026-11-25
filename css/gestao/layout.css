@@ -306,6 +306,7 @@ a {
 .erp-main {
   flex: 1;
   min-width: 0;
+  min-height: 100vh;
   margin-left: var(--erp-sidebar-w);
   margin-right: var(--erp-quickrail-w);
   display: flex;
@@ -610,15 +611,78 @@ a {
   filter: blur(5px);
 }
 
+.erp-support-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: var(--erp-radius-md);
+  border: 1px solid rgba(22, 163, 74, 0.35);
+  background: rgba(37, 211, 102, 0.1);
+  color: #15803d;
+  font-family: var(--erp-font-heading);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background-color 0.18s, border-color 0.18s, color 0.18s, transform 0.18s;
+}
+
+.erp-support-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.erp-support-btn:hover {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+:root[data-erp-theme='dark'] .erp-support-btn {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.35);
+  background: rgba(37, 211, 102, 0.14);
+}
+
+:root[data-erp-theme='dark'] .erp-support-btn:hover {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+
 /* ── Content Workspace ── */
 .erp-content {
-  padding: 24px 28px 40px;
+  flex: 1;
+  padding: 24px 28px 36px;
   max-width: 1460px;
   width: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 22px;
+}
+
+/* ── Internal System Footer ── */
+.erp-footer {
+  margin-top: auto;
+  padding: 14px 28px;
+  border-top: 1px solid var(--erp-border);
+  background: var(--erp-surface);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  font-size: 12px;
+  color: var(--erp-text-muted);
+}
+
+.erp-footer__developer strong {
+  color: var(--erp-heading);
+  font-weight: 700;
 }
 
 /* ── Fail-Closed Auth Verification Gate ── */
@@ -722,6 +786,10 @@ a {
 
   .erp-content {
     padding: 18px 16px 32px;
+  }
+
+  .erp-footer {
+    padding: 12px 16px;
   }
 
   .erp-quickrail {
