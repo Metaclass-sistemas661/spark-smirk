@@ -165,63 +165,411 @@
     </div>
   </section>
 
-  <!-- Projects Section - Interactive Portfolio -->
+  <!-- Projects Section - Interactive Enterprise Portfolio -->
   <section class="portfolio" id="projetos">
     <div class="container">
       <div class="section-header section-header--center">
+        <span class="section-label">Portfólio de Engenharia &amp; Obras</span>
         <h2 class="section-title">Os Nossos Projetos</h2>
-        <p class="section-subtitle">Explore os nossos trabalhos organizados por categoria</p>
+        <p class="section-subtitle">Explore os nossos trabalhos concluídos e em execução por especialidade técnica. Clique em qualquer fotografia para ampliar.</p>
         <div class="section-divider"></div>
       </div>
-      
+
       <div class="portfolio__wrapper">
-        <!-- Menu Lateral -->
-        <div class="portfolio__menu">
-          <button class="portfolio__menu-item active" data-category="eletrica"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg><span>Instalações Elétricas</span></button>
-          <button class="portfolio__menu-item" data-category="construcao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 20h20"/><path d="M5 20V8.5L12 4l7 4.5V20"/></svg><span>Construção Civil</span></button>
-          <button class="portfolio__menu-item" data-category="cofragem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/></svg><span>Cofragem</span></button>
-          <button class="portfolio__menu-item" data-category="pladur"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg><span>Pladur</span></button>
-          <button class="portfolio__menu-item" data-category="capoto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><span>Capoto & Reboco</span></button>
+        <!-- Menu Lateral / Barra Mobile de Categorias -->
+        <div class="portfolio__menu" role="tablist" aria-label="Categorias do Portfólio">
+          <button type="button" class="portfolio__menu-item active" data-category="construcao" role="tab" aria-selected="true">
+            <span class="portfolio__menu-main">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M5 20V8.5L12 4l7 4.5V20"/><path d="M9 20v-6h6v6"/></svg>
+              <span>Construção Civil</span>
+            </span>
+            <span class="portfolio__count">6</span>
+          </button>
+          <button type="button" class="portfolio__menu-item" data-category="remodelacoes" role="tab" aria-selected="false">
+            <span class="portfolio__menu-main">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              <span>Remodelações &amp; Acabamentos</span>
+            </span>
+            <span class="portfolio__count">3</span>
+          </button>
+          <button type="button" class="portfolio__menu-item" data-category="pladur" role="tab" aria-selected="false">
+            <span class="portfolio__menu-main">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+              <span>Pladur &amp; Gesso Cartonado</span>
+            </span>
+            <span class="portfolio__count">4</span>
+          </button>
+          <button type="button" class="portfolio__menu-item" data-category="eletrica" role="tab" aria-selected="false">
+            <span class="portfolio__menu-main">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <span>Instalações Elétricas</span>
+            </span>
+            <span class="portfolio__count">2</span>
+          </button>
+          <button type="button" class="portfolio__menu-item" data-category="pavimentos" role="tab" aria-selected="false">
+            <span class="portfolio__menu-main">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="12" height="7" rx="1"/><rect x="17" y="13" width="4" height="7" rx="1"/></svg>
+              <span>Pavimentos &amp; Exteriores</span>
+            </span>
+            <span class="portfolio__count">3</span>
+          </button>
+          <button type="button" class="portfolio__menu-item" data-category="jardinagem" role="tab" aria-selected="false">
+            <span class="portfolio__menu-main">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-9"/><path d="M12 13C7 13 4 9.5 4 5c4.5 0 8 3 8 8Z"/><path d="M12 13c5 0 8-3.5 8-8-4.5 0-8 3-8 8Z"/></svg>
+              <span>Jardinagem &amp; Espaços Verdes</span>
+            </span>
+            <span class="portfolio__count">3</span>
+          </button>
+          <button type="button" class="portfolio__menu-item" data-category="impermeabilizacoes" role="tab" aria-selected="false">
+            <span class="portfolio__menu-main">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+              <span>Impermeabilizações &amp; Terraços</span>
+            </span>
+            <span class="portfolio__count">1</span>
+          </button>
+          <button type="button" class="portfolio__menu-item" data-category="cofragem" role="tab" aria-selected="false">
+            <span class="portfolio__menu-main">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="3" y="16" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/></svg>
+              <span>Cofragem</span>
+            </span>
+            <span class="portfolio__count">2</span>
+          </button>
+          <button type="button" class="portfolio__menu-item" data-category="capoto" role="tab" aria-selected="false">
+            <span class="portfolio__menu-main">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              <span>Capoto &amp; Reboco</span>
+            </span>
+            <span class="portfolio__count">1</span>
+          </button>
         </div>
 
         <!-- Conteúdo Dinâmico -->
         <div class="portfolio__content">
-          <div class="portfolio__panel active" data-panel="eletrica">
-            <div class="portfolio__info"><h3>Instalações Elétricas</h3><p>Quadros elétricos industriais e residenciais com componentes certificados. Garantimos segurança e conformidade com as normas portuguesas.</p></div>
-            <div class="portfolio__carousel"><div class="portfolio__slides">
-              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-2.jpeg" alt="Quadro elétrico"></div>
-              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-10.jpeg" alt="Cabos"></div>
-            </div></div>
+          <!-- Construção Civil -->
+          <div class="portfolio__panel active" data-panel="construcao" role="tabpanel">
+            <div class="portfolio__info">
+              <div class="portfolio__info-text">
+                <span class="portfolio__eyebrow">Especialidade Técnica</span>
+                <h3>Construção Civil</h3>
+                <p>Obras de construção residencial e multifamiliar de pequeno a grande porte. Estruturas em betão armado, armação de aço, fundações, escadarias e entrega chave na mão.</p>
+              </div>
+              <span class="portfolio__info-badge">6 fotografias</span>
+            </div>
+            <div class="portfolio__gallery portfolio__gallery--masonry">
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/edificio-residencial-acabado.jpeg" alt="Edifício residencial moderno concluído pela Spark &amp; Smirk" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Edifício residencial concluído com acabamentos exteriores modernos</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/edificio-obra-grua.jpeg" alt="Edifício em construção com grua torre e andaimes" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Execução estrutural de edifício habitacional com estaleiro completo</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/projeto-3.jpeg" alt="Escadaria exterior em betão armado" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Escadaria exterior executada em betão armado e drenagem pluvial</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/projeto-4.jpeg" alt="Estrutura em betão e armaduras" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Execução de elementos estruturais e betão aparente</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/projeto-7.jpeg" alt="Armação de aço para estrutura" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Armadura de aço para fundações e pilares de suporte</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/projeto-8.jpeg" alt="Malha de aço e preparação estrutural" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Preparação rigorosa de malha estrutural antes da betonagem</figcaption>
+              </figure>
+            </div>
           </div>
-          <div class="portfolio__panel" data-panel="construcao">
-            <div class="portfolio__info"><h3>Construção Civil</h3><p>Obras de construção de pequeno e grande porte. Especialistas em estruturas de betão armado, escadarias e fundações.</p></div>
-            <div class="portfolio__carousel"><div class="portfolio__slides">
-              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-3.jpeg" alt="Escadaria"></div>
-              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-4.jpeg" alt="Betão"></div>
-              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-7.jpeg" alt="Armação"></div>
-              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-8.jpeg" alt="Malha"></div>
-            </div></div>
+
+          <!-- Remodelações & Acabamentos -->
+          <div class="portfolio__panel" data-panel="remodelacoes" role="tabpanel">
+            <div class="portfolio__info">
+              <div class="portfolio__info-text">
+                <span class="portfolio__eyebrow">Antes &amp; Depois</span>
+                <h3>Remodelações &amp; Acabamentos</h3>
+                <p>Reabilitação completa de casas de banho e interiores, desde a abertura de roços e preparação de alvenaria até ao assentamento cerâmico retificado e loiças contemporâneas.</p>
+              </div>
+              <span class="portfolio__info-badge">3 fotografias</span>
+            </div>
+            <div class="portfolio__gallery portfolio__gallery--3">
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/remodelacao-wc-antes.jpeg" alt="Preparação de alvenaria e nicho antes do revestimento" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Antes: Preparação estrutural de nicho e regularização de suporte</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/remodelacao-wc-final.jpeg" alt="Casa de banho remodelada com nicho embutido e loiças modernas" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Depois: Casa de banho concluída com cerâmico retificado e efeito madeira</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/remodelacao-duche-detalhe.jpeg" alt="Detalhe de nicho embutido e chuveiro preto mate" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Detalhe: Nicho embutido e tornearia em acabamento preto mate</figcaption>
+              </figure>
+            </div>
           </div>
-          <div class="portfolio__panel" data-panel="cofragem">
-            <div class="portfolio__info"><h3>Cofragem</h3><p>Especialistas em cofragem para estruturas de betão. Técnicas tradicionais e modernas para escadarias, lajes e muros.</p></div>
-            <div class="portfolio__carousel"><div class="portfolio__slides">
-              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-5.jpeg" alt="Cofragem"></div>
-              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-9.jpeg" alt="Estrutura"></div>
-            </div></div>
+
+          <!-- Pladur & Gesso Cartonado -->
+          <div class="portfolio__panel" data-panel="pladur" role="tabpanel">
+            <div class="portfolio__info">
+              <div class="portfolio__info-text">
+                <span class="portfolio__eyebrow">Sistemas Ligeiros</span>
+                <h3>Pladur &amp; Gesso Cartonado</h3>
+                <p>Estruturação metálica galvanizada, divisórias acústicas, tetos falsos com claraboias e acabamentos perfeitos para espaços comerciais, estúdios e habitações.</p>
+              </div>
+              <span class="portfolio__info-badge">4 fotografias</span>
+            </div>
+            <div class="portfolio__gallery portfolio__gallery--2">
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/pladur-estrutura-metalica.jpeg" alt="Estrutura metálica galvanizada para divisória em pladur" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Montagem de perfis e montantes metálicos para divisórias interiores</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/pladur-divisoria-pintada.jpeg" alt="Divisória em gesso cartonado pintada e acabada" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Divisória em gesso cartonado com emassamento e pintura final</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/pladur-estudio-acabado.jpeg" alt="Estúdio acabado em pladur liso com iluminação suspensa" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Acabamento liso contínuo e integração de calhas elétricas em estúdio</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/projeto-1.jpeg" alt="Teto falso em aquapanel e pladur com claraboias" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Teto falso técnico em placas resistentes à humidade com claraboias</figcaption>
+              </figure>
+            </div>
           </div>
-          <div class="portfolio__panel" data-panel="pladur">
-            <div class="portfolio__info"><h3>Pladur</h3><p>Divisórias, tetos falsos e revestimentos em gesso cartonado. Ideal para remodelações com isolamento térmico e acústico.</p></div>
-            <div class="portfolio__carousel"><div class="portfolio__slides">
-              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-1.jpeg" alt="Pladur"></div>
-            </div></div>
+
+          <!-- Instalações Elétricas -->
+          <div class="portfolio__panel" data-panel="eletrica" role="tabpanel">
+            <div class="portfolio__info">
+              <div class="portfolio__info-text">
+                <span class="portfolio__eyebrow">Engenharia Eletrotécnica</span>
+                <h3>Instalações Elétricas</h3>
+                <p>Quadros elétricos industriais e residenciais executados com componentes certificados. Garantimos segurança, organização de barramentos e conformidade normativa.</p>
+              </div>
+              <span class="portfolio__info-badge">2 fotografias</span>
+            </div>
+            <div class="portfolio__gallery portfolio__gallery--2">
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/projeto-2.jpeg" alt="Quadro elétrico certificado montado" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Montagem e identificação rigorosa de quadro elétrico modular</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/projeto-10.jpeg" alt="Cablagem estruturada e caminhos de cabos" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Distribuição e organização de circuitos elétricos técnicos</figcaption>
+              </figure>
+            </div>
           </div>
-          <div class="portfolio__panel" data-panel="capoto">
-            <div class="portfolio__info"><h3>Capoto & Reboco</h3><p>Sistemas ETICS/Capoto e reboco tradicional. Melhoramos a eficiência energética e estética dos edifícios.</p></div>
-            <div class="portfolio__carousel"><div class="portfolio__slides">
-              <div class="portfolio__slide"><img src="/assets/images/portfolio/projeto-6.jpeg" alt="Capoto"></div>
-            </div></div>
+
+          <!-- Pavimentos & Exteriores -->
+          <div class="portfolio__panel" data-panel="pavimentos" role="tabpanel">
+            <div class="portfolio__info">
+              <div class="portfolio__info-text">
+                <span class="portfolio__eyebrow">Infraestruturas Exteriores</span>
+                <h3>Pavimentos &amp; Arranjos Exteriores</h3>
+                <p>Execução de pavimentos drenantes em grelha de betão com apoio de maquinaria pesada, passeios pedonais e assentamento de deck compósito em terraços.</p>
+              </div>
+              <span class="portfolio__info-badge">3 fotografias</span>
+            </div>
+            <div class="portfolio__gallery portfolio__gallery--masonry">
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/pavimento-deck-composto.jpeg" alt="Deck exterior em madeira compósita instalado em esplanada" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Deck compósito acabado em terraço urbano sobre tela impermeável</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/pavimento-grelha-beton-passeio.jpeg" alt="Pavimento exterior em grelha de betão drenante" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Pavimentação drenante em grelha de betão junto a edifício</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/pavimento-maquinaria-ext.jpeg" alt="Pavimentação exterior em larga escala com maquinaria" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Execução de parque exterior de grande área com equipa e máquinas</figcaption>
+              </figure>
+            </div>
+          </div>
+
+          <!-- Jardinagem & Espaços Verdes -->
+          <div class="portfolio__panel" data-panel="jardinagem" role="tabpanel">
+            <div class="portfolio__info">
+              <div class="portfolio__info-text">
+                <span class="portfolio__eyebrow">Espaços Exteriores</span>
+                <h3>Jardinagem &amp; Espaços Verdes</h3>
+                <p>Recuperação, manutenção técnica e requalificação de jardins residenciais e comerciais: corte de relva, poda de árvores, limpeza exterior e conservação paisagística.</p>
+              </div>
+              <span class="portfolio__info-badge">3 fotografias</span>
+            </div>
+            <div class="portfolio__gallery portfolio__gallery--3">
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/jardim-relvado-muro-pedra.jpeg" alt="Jardim relvado com árvores de fruto e lajedo em pedra" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Manutenção de jardim amplo com arvoredo e caminho em pedra</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/jardim-manutencao-equipa.jpeg" alt="Técnico a efetuar corte e limpeza de jardim" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Em execução: Limpeza e corte técnico de relvado residencial</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/jardim-finalizado-oliveira.jpeg" alt="Jardim finalizado com relvado aparado e oliveira" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Resultado final: Relvado aparado, podas equilibradas e pátio limpo</figcaption>
+              </figure>
+            </div>
+          </div>
+
+          <!-- Impermeabilizações & Terraços -->
+          <div class="portfolio__panel" data-panel="impermeabilizacoes" role="tabpanel">
+            <div class="portfolio__info">
+              <div class="portfolio__info-text">
+                <span class="portfolio__eyebrow">Proteção Estrutural</span>
+                <h3>Impermeabilizações &amp; Terraços</h3>
+                <p>Aplicação técnica de membranas e telas asfálticas soldadas a maçarico para eliminação definitiva de infiltrações em terraços, varandas e coberturas planas.</p>
+              </div>
+              <span class="portfolio__info-badge">1 fotografia</span>
+            </div>
+            <div class="portfolio__gallery portfolio__gallery--single">
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/impermeabilizacao-tela-asfaltica.jpeg" alt="Aplicação de tela asfáltica impermeabilizante em terraço" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Preparação e aplicação de dupla camada de tela asfáltica em terraço</figcaption>
+              </figure>
+            </div>
+          </div>
+
+          <!-- Cofragem -->
+          <div class="portfolio__panel" data-panel="cofragem" role="tabpanel">
+            <div class="portfolio__info">
+              <div class="portfolio__info-text">
+                <span class="portfolio__eyebrow">Engenharia Estrutural</span>
+                <h3>Cofragem</h3>
+                <p>Especialistas em cofragem tradicional e modulada para estruturas de betão armado. Precisão dimensional na execução de escadarias, lajes, vigas e muros de suporte.</p>
+              </div>
+              <span class="portfolio__info-badge">2 fotografias</span>
+            </div>
+            <div class="portfolio__gallery portfolio__gallery--2">
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/projeto-5.jpeg" alt="Cofragem estrutural para obra de betão" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Cofragem executada para elementos estruturais de betão armado</figcaption>
+              </figure>
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/projeto-9.jpeg" alt="Escoramento e cofragem de lajes e escadas" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Nivelamento e escoramento completo de estrutura para betonagem</figcaption>
+              </figure>
+            </div>
+          </div>
+
+          <!-- Capoto & Reboco -->
+          <div class="portfolio__panel" data-panel="capoto" role="tabpanel">
+            <div class="portfolio__info">
+              <div class="portfolio__info-text">
+                <span class="portfolio__eyebrow">Eficiência Térmica</span>
+                <h3>Capoto &amp; Reboco</h3>
+                <p>Sistemas ETICS/Capoto e reboco técnico exterior aplicados com equipa equipada e certificada, melhorando o isolamento térmico e a durabilidade das fachadas.</p>
+              </div>
+              <span class="portfolio__info-badge">1 fotografia</span>
+            </div>
+            <div class="portfolio__gallery portfolio__gallery--single">
+              <figure class="portfolio__card" tabindex="0" role="button">
+                <div class="portfolio__media">
+                  <img src="/assets/images/portfolio/projeto-6.jpeg" alt="Equipa Spark &amp; Smirk a aplicar reboco e capoto exterior" loading="lazy">
+                  <span class="portfolio__zoom" aria-hidden="true">Ampliar</span>
+                </div>
+                <figcaption class="portfolio__caption">Equipa Spark &amp; Smirk em execução de reboco e revestimento exterior</figcaption>
+              </figure>
+            </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Lightbox Enterprise para visualização integral sem cortes -->
+    <div class="portfolio__lightbox" id="portfolioLightbox" role="dialog" aria-modal="true" aria-labelledby="lightboxCaption" hidden>
+      <div class="portfolio__lightbox-backdrop" data-lightbox-close></div>
+      <div class="portfolio__lightbox-dialog">
+        <header class="portfolio__lightbox-top">
+          <div class="portfolio__lightbox-meta">
+            <span class="portfolio__lightbox-cat" id="lightboxCategory"></span>
+            <span class="portfolio__lightbox-counter" id="lightboxCounter"></span>
+          </div>
+          <button type="button" class="portfolio__lightbox-close" id="lightboxClose" aria-label="Fechar ampliação">&times;</button>
+        </header>
+        <div class="portfolio__lightbox-stage">
+          <button type="button" class="portfolio__lightbox-nav portfolio__lightbox-nav--prev" id="lightboxPrev" aria-label="Fotografia anterior">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <img src="" alt="" id="lightboxImage" class="portfolio__lightbox-img">
+          <button type="button" class="portfolio__lightbox-nav portfolio__lightbox-nav--next" id="lightboxNext" aria-label="Fotografia seguinte">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+        <p class="portfolio__lightbox-caption" id="lightboxCaption"></p>
       </div>
     </div>
   </section>
