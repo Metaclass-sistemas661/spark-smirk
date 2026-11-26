@@ -73,6 +73,7 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'index.html'),
+          careers: resolve(__dirname, 'trabalhe-connosco/index.html'),
           gestao: resolve(__dirname, 'gestao/index.html'),
           login: resolve(__dirname, 'login/index.html'),
         },
@@ -127,7 +128,7 @@ export default defineConfig(({ mode }) => {
         configureServer(server) {
           server.middlewares.use(async (req, res, next) => {
             const urlPath = (req.url || '').split('?')[0];
-            if (urlPath === '/gestao' || urlPath === '/login') {
+            if (urlPath === '/gestao' || urlPath === '/login' || urlPath === '/trabalhe-connosco') {
               const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
               res.writeHead(302, { Location: `${urlPath}/${qs}` });
               res.end();
@@ -138,6 +139,8 @@ export default defineConfig(({ mode }) => {
               '/gestao/index.html': 'gestao/index.html',
               '/login/': 'login/index.html',
               '/login/index.html': 'login/index.html',
+              '/trabalhe-connosco/': 'trabalhe-connosco/index.html',
+              '/trabalhe-connosco/index.html': 'trabalhe-connosco/index.html',
             };
             const targetHtml = routeMap[urlPath];
             if (targetHtml) {
@@ -160,7 +163,7 @@ export default defineConfig(({ mode }) => {
         configurePreviewServer(server) {
           server.middlewares.use((req, res, next) => {
             const urlPath = (req.url || '').split('?')[0];
-            if (urlPath === '/gestao' || urlPath === '/login') {
+            if (urlPath === '/gestao' || urlPath === '/login' || urlPath === '/trabalhe-connosco') {
               const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
               res.writeHead(302, { Location: `${urlPath}/${qs}` });
               res.end();

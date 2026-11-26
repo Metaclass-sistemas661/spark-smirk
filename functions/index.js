@@ -350,6 +350,55 @@ async function upsertPayslipFallback(supabaseAdmin, payload, actorId) {
   return { data: { id: inserted?.codigo_recibo || code, dbId: inserted?.id } };
 }
 
+function mapCandidateDbRow(c) {
+  if (!c || typeof c !== 'object') return null;
+  return {
+    id: c.codigo_candidatura || c.id,
+    dbId: c.id,
+    fullName: c.nome_completo || '',
+    email: c.email || '',
+    phone: c.telefone || '',
+    district: c.distrito || 'Porto',
+    specialty: c.area_especialidade || '',
+    experience: c.experiencia || '',
+    availability: c.disponibilidade || 'Imediata',
+    drivingLicense: c.carta_conducao || 'Não indicada',
+    certifications: c.certificacoes || '',
+    message: c.mensagem || '',
+    cvFileName: c.cv_nome_ficheiro || '',
+    cvFileType: c.cv_tipo_mime || '',
+    cvFileSize: Number(c.cv_tamanho_bytes) || 0,
+    cvStoragePath: c.cv_caminho_storage || '',
+    status: c.estado || 'Nova',
+    internalNotes: c.notas_internas || '',
+    createdAt: c.criado_em ? String(c.criado_em).slice(0, 10) : '',
+  };
+}
+
+async function loadCandidatesList(supabaseAdmin) {
+  try {
+    const { data, error } = await supabaseAdmin.rpc('spark_erp_list_candidates');
+    if (!error && Array.isArray(data)) {
+      return data;
+    }
+  } catch {
+    // Fallback direto abaixo
+  }
+  try {
+    const { data, error } = await supabaseAdmin
+      .schema('rh')
+      .from('candidaturas')
+      .select('*')
+      .order('criado_em', { ascending: false });
+    if (!error && Array.isArray(data)) {
+      return data.map(mapCandidateDbRow).filter(Boolean);
+    }
+  } catch {
+    // Tabela ainda não criada
+  }
+  return [];
+}
+
 function formatLisbonTimestamp(date = new Date()) {
   try {
     return new Intl.DateTimeFormat('pt-PT', {
@@ -1091,6 +1140,240 @@ exports.api = onRequest(
         persistSession: false,
       },
     });
+
+    // ── POST /api/public/careers (Formulário Trabalhe Connosco + Currículo) ───
+    if (req.method === 'POST' && requestPath === '/api/public/careers') {
+      try {
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+
+        // Honeypot anti-spam silencioso
+        if (String(body.website || body.companyWebsite || '').trim()) {
+          res.status(201).json({
+            ok: true,
+            code: `CAN-${Date.now().toString(36).toUpperCase()}`,
+            message: 'Candidatura submetida com sucesso!',
+          });
+          return;
+        }
+
+        const fullName = String(body.fullName || '').trim();
+        const email = String(body.email || '').trim().toLowerCase();
+        const phone = String(body.phone || '').trim();
+        const district = String(body.district || 'Porto').trim();
+        const specialty = String(body.specialty || '').trim();
+        const experience = String(body.experience || '1 a 3 anos').trim();
+        const availability = String(body.availability || 'Imediata').trim();
+        const drivingLicense = String(body.drivingLicense || 'Não indicada').trim();
+        const certifications = String(body.certifications || '').trim();
+        const message = String(body.message || '').trim();
+        const rgpdConsent = body.rgpdConsent === true;
+
+        if (fullName.length < 2) {
+          res.status(400).json({
+            error: 'INVALID_NAME',
+            message: 'Indique o seu nome completo (mínimo 2 caracteres).',
+          });
+          return;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          res.status(400).json({
+            error: 'INVALID_EMAIL',
+            message: 'Introduza um endereço de email válido.',
+          });
+          return;
+        }
+        if (phone.replace(/\D/g, '').length < 9) {
+          res.status(400).json({
+            error: 'INVALID_PHONE',
+            message: 'Introduza um número de telemóvel ou telefone válido.',
+          });
+          return;
+        }
+        if (!specialty) {
+          res.status(400).json({
+            error: 'MISSING_SPECIALTY',
+            message: 'Selecione a área de especialidade ou função pretendida.',
+          });
+          return;
+        }
+        if (!rgpdConsent) {
+          res.status(400).json({
+            error: 'RGPD_REQUIRED',
+            message: 'É necessário aceitar o tratamento de dados pessoais para fins de recrutamento.',
+          });
+          return;
+        }
+
+        const rawCvB64 = String(body.cvBase64 || '');
+        if (!rawCvB64) {
+          res.status(400).json({
+            error: 'MISSING_CV',
+            message: 'Anexe o seu currículo em PDF, Word (DOC/DOCX) ou imagem antes de submeter.',
+          });
+          return;
+        }
+
+        const cvBuffer = Buffer.from(rawCvB64, 'base64');
+        if (cvBuffer.length === 0 || cvBuffer.length > 10 * 1024 * 1024) {
+          res.status(400).json({
+            error: 'INVALID_CV_SIZE',
+            message: 'O currículo excede o limite máximo permitido de 10 MB.',
+          });
+          return;
+        }
+
+        const rawMime = String(body.cvFileType || 'application/pdf').toLowerCase();
+        const allowedMimes = new Set([
+          'application/pdf',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'image/png',
+          'image/jpeg',
+        ]);
+        const safeFileExtOk = /\.(pdf|docx?|png|jpe?g)$/i.test(String(body.cvFileName || ''));
+        if (!allowedMimes.has(rawMime) && !safeFileExtOk) {
+          res.status(400).json({
+            error: 'INVALID_CV_TYPE',
+            message: 'Formato não suportado. Envie o currículo em PDF, DOC, DOCX, PNG ou JPG.',
+          });
+          return;
+        }
+        const effectiveMime = allowedMimes.has(rawMime) ? rawMime : 'application/pdf';
+
+        const ipHash = getClientIpHash(req);
+        if (ipHash) {
+          try {
+            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+            const { count } = await supabaseAdmin
+              .schema('rh')
+              .from('candidaturas')
+              .select('id', { count: 'exact', head: true })
+              .eq('ip_hash', ipHash)
+              .gte('criado_em', oneHourAgo);
+            if ((count || 0) >= 6) {
+              res.status(429).json({
+                error: 'RATE_LIMITED',
+                message: 'Foram enviadas várias candidaturas seguidas a partir desta ligação. Aguarde alguns minutos e tente novamente.',
+              });
+              return;
+            }
+          } catch {
+            // Ignora rate limit se tabela ainda não existir
+          }
+        }
+
+        const candCode = `CAN-${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+        const originalName = String(body.cvFileName || 'curriculo.pdf');
+        const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const storagePath = `${candCode}/${safeName}`;
+
+        const { error: uploadErr } = await supabaseAdmin.storage
+          .from('curriculos-candidatos')
+          .upload(storagePath, cvBuffer, { contentType: effectiveMime, upsert: true });
+
+        if (uploadErr) {
+          res.status(400).json({
+            error: 'CV_UPLOAD_ERROR',
+            message: formatUserSafeError(uploadErr, 'Não foi possível enviar o currículo neste momento. Tente novamente.', 'CAREERS_CV_UPLOAD_ERROR'),
+          });
+          return;
+        }
+
+        const dbPayload = {
+          code: candCode,
+          fullName,
+          email,
+          phone,
+          district,
+          specialty,
+          experience,
+          availability,
+          drivingLicense,
+          certifications,
+          message,
+          cvFileName: originalName,
+          cvFileType: effectiveMime,
+          cvFileSize: cvBuffer.length,
+          cvStoragePath: storagePath,
+          ipHash,
+        };
+
+        let savedRow = null;
+        let dbErr = null;
+        try {
+          const rpcRes = await supabaseAdmin.rpc('spark_erp_create_candidate', {
+            p_payload: dbPayload,
+          });
+          savedRow = rpcRes.data;
+          dbErr = rpcRes.error;
+        } catch (err) {
+          dbErr = err;
+        }
+
+        if (dbErr) {
+          try {
+            const { data: insRow, error: insErr } = await supabaseAdmin
+              .schema('rh')
+              .from('candidaturas')
+              .insert({
+                codigo_candidatura: candCode,
+                nome_completo: fullName,
+                email,
+                telefone: phone,
+                distrito: district || 'Porto',
+                area_especialidade: specialty,
+                experiencia: experience || '1 a 3 anos',
+                disponibilidade: availability || 'Imediata',
+                carta_conducao: drivingLicense || 'Não indicada',
+                certificacoes: certifications || null,
+                mensagem: message || null,
+                cv_nome_ficheiro: originalName,
+                cv_tipo_mime: effectiveMime,
+                cv_tamanho_bytes: cvBuffer.length,
+                cv_caminho_storage: storagePath,
+                estado: 'Nova',
+                ip_hash: ipHash || null,
+              })
+              .select('*')
+              .single();
+            if (!insErr && insRow) {
+              savedRow = mapCandidateDbRow(insRow);
+              dbErr = null;
+            }
+          } catch {
+            // Mantém dbErr original
+          }
+        }
+
+        if (dbErr || !savedRow) {
+          await supabaseAdmin.storage.from('curriculos-candidatos').remove([storagePath]).catch(() => {});
+          res.status(500).json({
+            error: 'CAREERS_SAVE_ERROR',
+            message: formatUserSafeError(
+              dbErr,
+              'Não foi possível registar a sua candidatura neste momento. Tente novamente ou contacte-nos por telefone.',
+              'CAREERS_SAVE_ERROR'
+            ),
+          });
+          return;
+        }
+
+        res.status(201).json({
+          ok: true,
+          code: savedRow.id || candCode,
+          message:
+            'Candidatura submetida com sucesso! A nossa equipa de Recursos Humanos irá analisar o seu perfil e entrar em contacto brevemente.',
+        });
+        return;
+      } catch (err) {
+        console.error('[CAREERS_SUBMIT_ERROR]', err);
+        res.status(500).json({
+          error: 'CAREERS_INTERNAL_ERROR',
+          message: 'Ocorreu um erro inesperado ao submeter a candidatura. Tente novamente dentro de instantes.',
+        });
+        return;
+      }
+    }
 
     // ── POST /api/auth/login (Utilizador ou Email + Senha) ───────────────────
     if (req.method === 'POST' && requestPath === '/api/auth/login') {
@@ -2244,19 +2527,24 @@ exports.api = onRequest(
             return;
           }
 
+          const candidates = canRhVer ? await loadCandidatesList(supabaseAdmin) : [];
+
           const safePayload = redactSnapshotForProfile(
-            snapshot || {
-              employees: [],
-              attendance: {},
-              employeeAdvances: [],
-              employeeContracts: [],
-              payslips: [],
-              attachedReceipts: [],
-              projects: [],
-              projectInvoices: [],
-              projectContracts: [],
-              technicalManagers: [],
-              technicalCertificates: [],
+            {
+              ...(snapshot || {
+                employees: [],
+                attendance: {},
+                employeeAdvances: [],
+                employeeContracts: [],
+                payslips: [],
+                attachedReceipts: [],
+                projects: [],
+                projectInvoices: [],
+                projectContracts: [],
+                technicalManagers: [],
+                technicalCertificates: [],
+              }),
+              candidates,
             },
             ctx.profile
           );
@@ -3609,6 +3897,199 @@ exports.api = onRequest(
             modulo: 'operacional.responsaveis_certificados',
             acao: 'EXCLUIR_CERTIFICADO_TECNICO',
             entidadeId: certCode,
+          });
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        // ── CANDIDATURAS & CURRÍCULOS ("TRABALHE CONNOSCO") ─────────────────
+        if (req.method === 'GET' && requestPath === '/api/erp/candidates') {
+          if (!canRhVer) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para consultar candidaturas.' });
+            return;
+          }
+          const candidates = await loadCandidatesList(supabaseAdmin);
+          res.status(200).json({ candidates });
+          return;
+        }
+
+        const candCvMatch = requestPath.match(/^\/api\/erp\/candidates\/([^/]+)\/cv$/);
+        if (candCvMatch && req.method === 'GET') {
+          if (!canRhVer) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para visualizar currículos.' });
+            return;
+          }
+          const candCode = decodeURIComponent(candCvMatch[1]);
+          let meta = null;
+          try {
+            const rpcRes = await supabaseAdmin.rpc('spark_erp_get_candidate_cv', { p_code: candCode });
+            if (!rpcRes.error && rpcRes.data) meta = rpcRes.data;
+          } catch {
+            // Fallback direto
+          }
+          if (!meta) {
+            const { data: directRow } = await supabaseAdmin
+              .schema('rh')
+              .from('candidaturas')
+              .select('codigo_candidatura, cv_nome_ficheiro, cv_tipo_mime, cv_tamanho_bytes, cv_caminho_storage')
+              .eq('codigo_candidatura', candCode)
+              .limit(1)
+              .maybeSingle();
+            if (directRow) {
+              meta = {
+                id: directRow.codigo_candidatura,
+                fileName: directRow.cv_nome_ficheiro,
+                fileType: directRow.cv_tipo_mime || 'application/pdf',
+                fileSize: Number(directRow.cv_tamanho_bytes) || 0,
+                storagePath: directRow.cv_caminho_storage,
+              };
+            }
+          }
+
+          if (!meta?.storagePath) {
+            res.status(404).json({ error: 'CV_NOT_FOUND', message: 'Currículo anexado não encontrado.' });
+            return;
+          }
+          const { data: fileBlob, error: dlErr } = await supabaseAdmin.storage
+            .from('curriculos-candidatos')
+            .download(meta.storagePath);
+          if (dlErr || !fileBlob) {
+            res.status(404).json({ error: 'STORAGE_READ_ERROR', message: 'Não foi possível transferir o currículo.' });
+            return;
+          }
+          const arrayBuf = await fileBlob.arrayBuffer();
+          res.status(200).json({
+            id: meta.id,
+            name: meta.fileName,
+            type: meta.fileType,
+            size: meta.fileSize || arrayBuf.byteLength,
+            base64: Buffer.from(arrayBuf).toString('base64'),
+          });
+          return;
+        }
+
+        const candMatch = requestPath.match(/^\/api\/erp\/candidates\/([^/]+)$/);
+        if (candMatch && (req.method === 'PUT' || req.method === 'DELETE')) {
+          const candCode = decodeURIComponent(candMatch[1]);
+          if (req.method === 'PUT') {
+            const canEditCand =
+              hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar') ||
+              hasModuleAction(ctx.profile, 'rh_funcionarios', 'criar');
+            if (!canEditCand) {
+              res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para atualizar o estado da candidatura.' });
+              return;
+            }
+            const body = req.body && typeof req.body === 'object' ? req.body : {};
+            const validStatuses = new Set(['Nova', 'Em Análise', 'Entrevista', 'Contratado', 'Arquivada']);
+            const nextStatus = validStatuses.has(body.status) ? body.status : null;
+            const nextNotes = body.internalNotes !== undefined ? String(body.internalNotes || '') : null;
+
+            let updated = null;
+            let updErr = null;
+            try {
+              const rpcRes = await supabaseAdmin.rpc('spark_erp_update_candidate', {
+                p_code: candCode,
+                p_status: nextStatus,
+                p_notes: nextNotes,
+                p_actor: ctx.authUser.id,
+              });
+              updated = rpcRes.data;
+              updErr = rpcRes.error;
+            } catch (err) {
+              updErr = err;
+            }
+
+            if (updErr && !updated) {
+              try {
+                const { data: row, error: qErr } = await supabaseAdmin
+                  .schema('rh')
+                  .from('candidaturas')
+                  .update({
+                    ...(nextStatus ? { estado: nextStatus } : {}),
+                    ...(nextNotes !== null ? { notas_internas: nextNotes } : {}),
+                    avaliado_por: ctx.authUser.id,
+                  })
+                  .eq('codigo_candidatura', candCode)
+                  .select('*')
+                  .single();
+                if (!qErr && row) {
+                  updated = mapCandidateDbRow(row);
+                  updErr = null;
+                }
+              } catch {
+                // Mantém erro original
+              }
+            }
+
+            if (updErr || !updated) {
+              res.status(400).json({
+                error: 'CANDIDATE_UPDATE_ERROR',
+                message: formatUserSafeError(updErr, 'Não foi possível atualizar a candidatura.', 'CANDIDATE_UPDATE_ERROR'),
+              });
+              return;
+            }
+
+            await writeAuditLog(supabaseAdmin, {
+              userId: ctx.authUser.id,
+              userEmail: ctx.authUser.email,
+              modulo: 'rh.candidaturas',
+              acao: 'ATUALIZAR_CANDIDATURA',
+              entidadeId: candCode,
+              detalhes: { status: updated.status },
+            });
+            res.status(200).json(updated);
+            return;
+          }
+
+          if (!hasModuleAction(ctx.profile, 'rh_funcionarios', 'excluir')) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para remover candidaturas.' });
+            return;
+          }
+          let removedPath = null;
+          let delErr = null;
+          try {
+            const rpcRes = await supabaseAdmin.rpc('spark_erp_delete_candidate', { p_code: candCode });
+            removedPath = rpcRes.data;
+            delErr = rpcRes.error;
+          } catch (err) {
+            delErr = err;
+          }
+
+          if (delErr) {
+            try {
+              const { data: deleted, error: dErr } = await supabaseAdmin
+                .schema('rh')
+                .from('candidaturas')
+                .delete()
+                .eq('codigo_candidatura', candCode)
+                .select('cv_caminho_storage')
+                .maybeSingle();
+              if (!dErr) {
+                removedPath = deleted?.cv_caminho_storage || null;
+                delErr = null;
+              }
+            } catch {
+              // Mantém erro original
+            }
+          }
+
+          if (delErr) {
+            res.status(400).json({
+              error: 'CANDIDATE_DELETE_ERROR',
+              message: formatUserSafeError(delErr, 'Não foi possível remover a candidatura.', 'CANDIDATE_DELETE_ERROR'),
+            });
+            return;
+          }
+
+          if (removedPath) {
+            await supabaseAdmin.storage.from('curriculos-candidatos').remove([removedPath]).catch(() => {});
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'rh.candidaturas',
+            acao: 'EXCLUIR_CANDIDATURA',
+            entidadeId: candCode,
           });
           res.status(200).json({ ok: true });
           return;

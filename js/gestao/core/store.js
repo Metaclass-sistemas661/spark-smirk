@@ -215,11 +215,32 @@ export async function getEmployeeContractFile(id) {
   }
 }
 
+export async function getCandidateCvFile(code) {
+  if (!code) return null;
+  try {
+    const res = await authenticatedApiFetch(`/api/erp/candidates/${encodeURIComponent(code)}/cv`, {
+      method: 'GET',
+    });
+    if (!res?.base64) return null;
+    return {
+      id: res.id,
+      name: res.name,
+      type: res.type || 'application/pdf',
+      size: res.size || 0,
+      data: base64ToArrayBuffer(res.base64),
+    };
+  } catch (err) {
+    showToast(err?.message || 'Não foi possível transferir o currículo anexado.', 'error');
+    return null;
+  }
+}
+
 const EMPTY_STATE = {
   employees: [],
   attendance: {},
   employeeAdvances: [],
   employeeContracts: [],
+  candidates: [],
   payslips: [],
   attachedReceipts: [],
   projects: [],
@@ -258,6 +279,7 @@ class ErpStore {
       attendance: snapshot?.attendance && typeof snapshot.attendance === 'object' ? snapshot.attendance : {},
       employeeAdvances: Array.isArray(snapshot?.employeeAdvances) ? snapshot.employeeAdvances : [],
       employeeContracts: Array.isArray(snapshot?.employeeContracts) ? snapshot.employeeContracts : [],
+      candidates: Array.isArray(snapshot?.candidates) ? snapshot.candidates : [],
       payslips: Array.isArray(snapshot?.payslips) ? snapshot.payslips : [],
       attachedReceipts: Array.isArray(snapshot?.attachedReceipts) ? snapshot.attachedReceipts : [],
       projects: Array.isArray(snapshot?.projects) ? snapshot.projects : [],
@@ -435,11 +457,49 @@ class ErpStore {
   deleteEmployeeContract(id) {
     this.state.employeeContracts = (this.state.employeeContracts || []).filter((c) => c.id !== id);
     this._notify();
-    this._syncMutation(
+    return this._syncMutation(
       `/api/erp/employee-contracts/${encodeURIComponent(id)}`,
       'DELETE',
       null,
       'Erro ao remover o contrato do funcionário na base de dados.'
+    );
+  }
+
+  /* ── Candidaturas & Currículos ("Trabalhe Connosco") ── */
+  async fetchCandidates() {
+    try {
+      const res = await authenticatedApiFetch('/api/erp/candidates', { method: 'GET' });
+      this.state.candidates = Array.isArray(res?.candidates) ? res.candidates : [];
+      this._notify();
+      return this.state.candidates;
+    } catch (err) {
+      showToast(err?.message || 'Não foi possível atualizar a lista de candidaturas.', 'error');
+      return null;
+    }
+  }
+
+  updateCandidate(code, patch) {
+    const idx = (this.state.candidates || []).findIndex((c) => c.id === code);
+    if (idx >= 0) {
+      this.state.candidates[idx] = { ...this.state.candidates[idx], ...patch };
+      this._notify();
+    }
+    return this._syncMutation(
+      `/api/erp/candidates/${encodeURIComponent(code)}`,
+      'PUT',
+      patch,
+      'Erro ao atualizar o estado da candidatura.'
+    );
+  }
+
+  deleteCandidate(code) {
+    this.state.candidates = (this.state.candidates || []).filter((c) => c.id !== code);
+    this._notify();
+    return this._syncMutation(
+      `/api/erp/candidates/${encodeURIComponent(code)}`,
+      'DELETE',
+      null,
+      'Erro ao remover a candidatura da base de dados.'
     );
   }
 

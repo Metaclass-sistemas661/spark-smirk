@@ -91,7 +91,7 @@ jobs:
       - name: Verificar Entrypoints MPA & Integridade de Segurança no Bundle
         shell: bash
         run: |
-          for file in dist/index.html dist/login/index.html dist/gestao/index.html; do
+          for file in dist/index.html dist/trabalhe-connosco/index.html dist/login/index.html dist/gestao/index.html; do
             if [ ! -f "$file" ]; then
               echo "::error::Entrypoint obrigatório em falta no build: $file"
               exit 1
@@ -103,7 +103,7 @@ jobs:
             exit 1
           fi
 
-          echo "OK: Todos os entrypoints (/, /login/, /gestao/) compilados e sem chaves privadas."
+          echo "OK: Todos os entrypoints (/, /trabalhe-connosco/, /login/, /gestao/) compilados e sem chaves privadas."
 
       - name: Publicar Artifact de Produção (dist/)
         uses: actions/upload-artifact@v7

@@ -13,6 +13,7 @@ import { confirmAction, showToast } from './core/ui.js';
 import { DashboardModule } from './modules/dashboard.js';
 import { RhFuncionariosModule } from './modules/rh-funcionarios.js';
 import { RhRecibosModule } from './modules/rh-recibos.js';
+import { RhCandidaturasModule } from './modules/rh-candidaturas.js';
 import { OperacionalObrasModule } from './modules/operacional-obras.js';
 import { OperacionalResponsaveisModule } from './modules/operacional-responsaveis.js';
 import { AdminUtilizadoresModule } from './modules/admin-utilizadores.js';
@@ -47,6 +48,11 @@ const ROUTES = {
     kicker: 'Recursos Humanos',
     title: 'Recibos de Vencimento',
     perm: ['rh_recibos', 'ver'],
+  },
+  'rh-candidaturas': {
+    kicker: 'Recursos Humanos',
+    title: 'Candidaturas & Recrutamento',
+    perm: ['rh_funcionarios', 'ver'],
   },
   'op-andamento': {
     kicker: 'Operacional',
@@ -118,6 +124,7 @@ class ErpApp {
       onQuickAction: (action) => this._handleQuickAction(action),
     });
     this.rhRecibos = new RhRecibosModule();
+    this.rhCandidaturas = new RhCandidaturasModule();
     this.rhFuncionarios = new RhFuncionariosModule({
       onOpenPayslips: (empId) => {
         if (!this._canAccessRoute('rh-recibos')) {
@@ -540,6 +547,7 @@ class ErpApp {
     };
     setBadge('cntEmployees', state.employees.length);
     setBadge('cntPayslips', state.payslips.length);
+    setBadge('cntCandidates', (state.candidates || []).length);
     setBadge('cntAndamento', state.projects.filter((p) => p.status === 'em_andamento').length);
     setBadge('cntIniciar', state.projects.filter((p) => p.status === 'a_iniciar').length);
     setBadge('cntConcluidas', state.projects.filter((p) => p.status === 'concluida').length);
@@ -589,6 +597,8 @@ class ErpApp {
       this.rhFuncionarios.render(this.workspace, ctx);
     } else if (this.activeRoute === 'rh-recibos') {
       this.rhRecibos.render(this.workspace, ctx);
+    } else if (this.activeRoute === 'rh-candidaturas') {
+      this.rhCandidaturas.render(this.workspace, ctx);
     } else if (this.activeRoute === 'admin-utilizadores') {
       this.adminUtilizadores.render(this.workspace, ctx);
     } else if (this.activeRoute === 'op-responsaveis') {

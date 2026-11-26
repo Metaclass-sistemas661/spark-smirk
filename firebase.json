@@ -36,6 +36,10 @@
         "destination": "/gestao/index.html"
       },
       {
+        "source": "/trabalhe-connosco{,/**}",
+        "destination": "/trabalhe-connosco/index.html"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
