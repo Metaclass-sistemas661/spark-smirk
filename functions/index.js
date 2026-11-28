@@ -2540,13 +2540,17 @@ exports.api = onRequest(
         }
 
         const canRhVer = hasModuleAction(ctx.profile, 'rh_funcionarios', 'ver');
+        const canIncludeRh =
+          canRhVer ||
+          hasModuleAction(ctx.profile, 'rh_funcionarios', 'ordenados') ||
+          hasModuleAction(ctx.profile, 'rh_funcionarios', 'pagamentos');
         const canRecibosVer = hasModuleAction(ctx.profile, 'rh_recibos', 'ver');
         const canOpVer = hasModuleAction(ctx.profile, 'op_obras', 'ver');
 
         // ── GET /api/erp/bootstrap ───────────────────────────────────────────
         if (req.method === 'GET' && requestPath === '/api/erp/bootstrap') {
           const { data: snapshot, error: snapErr } = await supabaseAdmin.rpc('spark_erp_snapshot', {
-            p_include_rh: canRhVer,
+            p_include_rh: canIncludeRh,
             p_include_payslips: canRecibosVer,
             p_include_projects: canOpVer,
           });
@@ -2659,13 +2663,14 @@ exports.api = onRequest(
         if (empMatch && (req.method === 'PUT' || req.method === 'DELETE')) {
           const empCode = decodeURIComponent(empMatch[1]);
           if (req.method === 'PUT') {
-            if (!hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar')) {
-              res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para editar funcionários.' });
+            const canEditCadastro = hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar');
+            const canEditSalary = hasModuleAction(ctx.profile, 'rh_funcionarios', 'ordenados');
+            if (!canEditCadastro && !canEditSalary) {
+              res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para editar dados ou condições salariais de funcionários.' });
               return;
             }
             let empPayload = { ...(req.body || {}), id: empCode };
-            const canEditSalary = hasModuleAction(ctx.profile, 'rh_funcionarios', 'ordenados');
-            if (!canEditSalary) {
+            if (!canEditSalary || !canEditCadastro) {
               const { data: rhSnap } = await supabaseAdmin.rpc('spark_erp_snapshot', {
                 p_include_rh: true,
                 p_include_payslips: false,
@@ -2673,23 +2678,44 @@ exports.api = onRequest(
               });
               const existingEmp = (rhSnap?.employees || []).find((e) => e.id === empCode);
               if (existingEmp) {
-                empPayload = {
-                  ...empPayload,
-                  remunerationType: existingEmp.remunerationType || 'mensal',
-                  baseSalary: existingEmp.baseSalary ?? 0,
-                  dailyRate: existingEmp.dailyRate ?? 0,
-                  hourlyRate: existingEmp.hourlyRate ?? 0,
-                  ssPercentage: existingEmp.ssPercentage ?? 11,
-                  mealAllowance: existingEmp.mealAllowance ?? 0,
-                  offPayrollType: existingEmp.offPayrollType || 'mensal',
-                  offPayrollAmount: existingEmp.offPayrollAmount ?? 0,
-                  iban: existingEmp.iban || '',
-                  twelfths: existingEmp.twelfths || 'Não',
-                  twelfthsVacationManual: existingEmp.twelfthsVacationManual ?? 0,
-                  twelfthsChristmasManual: existingEmp.twelfthsChristmasManual ?? 0,
-                };
+                if (!canEditCadastro) {
+                  empPayload = {
+                    ...empPayload,
+                    name: existingEmp.name,
+                    role: existingEmp.role,
+                    department: existingEmp.department,
+                    nif: existingEmp.nif || '',
+                    niss: existingEmp.niss || '',
+                    cc: existingEmp.cc || '',
+                    phone: existingEmp.phone || '',
+                    email: existingEmp.email || '',
+                    address: existingEmp.address || '',
+                    contractType: existingEmp.contractType || 'Sem Termo',
+                    admissionDate: existingEmp.admissionDate || '',
+                    status: existingEmp.status || 'ativo',
+                    notes: existingEmp.notes || '',
+                  };
+                }
+                if (!canEditSalary) {
+                  empPayload = {
+                    ...empPayload,
+                    remunerationType: existingEmp.remunerationType || 'mensal',
+                    baseSalary: existingEmp.baseSalary ?? 0,
+                    dailyRate: existingEmp.dailyRate ?? 0,
+                    hourlyRate: existingEmp.hourlyRate ?? 0,
+                    ssPercentage: existingEmp.ssPercentage ?? 11,
+                    mealAllowance: existingEmp.mealAllowance ?? 0,
+                    offPayrollType: existingEmp.offPayrollType || 'mensal',
+                    offPayrollAmount: existingEmp.offPayrollAmount ?? 0,
+                    iban: existingEmp.iban || '',
+                    twelfths: existingEmp.twelfths || 'Não',
+                    twelfthsVacationManual: existingEmp.twelfthsVacationManual ?? 0,
+                    twelfthsChristmasManual: existingEmp.twelfthsChristmasManual ?? 0,
+                  };
+                }
               }
-            } else {
+            }
+            if (canEditSalary) {
               empPayload.offPayrollType =
                 empPayload.remunerationType === 'mensal'
                   ? 'mensal'
@@ -2814,10 +2840,7 @@ exports.api = onRequest(
 
         // ── ADIANTAMENTOS DE ORDENADO (POST / DELETE) ────────────────────────
         if (req.method === 'POST' && requestPath === '/api/erp/employee-advances') {
-          const canAdvance =
-            hasModuleAction(ctx.profile, 'rh_funcionarios', 'pagamentos') &&
-            (hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar') ||
-              hasModuleAction(ctx.profile, 'rh_funcionarios', 'assiduidade'));
+          const canAdvance = hasModuleAction(ctx.profile, 'rh_funcionarios', 'pagamentos');
           if (!canAdvance) {
             res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para consultar ou registar adiantamentos salariais.' });
             return;
@@ -2857,11 +2880,7 @@ exports.api = onRequest(
 
         const advMatch = requestPath.match(/^\/api\/erp\/employee-advances\/([^/]+)$/);
         if (advMatch && req.method === 'DELETE') {
-          const canDelAdv =
-            hasModuleAction(ctx.profile, 'rh_funcionarios', 'pagamentos') &&
-            (hasModuleAction(ctx.profile, 'rh_funcionarios', 'excluir') ||
-              hasModuleAction(ctx.profile, 'rh_funcionarios', 'editar') ||
-              hasModuleAction(ctx.profile, 'rh_funcionarios', 'assiduidade'));
+          const canDelAdv = hasModuleAction(ctx.profile, 'rh_funcionarios', 'pagamentos');
           if (!canDelAdv) {
             res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para remover adiantamentos.' });
             return;

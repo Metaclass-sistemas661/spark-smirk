@@ -12,6 +12,7 @@ import {
 import { confirmAction, showToast } from './core/ui.js';
 import { DashboardModule } from './modules/dashboard.js';
 import { RhFuncionariosModule } from './modules/rh-funcionarios.js';
+import { RhPagamentosModule } from './modules/rh-pagamentos.js';
 import { RhRecibosModule } from './modules/rh-recibos.js';
 import { RhCandidaturasModule } from './modules/rh-candidaturas.js';
 import { OperacionalObrasModule } from './modules/operacional-obras.js';
@@ -43,6 +44,14 @@ const ROUTES = {
     kicker: 'Recursos Humanos',
     title: 'Funcionários & Assiduidade',
     perm: ['rh_funcionarios', 'ver'],
+  },
+  'rh-pagamentos': {
+    kicker: 'Recursos Humanos',
+    title: 'Ordenados & Pagamentos',
+    permAny: [
+      ['rh_funcionarios', 'ordenados'],
+      ['rh_funcionarios', 'pagamentos'],
+    ],
   },
   'rh-recibos': {
     kicker: 'Recursos Humanos',
@@ -93,6 +102,7 @@ const QUICK_ACTION_PERMS = {
   'new-employee': ['rh_funcionarios', 'criar'],
   'attendance-daily': ['rh_funcionarios', 'assiduidade'],
   'attendance-report': ['rh_funcionarios', 'ver'],
+  'payroll-sheet': ['rh_funcionarios', 'pagamentos'],
   'new-payslip': ['rh_recibos', 'emitir'],
   'new-project': ['op_obras', 'criar'],
   'new-invoice': ['op_obras', 'faturas'],
@@ -125,7 +135,7 @@ class ErpApp {
     });
     this.rhRecibos = new RhRecibosModule();
     this.rhCandidaturas = new RhCandidaturasModule();
-    this.rhFuncionarios = new RhFuncionariosModule({
+    this.rhPagamentos = new RhPagamentosModule({
       onOpenPayslips: (empId) => {
         if (!this._canAccessRoute('rh-recibos')) {
           showToast('Sem permissão para consultar recibos de vencimento.', 'warning');
@@ -136,6 +146,7 @@ class ErpApp {
         this.render();
       },
     });
+    this.rhFuncionarios = new RhFuncionariosModule();
     this.opObras = new OperacionalObrasModule();
     this.opResponsaveis = new OperacionalResponsaveisModule();
     this.adminUtilizadores = new AdminUtilizadoresModule({
@@ -310,6 +321,9 @@ class ErpApp {
   _canAccessRoute(routeKey) {
     const spec = ROUTES[routeKey];
     if (!spec || !this.currentProfile) return false;
+    if (Array.isArray(spec.permAny)) {
+      return spec.permAny.some(([mod, act]) => hasPermission(this.currentProfile, mod, act));
+    }
     if (!spec.perm) return true;
     return hasPermission(this.currentProfile, spec.perm[0], spec.perm[1]);
   }
@@ -503,6 +517,9 @@ class ErpApp {
       this.activeRoute = 'rh-funcionarios';
       this.rhFuncionarios.viewMode = 'report';
       this.render();
+    } else if (action === 'payroll-sheet') {
+      this.activeRoute = 'rh-pagamentos';
+      this.render();
     } else if (action === 'new-payslip') {
       this.activeRoute = 'rh-recibos';
       this.render();
@@ -546,6 +563,7 @@ class ErpApp {
       if (el) el.textContent = String(val);
     };
     setBadge('cntEmployees', state.employees.length);
+    setBadge('cntPayroll', state.employees.filter((e) => e.status === 'ativo').length);
     setBadge('cntPayslips', state.payslips.length);
     setBadge('cntCandidates', (state.candidates || []).length);
     setBadge('cntAndamento', state.projects.filter((p) => p.status === 'em_andamento').length);
@@ -595,6 +613,8 @@ class ErpApp {
       this.dashboard.render(this.workspace, ctx);
     } else if (this.activeRoute === 'rh-funcionarios') {
       this.rhFuncionarios.render(this.workspace, ctx);
+    } else if (this.activeRoute === 'rh-pagamentos') {
+      this.rhPagamentos.render(this.workspace, ctx);
     } else if (this.activeRoute === 'rh-recibos') {
       this.rhRecibos.render(this.workspace, ctx);
     } else if (this.activeRoute === 'rh-candidaturas') {
