@@ -23,6 +23,9 @@ export class DashboardModule {
   constructor(options = {}) {
     this.projectFilter = 'all'; // 'all' | 'em_andamento' | 'a_iniciar' | 'concluida'
     this.donutMode = 'status'; // 'status' | 'categories'
+    this.rankPeriod = 'month'; // 'month' | 'all'
+    this.rankSort = 'profit'; // 'profit' | 'share' | 'margin'
+    this.rankStatus = 'all'; // 'all' | 'em_andamento' | 'concluida'
     this.onNavigate = options.onNavigate || null;
     this.onQuickAction = options.onQuickAction || null;
   }
@@ -302,6 +305,9 @@ export class DashboardModule {
         </section>
       </div>
 
+      <!-- Row 2.5: Interactive Project Profit Ranking & Portfolio Share -->
+      ${canSeeDashValues ? this._renderProfitRankingPanel(projectStats, state, month, totalContracted) : ''}
+
       <!-- Row 3: HR Attendance Bars + Payment Deadlines / Operational Schedule Feed -->
       <div class="erp-dash-grid erp-dash-grid--equal">
         <section class="erp-chart-card">
@@ -339,6 +345,201 @@ export class DashboardModule {
     `;
 
     this._bindEvents(container, state);
+  }
+
+  _renderProfitRankingPanel(projectStats, state, month, totalContracted) {
+    const manualCashMovs = (state.cashMovements || []).filter((m) => m.originType === 'manual');
+    const rankingRows = projectStats
+      .filter(({ proj }) => this.rankStatus === 'all' || proj.status === this.rankStatus)
+      .map(({ proj, fin }) => {
+        const projRefs = new Set([proj.id, proj.code].filter(Boolean));
+        let inflows = 0;
+        let inflowCount = 0;
+
+        (proj.payments || []).forEach((pay) => {
+          if (pay.status !== 'pago') return;
+          const dt = String(pay.paidDate || pay.dueDate || '');
+          if (this.rankPeriod === 'month' && dt.slice(0, 7) !== month) return;
+          inflows += Number(pay.amount) || 0;
+          inflowCount += 1;
+        });
+
+        let outflows = 0;
+        let invoiceCount = 0;
+        (state.projectInvoices || []).forEach((inv) => {
+          if (!projRefs.has(inv.projectId)) return;
+          const dt = String(inv.invoiceDate || inv.createdAt || '');
+          if (this.rankPeriod === 'month' && dt.slice(0, 7) !== month) return;
+          outflows += Math.max(0, Number(inv.amount) || 0);
+          invoiceCount += 1;
+        });
+
+        manualCashMovs.forEach((m) => {
+          if (!projRefs.has(m.projectId)) return;
+          const dt = String(m.date || '');
+          if (this.rankPeriod === 'month' && (m.month || dt.slice(0, 7)) !== month) return;
+          const amt = Math.max(0, Number(m.amount) || 0);
+          if (m.type === 'entrada') {
+            inflows += amt;
+            inflowCount += 1;
+          } else {
+            outflows += amt;
+          }
+        });
+
+        const netProfit = Number((inflows - outflows).toFixed(2));
+        const marginPct = inflows > 0 ? (netProfit / inflows) * 100 : outflows > 0 ? -100 : 0;
+        const portfolioSharePct = totalContracted > 0 ? (fin.contractTotal / totalContracted) * 100 : 0;
+
+        return {
+          proj,
+          fin,
+          inflows: Number(inflows.toFixed(2)),
+          inflowCount,
+          outflows: Number(outflows.toFixed(2)),
+          invoiceCount,
+          netProfit,
+          marginPct,
+          portfolioSharePct,
+        };
+      });
+
+    rankingRows.sort((a, b) => {
+      if (this.rankSort === 'share') return b.portfolioSharePct - a.portfolioSharePct || b.netProfit - a.netProfit;
+      if (this.rankSort === 'margin') return b.marginPct - a.marginPct || b.netProfit - a.netProfit;
+      return b.netProfit - a.netProfit || b.portfolioSharePct - a.portfolioSharePct;
+    });
+
+    const totalPeriodInflows = rankingRows.reduce((s, r) => s + r.inflows, 0);
+    const totalPeriodOutflows = rankingRows.reduce((s, r) => s + r.outflows, 0);
+    const totalPeriodProfit = totalPeriodInflows - totalPeriodOutflows;
+    const leader = rankingRows[0] || null;
+    const periodTag = this.rankPeriod === 'month' ? formatMonthLabel(month) : 'Acumulado Total';
+
+    return `
+      <section class="erp-panel">
+        <div class="erp-panel__header">
+          <div class="erp-panel__title-group">
+            <h2 class="erp-panel__title">Ranking de Lucro por Obra &amp; Peso na Carteira</h2>
+            <p class="erp-panel__desc">Apuramento interativo (${escapeHtml(periodTag)}): Entradas recebidas da obra menos saídas de faturas/despesas, e representatividade na Carteira Contratada.</p>
+          </div>
+          <div class="erp-rank-controls">
+            <div class="erp-pill-switch">
+              <button type="button" class="${this.rankPeriod === 'month' ? 'is-active' : ''}" data-rank-period="month">Mensal (${escapeHtml(month)})</button>
+              <button type="button" class="${this.rankPeriod === 'all' ? 'is-active' : ''}" data-rank-period="all">Acumulado</button>
+            </div>
+            <div class="erp-pill-switch">
+              <button type="button" class="${this.rankSort === 'profit' ? 'is-active' : ''}" data-rank-sort="profit">Maior Lucro</button>
+              <button type="button" class="${this.rankSort === 'share' ? 'is-active' : ''}" data-rank-sort="share">% Carteira</button>
+              <button type="button" class="${this.rankSort === 'margin' ? 'is-active' : ''}" data-rank-sort="margin">Margem %</button>
+            </div>
+            <select class="erp-select-sm" id="dashRankStatusFilter" aria-label="Filtrar obras por estado">
+              <option value="all" ${this.rankStatus === 'all' ? 'selected' : ''}>Todas as Obras</option>
+              <option value="em_andamento" ${this.rankStatus === 'em_andamento' ? 'selected' : ''}>Em Andamento</option>
+              <option value="concluida" ${this.rankStatus === 'concluida' ? 'selected' : ''}>Concluídas</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="erp-rank-strip">
+          <div class="erp-rank-strip__item">
+            <span class="erp-cell-sub">Lucro Líquido (${escapeHtml(periodTag)}):</span>
+            <strong style="color:${totalPeriodProfit >= 0 ? 'var(--erp-success)' : 'var(--erp-danger)'};font-size:14px;">
+              ${totalPeriodProfit >= 0 ? '+' : ''}${escapeHtml(formatCurrency(totalPeriodProfit))}
+            </strong>
+          </div>
+          <div class="erp-rank-strip__item">
+            <span class="erp-cell-sub">Entradas:</span>
+            <strong style="color:var(--erp-success);">+${escapeHtml(formatCurrency(totalPeriodInflows))}</strong>
+            <span class="erp-cell-sub">· Saídas:</span>
+            <strong style="color:var(--erp-danger);">-${escapeHtml(formatCurrency(totalPeriodOutflows))}</strong>
+          </div>
+          ${
+            leader
+              ? `<div class="erp-rank-strip__item">
+                   <span class="erp-badge erp-badge--warning">1.º Lugar: ${escapeHtml(leader.proj.code)}</span>
+                   <strong>${escapeHtml(formatCurrency(leader.netProfit))}</strong>
+                   <span class="erp-cell-sub">(${leader.portfolioSharePct.toFixed(1).replace('.', ',')}% da carteira)</span>
+                 </div>`
+              : ''
+          }
+        </div>
+
+        ${
+          rankingRows.length === 0
+            ? `<div class="erp-empty">${ICONS.building}<div class="erp-empty__title">Sem obras neste filtro</div></div>`
+            : `
+          <div class="erp-table-wrap">
+            <table class="erp-table">
+              <thead>
+                <tr>
+                  <th style="width:60px;">Pos.</th>
+                  <th>Obra &amp; Cliente</th>
+                  <th>Peso na Carteira da Empresa</th>
+                  <th style="text-align:right">Entradas (${escapeHtml(this.rankPeriod === 'month' ? month : 'Total')})</th>
+                  <th style="text-align:right">Saídas (Faturas/Desp.)</th>
+                  <th style="text-align:right">Lucro Gerado</th>
+                  <th style="text-align:right">Abrir</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rankingRows
+                  .map((r, idx) => {
+                    const pos = idx + 1;
+                    const rankCls = pos <= 3 ? `erp-rank-badge--${pos}` : '';
+                    const shareStr = `${r.portfolioSharePct.toFixed(1).replace('.', ',')}%`;
+                    const barW = Math.min(100, Math.max(0, r.portfolioSharePct));
+                    const marginStr = `${r.marginPct >= 0 ? '+' : ''}${Math.round(r.marginPct)}%`;
+                    const statusLabel =
+                      r.proj.status === 'concluida'
+                        ? 'Concluída'
+                        : r.proj.status === 'a_iniciar'
+                          ? 'A Iniciar'
+                          : 'Em Andamento';
+                    return `
+                    <tr class="erp-rank-row" data-dash-open-proj="${escapeHtml(r.proj.id)}" data-dash-proj-status="${escapeHtml(r.proj.status)}" title="Clique para abrir detalhes financeiros da obra ${escapeHtml(r.proj.code)}">
+                      <td><span class="erp-rank-badge ${rankCls}">${pos}.º</span></td>
+                      <td>
+                        <div class="erp-cell-title">${escapeHtml(r.proj.code)} — ${escapeHtml(r.proj.name)}</div>
+                        <div class="erp-cell-sub">${escapeHtml(r.proj.clientName || 'Cliente')} · ${escapeHtml(statusLabel)}</div>
+                      </td>
+                      <td>
+                        <div class="erp-share-meter">
+                          <div class="erp-share-meter__track">
+                            <div class="erp-share-meter__fill" style="width:${barW}%"></div>
+                          </div>
+                          <strong style="color:var(--erp-primary);white-space:nowrap;">${shareStr}</strong>
+                        </div>
+                        <div class="erp-cell-sub">${escapeHtml(formatCurrency(r.fin.contractTotal))} contratado</div>
+                      </td>
+                      <td style="text-align:right;font-weight:700;white-space:nowrap;color:${r.inflows > 0 ? 'var(--erp-success)' : 'var(--erp-text-muted)'};">
+                        ${r.inflows > 0 ? `+ ${escapeHtml(formatCurrency(r.inflows))}` : '€ 0,00'}
+                        <div class="erp-cell-sub">${r.inflowCount} receb.</div>
+                      </td>
+                      <td style="text-align:right;font-weight:700;white-space:nowrap;color:${r.outflows > 0 ? 'var(--erp-danger)' : 'var(--erp-text-muted)'};">
+                        ${r.outflows > 0 ? `- ${escapeHtml(formatCurrency(r.outflows))}` : '€ 0,00'}
+                        <div class="erp-cell-sub">${r.invoiceCount} fat.</div>
+                      </td>
+                      <td style="text-align:right;white-space:nowrap;">
+                        <div class="erp-cell-title" style="font-size:14.5px;color:${r.netProfit > 0 ? 'var(--erp-success)' : r.netProfit < 0 ? 'var(--erp-danger)' : 'var(--erp-text-muted)'};">
+                          ${r.netProfit > 0 ? '+' : ''}${escapeHtml(formatCurrency(r.netProfit))}
+                        </div>
+                        <span class="erp-badge ${r.netProfit > 0 ? 'erp-badge--success' : r.netProfit < 0 ? 'erp-badge--danger' : 'erp-badge--neutral'}" style="margin-top:3px;padding:2px 7px;font-size:10.5px;">
+                          Margem ${marginStr}
+                        </span>
+                      </td>
+                      <td style="text-align:right;">
+                        <button type="button" class="erp-btn erp-btn--outline erp-btn--sm">Ver Obra</button>
+                      </td>
+                    </tr>`;
+                  })
+                  .join('')}
+              </tbody>
+            </table>
+          </div>`
+        }
+      </section>
+    `;
   }
 
   _renderOperationalProgressBars(items) {
@@ -697,6 +898,25 @@ export class DashboardModule {
         this.donutMode = btn.dataset.donutMode;
         store._commit();
       });
+    });
+
+    container.querySelectorAll('[data-rank-period]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.rankPeriod = btn.dataset.rankPeriod;
+        store._commit();
+      });
+    });
+
+    container.querySelectorAll('[data-rank-sort]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.rankSort = btn.dataset.rankSort;
+        store._commit();
+      });
+    });
+
+    container.querySelector('#dashRankStatusFilter')?.addEventListener('change', (e) => {
+      this.rankStatus = e.target.value;
+      store._commit();
     });
 
     container.querySelectorAll('[data-dash-nav]').forEach((el) => {
