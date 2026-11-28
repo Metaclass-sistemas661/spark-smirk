@@ -1620,15 +1620,17 @@ export class RhPagamentosModule {
               <label for="closeCustomXmas">Duodécimo Subsídio de Natal (€)</label>
               <input type="text" inputmode="numeric" data-currency-euro id="closeCustomXmas" value="${escapeHtml(customXmasVal)}" placeholder="€ 0,00">
             </div>
-            <div class="erp-field erp-field--full" style="margin-top:2px;gap:6px;">
-              <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer;">
-                <input type="checkbox" id="closeMonthSaveTwelfths">
-                <span>Guardar preferência de duodécimos como padrão permanente de ${escapeHtml(emp.name)}</span>
-              </label>
-              <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer;">
-                <input type="checkbox" id="closeMonthSaveOffPayroll">
-                <span>Guardar valor Por Fora da SS acima como valor mensal permanente (1 só vez)</span>
-              </label>
+            <div class="erp-field erp-field--full" style="margin-top:2px;">
+              <div class="erp-check-stack">
+                <label class="erp-check-row" for="closeMonthSaveTwelfths">
+                  <input type="checkbox" id="closeMonthSaveTwelfths">
+                  <span>Guardar preferência de duodécimos como padrão permanente de ${escapeHtml(emp.name)}</span>
+                </label>
+                <label class="erp-check-row" for="closeMonthSaveOffPayroll">
+                  <input type="checkbox" id="closeMonthSaveOffPayroll">
+                  <span>Guardar valor Por Fora da SS acima como valor mensal permanente (1 só vez)</span>
+                </label>
+              </div>
             </div>
           </div>
         </div>
