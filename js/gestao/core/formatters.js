@@ -290,9 +290,9 @@ export function computeEmployeeMonthlyPayroll(employee, attendanceMap = {}, empl
   const remType = ['diaria', 'hora', 'mensal'].includes(employee?.remunerationType)
     ? employee.remunerationType
     : 'mensal';
-  const dailyRate = Number(employee?.dailyRate) || 0;
-  const hourlyRate = Number(employee?.hourlyRate) || 0;
-  const baseSalaryFixed = Number(employee?.baseSalary) || 0;
+  const dailyRate = Math.max(0, Number(employee?.dailyRate) || 0);
+  const hourlyRate = Math.max(0, Number(employee?.hourlyRate) || 0);
+  const baseSalaryFixed = Math.max(0, Number(employee?.baseSalary) || 0);
 
   let earnedBase = baseSalaryFixed;
   if (remType === 'diaria') {
@@ -301,19 +301,32 @@ export function computeEmployeeMonthlyPayroll(employee, attendanceMap = {}, empl
     earnedBase = totalHours * hourlyRate;
   }
 
-  const mealEarned = present * (Number(employee?.mealAllowance) || 0);
+  // Em ordenado fixo mensal, a marcação de presenças (P) não altera o valor no painel.
+  const mealPerDay = Math.max(0, Number(employee?.mealAllowance) || 0);
+  const mealEarned = remType === 'diaria' || remType === 'hora' ? present * mealPerDay : 0;
+
+  const rawOffType = ['diaria', 'mensal'].includes(employee?.offPayrollType)
+    ? employee.offPayrollType
+    : 'mensal';
+  const offPayrollType = remType === 'mensal' ? 'mensal' : rawOffType;
+  const offPayrollAmount = Math.max(0, Number(employee?.offPayrollAmount) || 0);
+  const offPayrollEarned = offPayrollType === 'diaria' ? present * offPayrollAmount : offPayrollAmount;
+
   const grossPay = earnedBase + mealEarned;
   const ssPercentage =
     employee?.ssPercentage !== undefined && employee?.ssPercentage !== null && employee?.ssPercentage !== ''
       ? Math.min(100, Math.max(0, Number(employee.ssPercentage) || 0))
       : 11;
+  // Segurança Social aplica-se exclusivamente ao valor declarado em recibo.
   const ssDeduction = Number((earnedBase * (ssPercentage / 100)).toFixed(2));
+  const receiptNetPay = Math.max(0, Number((grossPay - ssDeduction).toFixed(2)));
+  const totalCombinedGross = Number((grossPay + offPayrollEarned).toFixed(2));
 
   const monthAdvances = (Array.isArray(employeeAdvances) ? employeeAdvances : []).filter(
     (adv) => adv.employeeId === employee?.id && String(adv.month || adv.date || '').slice(0, 7) === yearMonth
   );
   const advancesTotal = monthAdvances.reduce((sum, adv) => sum + (Number(adv.amount) || 0), 0);
-  const rawNetPay = grossPay - ssDeduction - advancesTotal;
+  const rawNetPay = receiptNetPay + offPayrollEarned - advancesTotal;
   const netToPay = Math.max(0, Number(rawNetPay.toFixed(2)));
 
   return {
@@ -334,6 +347,11 @@ export function computeEmployeeMonthlyPayroll(employee, attendanceMap = {}, empl
     grossPay: Number(grossPay.toFixed(2)),
     ssPercentage,
     ssDeduction,
+    receiptNetPay,
+    offPayrollType,
+    offPayrollAmount: Number(offPayrollAmount.toFixed(2)),
+    offPayrollEarned: Number(offPayrollEarned.toFixed(2)),
+    totalCombinedGross,
     monthAdvances,
     advancesTotal: Number(advancesTotal.toFixed(2)),
     rawNetPay: Number(rawNetPay.toFixed(2)),

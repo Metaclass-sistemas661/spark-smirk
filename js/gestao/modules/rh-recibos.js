@@ -112,6 +112,7 @@ export class RhRecibosModule {
       (s, p) => s + (Number(p.socialSecurity) || 0) + (Number(p.irsRetention) || 0) + (Number(p.otherDeductions) || 0),
       0
     );
+    const totalOffPayroll = filtered.reduce((s, p) => s + (Number(p.offPayroll) || 0), 0);
     const totalNet = filtered.reduce((s, p) => s + (Number(p.netSalary) || 0), 0);
 
     const periodLabel =
@@ -125,7 +126,7 @@ export class RhRecibosModule {
       <div class="erp-kpi-grid">
         <div class="erp-kpi-card erp-kpi-card--primary">
           <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Total Ilíquido</span>
+            <span class="erp-kpi-card__label">Total Ilíquido (Recibo)</span>
             <span class="erp-kpi-card__icon">${ICONS.receipt}</span>
           </div>
           <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalGross))}</div>
@@ -134,20 +135,20 @@ export class RhRecibosModule {
 
         <div class="erp-kpi-card erp-kpi-card--warning">
           <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Retenções (SS 11% + IRS)</span>
+            <span class="erp-kpi-card__label">Retenções (SS + IRS + Vales)</span>
             <span class="erp-kpi-card__icon">${ICONS.chart}</span>
           </div>
           <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalDeductions))}</div>
-          <div class="erp-kpi-card__meta">Segurança Social e IRS do período</div>
+          <div class="erp-kpi-card__meta">Descontos aplicados ao valor em recibo</div>
         </div>
 
         <div class="erp-kpi-card erp-kpi-card--success">
           <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Total Líquido</span>
+            <span class="erp-kpi-card__label">Total Final Pago (Líquido)</span>
             <span class="erp-kpi-card__icon">${ICONS.euro}</span>
           </div>
           <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalNet))}</div>
-          <div class="erp-kpi-card__meta">Valor líquido processado</div>
+          <div class="erp-kpi-card__meta">${totalOffPayroll > 0 ? `Inclui ${escapeHtml(formatCurrency(totalOffPayroll))} por fora SS` : 'Valor final liquidado (Recibo + Por Fora SS)'}</div>
         </div>
 
         <div class="erp-kpi-card">
@@ -301,6 +302,7 @@ export class RhRecibosModule {
                     <td>
                       <div class="erp-cell-title">${escapeHtml(formatCurrency(p.baseSalary))}</div>
                       <div class="erp-cell-sub">Sub. Alim. ${escapeHtml(formatCurrency(p.mealAllowanceTotal))}${Number(p.overtimeBonus) > 0 ? ` · Extra ${escapeHtml(formatCurrency(p.overtimeBonus))}` : ''}</div>
+                      ${Number(p.offPayroll) > 0 ? `<div class="erp-cell-sub" style="color:var(--erp-accent-dark);font-weight:600;">+ Por fora SS: ${escapeHtml(formatCurrency(p.offPayroll))}</div>` : ''}
                     </td>
                     <td>
                       <div class="erp-cell-title">-${escapeHtml(formatCurrency(totalDesc))}</div>
@@ -681,7 +683,9 @@ export class RhRecibosModule {
       'Extra/Prémios (€)',
       'Seg. Social (€)',
       'IRS (€)',
-      'Líquido (€)',
+      'Outros Descontos (€)',
+      'Por Fora SS (€)',
+      'Total Líquido Final (€)',
       'Estado',
       'Data Pagamento',
     ];
@@ -697,6 +701,8 @@ export class RhRecibosModule {
         Number(p.overtimeBonus || 0).toFixed(2),
         Number(p.socialSecurity || 0).toFixed(2),
         Number(p.irsRetention || 0).toFixed(2),
+        Number(p.otherDeductions || 0).toFixed(2),
+        Number(p.offPayroll || 0).toFixed(2),
         Number(p.netSalary || 0).toFixed(2),
         p.status,
         p.paymentDate || '',
@@ -764,18 +770,26 @@ export class RhRecibosModule {
     const isEdit = Boolean(existing);
     const targetEmp =
       (defaultEmpId && state.employees.find((e) => e.id === defaultEmpId)) ||
+      (existing && state.employees.find((e) => e.id === existing.employeeId)) ||
       state.employees[0];
-    const worked = this._countWorkedDays(targetEmp.id, defaultMonth);
+    const defaultPayroll = computeEmployeeMonthlyPayroll(
+      targetEmp,
+      state.attendance,
+      state.employeeAdvances,
+      defaultMonth
+    );
+    const worked = defaultPayroll.present;
     const pay = existing || {
       employeeId: targetEmp.id,
       month: defaultMonth,
-      baseSalary: targetEmp.baseSalary,
-      mealAllowanceTotal: Number((worked * (Number(targetEmp.mealAllowance) || 0)).toFixed(2)),
+      baseSalary: defaultPayroll.earnedBase,
+      mealAllowanceTotal: defaultPayroll.mealEarned,
       overtimeBonus: 0,
-      socialSecurity: Number((targetEmp.baseSalary * 0.11).toFixed(2)),
-      irsRetention: Number((targetEmp.baseSalary * 0.14).toFixed(2)),
-      otherDeductions: 0,
-      netSalary: 0,
+      socialSecurity: defaultPayroll.ssDeduction,
+      irsRetention: 0,
+      otherDeductions: defaultPayroll.advancesTotal,
+      offPayroll: defaultPayroll.offPayrollEarned,
+      netSalary: defaultPayroll.netToPay,
       paymentDate: todayISO(),
       status: 'pago',
       notes: '',
@@ -804,10 +818,10 @@ export class RhRecibosModule {
         </div>
 
         <div class="erp-form-section">
-          <div class="erp-form-section__title">2. Abonos &amp; Descontos (Portugal)</div>
+          <div class="erp-form-section__title">2. Abonos em Recibo, Descontos &amp; Por Fora da SS (Portugal)</div>
           <div class="erp-form-grid erp-form-grid--3">
             <div class="erp-field">
-              <label for="payBase">Vencimento Base (€)</label>
+              <label for="payBase">Vencimento Base em Recibo (€)</label>
               <input type="text" inputmode="numeric" data-currency-euro id="payBase" name="baseSalary" value="${escapeHtml(pay.baseSalary)}" placeholder="€ 0,00">
             </div>
             <div class="erp-field">
@@ -820,7 +834,7 @@ export class RhRecibosModule {
               <input type="text" inputmode="numeric" data-currency-euro id="payBonus" name="overtimeBonus" value="${escapeHtml(pay.overtimeBonus)}" placeholder="€ 0,00">
             </div>
             <div class="erp-field">
-              <label for="paySS">Segurança Social 11% (€)</label>
+              <label for="paySS">Segurança Social (${targetEmp?.ssPercentage ?? 11}% s/ recibo) (€)</label>
               <input type="text" inputmode="numeric" data-currency-euro id="paySS" name="socialSecurity" value="${escapeHtml(pay.socialSecurity)}" placeholder="€ 0,00">
             </div>
             <div class="erp-field">
@@ -828,26 +842,40 @@ export class RhRecibosModule {
               <input type="text" inputmode="numeric" data-currency-euro id="payIrs" name="irsRetention" value="${escapeHtml(pay.irsRetention)}" placeholder="€ 0,00">
             </div>
             <div class="erp-field">
-              <label for="payOther">Outros Descontos (€)</label>
+              <label for="payOther">Outros Descontos / Vales (€)</label>
               <input type="text" inputmode="numeric" data-currency-euro id="payOther" name="otherDeductions" value="${escapeHtml(pay.otherDeductions)}" placeholder="€ 0,00">
+            </div>
+          </div>
+
+          <div class="erp-inline-invoice-box" style="margin-top:14px;">
+            <div class="erp-form-grid">
+              <div class="erp-field erp-field--full">
+                <label for="payOffPayroll">Pagamento Por Fora da Segurança Social (€)</label>
+                <input type="text" inputmode="numeric" data-currency-euro id="payOffPayroll" name="offPayroll" value="${escapeHtml(pay.offPayroll ?? 0)}" placeholder="€ 0,00">
+                <span class="erp-field__hint">Este valor não sofre desconto de Segurança Social nem TSU e é somado ao líquido final.</span>
+              </div>
             </div>
           </div>
 
           <div class="erp-summary-box" style="margin-top:14px;">
             <div>
-              <div class="erp-summary-item__label">Total Ilíquido</div>
+              <div class="erp-summary-item__label">Ilíquido Recibo</div>
               <div class="erp-summary-item__val" id="sumGross">€0,00</div>
             </div>
             <div>
-              <div class="erp-summary-item__label">Total Descontos</div>
+              <div class="erp-summary-item__label">Descontos Recibo</div>
               <div class="erp-summary-item__val erp-summary-item__val--danger" id="sumDed">€0,00</div>
+            </div>
+            <div>
+              <div class="erp-summary-item__label">+ Por Fora SS</div>
+              <div class="erp-summary-item__val" id="sumOffPayroll" style="color:var(--erp-accent-dark);">€0,00</div>
             </div>
             <div>
               <div class="erp-summary-item__label">TSU Entidade (23,75%)</div>
               <div class="erp-summary-item__val" id="sumTsu">€0,00</div>
             </div>
             <div>
-              <div class="erp-summary-item__label">Líquido a Receber</div>
+              <div class="erp-summary-item__label">Total Final a Receber</div>
               <div class="erp-summary-item__val erp-summary-item__val--success" id="sumNet">€0,00</div>
             </div>
           </div>
@@ -902,6 +930,7 @@ export class RhRecibosModule {
         const ssInput = modal.querySelector('#paySS');
         const irsInput = modal.querySelector('#payIrs');
         const otherInput = modal.querySelector('#payOther');
+        const offPayrollInput = modal.querySelector('#payOffPayroll');
 
         const recalc = () => {
           const base = parseCurrencyInput(baseInput.value);
@@ -910,14 +939,16 @@ export class RhRecibosModule {
           const ss = parseCurrencyInput(ssInput.value);
           const irs = parseCurrencyInput(irsInput.value);
           const other = parseCurrencyInput(otherInput.value);
+          const offPayroll = parseCurrencyInput(offPayrollInput.value);
 
           const gross = base + meal + bonus;
           const ded = ss + irs + other;
-          const net = Math.max(0, gross - ded);
+          const net = Math.max(0, gross - ded + offPayroll);
           const tsu = (base + bonus) * 0.2375;
 
           modal.querySelector('#sumGross').textContent = formatCurrency(gross);
           modal.querySelector('#sumDed').textContent = formatCurrency(ded);
+          modal.querySelector('#sumOffPayroll').textContent = formatCurrency(offPayroll);
           modal.querySelector('#sumTsu').textContent = formatCurrency(tsu);
           modal.querySelector('#sumNet').textContent = formatCurrency(net);
           return net;
@@ -940,13 +971,14 @@ export class RhRecibosModule {
               (payroll.earnedBase + parseCurrencyInput(bonusInput.value)) * (payroll.ssPercentage / 100)
             );
             otherInput.value = formatEuroInputValue(payroll.advancesTotal);
+            offPayrollInput.value = formatEuroInputValue(payroll.offPayrollEarned);
           }
           recalc();
         };
 
         empSelect.addEventListener('change', syncEmployeeDefaults);
         monthInput.addEventListener('change', syncEmployeeDefaults);
-        [baseInput, mealInput, bonusInput, ssInput, irsInput, otherInput].forEach((inp) => {
+        [baseInput, mealInput, bonusInput, ssInput, irsInput, otherInput, offPayrollInput].forEach((inp) => {
           inp.addEventListener('input', recalc);
         });
         recalc();
@@ -979,6 +1011,7 @@ export class RhRecibosModule {
             socialSecurity: parseCurrencyInput(ssInput.value),
             irsRetention: parseCurrencyInput(irsInput.value),
             otherDeductions: parseCurrencyInput(otherInput.value),
+            offPayroll: parseCurrencyInput(offPayrollInput.value),
             netSalary: Number(net.toFixed(2)),
             paymentDate: modal.querySelector('#payDate').value,
             status: modal.querySelector('#payStatus').value,

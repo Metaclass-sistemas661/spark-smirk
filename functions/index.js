@@ -306,6 +306,7 @@ async function upsertPayslipFallback(supabaseAdmin, payload, actorId) {
   const ssVal = Number(payload?.socialSecurity) || 0;
   const irsVal = Number(payload?.irsRetention) || 0;
   const otherDed = Number(payload?.otherDeductions) || 0;
+  const offPayrollVal = Math.max(0, Number(payload?.offPayroll) || 0);
   const netVal = Number(payload?.netSalary) || 0;
   const statusVal = String(payload?.status || 'pendente').toLowerCase() === 'pago' ? 'Pago' : 'Emitido';
   const payDate = payload?.paymentDate ? String(payload.paymentDate).trim() || null : null;
@@ -325,6 +326,7 @@ async function upsertPayslipFallback(supabaseAdmin, payload, actorId) {
     ss_valor: ssVal,
     irs_valor: irsVal,
     outras_deducoes: otherDed,
+    pagamento_por_fora: offPayrollVal,
     total_bruto: baseSalary + mealAllowance + overtimeBonus,
     total_liquido: netVal,
     estado_pagamento: statusVal,
@@ -333,19 +335,36 @@ async function upsertPayslipFallback(supabaseAdmin, payload, actorId) {
   };
 
   if (existingId) {
-    const { data: updated, error: updErr } = await rhTable
+    let { data: updated, error: updErr } = await rhTable
       .update(rowValues)
       .eq('id', existingId)
       .select('id, codigo_recibo')
       .single();
+    if (updErr && updErr.code === 'PGRST204') {
+      const legacyValues = { ...rowValues };
+      delete legacyValues.pagamento_por_fora;
+      ({ data: updated, error: updErr } = await rhTable
+        .update(legacyValues)
+        .eq('id', existingId)
+        .select('id, codigo_recibo')
+        .single());
+    }
     if (updErr) return { error: updErr };
     return { data: { id: updated?.codigo_recibo || code, dbId: updated?.id || existingId } };
   }
 
-  const { data: inserted, error: insErr } = await rhTable
+  let { data: inserted, error: insErr } = await rhTable
     .insert({ ...rowValues, emitido_por: actorId || null })
     .select('id, codigo_recibo')
     .single();
+  if (insErr && insErr.code === 'PGRST204') {
+    const legacyValues = { ...rowValues, emitido_por: actorId || null };
+    delete legacyValues.pagamento_por_fora;
+    ({ data: inserted, error: insErr } = await rhTable
+      .insert(legacyValues)
+      .select('id, codigo_recibo')
+      .single());
+  }
   if (insErr) return { error: insErr };
   return { data: { id: inserted?.codigo_recibo || code, dbId: inserted?.id } };
 }
@@ -765,6 +784,8 @@ function redactSnapshotForProfile(rawSnapshot, profile) {
       hourlyRate: 0,
       mealAllowance: 0,
       ssPercentage: 0,
+      offPayrollType: 'mensal',
+      offPayrollAmount: 0,
       iban: '',
       _salaryRestricted: true,
     }));
@@ -2565,6 +2586,16 @@ exports.api = onRequest(
             rawEmp.hourlyRate = 0;
             rawEmp.mealAllowance = 0;
             rawEmp.ssPercentage = 11;
+            rawEmp.offPayrollType = 'mensal';
+            rawEmp.offPayrollAmount = 0;
+          } else {
+            rawEmp.offPayrollType =
+              rawEmp.remunerationType === 'mensal'
+                ? 'mensal'
+                : rawEmp.offPayrollType === 'diaria'
+                  ? 'diaria'
+                  : 'mensal';
+            rawEmp.offPayrollAmount = Math.max(0, Number(rawEmp.offPayrollAmount) || 0);
           }
           const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_employee', {
             p_payload: rawEmp,
@@ -2587,7 +2618,18 @@ exports.api = onRequest(
           res.status(201).json(
             hasModuleAction(ctx.profile, 'rh_funcionarios', 'ordenados')
               ? data
-              : { ...(data || {}), baseSalary: 0, dailyRate: 0, hourlyRate: 0, mealAllowance: 0, ssPercentage: 0, iban: '', _salaryRestricted: true }
+              : {
+                  ...(data || {}),
+                  baseSalary: 0,
+                  dailyRate: 0,
+                  hourlyRate: 0,
+                  mealAllowance: 0,
+                  ssPercentage: 0,
+                  offPayrollType: 'mensal',
+                  offPayrollAmount: 0,
+                  iban: '',
+                  _salaryRestricted: true,
+                }
           );
           return;
         }
@@ -2618,10 +2660,20 @@ exports.api = onRequest(
                   hourlyRate: existingEmp.hourlyRate ?? 0,
                   ssPercentage: existingEmp.ssPercentage ?? 11,
                   mealAllowance: existingEmp.mealAllowance ?? 0,
+                  offPayrollType: existingEmp.offPayrollType || 'mensal',
+                  offPayrollAmount: existingEmp.offPayrollAmount ?? 0,
                   iban: existingEmp.iban || '',
                   twelfths: existingEmp.twelfths || 'Não',
                 };
               }
+            } else {
+              empPayload.offPayrollType =
+                empPayload.remunerationType === 'mensal'
+                  ? 'mensal'
+                  : empPayload.offPayrollType === 'diaria'
+                    ? 'diaria'
+                    : 'mensal';
+              empPayload.offPayrollAmount = Math.max(0, Number(empPayload.offPayrollAmount) || 0);
             }
             const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_employee', {
               p_payload: empPayload,
@@ -2644,7 +2696,18 @@ exports.api = onRequest(
             res.status(200).json(
               canEditSalary
                 ? data
-                : { ...(data || {}), baseSalary: 0, dailyRate: 0, hourlyRate: 0, mealAllowance: 0, ssPercentage: 0, iban: '', _salaryRestricted: true }
+                : {
+                    ...(data || {}),
+                    baseSalary: 0,
+                    dailyRate: 0,
+                    hourlyRate: 0,
+                    mealAllowance: 0,
+                    ssPercentage: 0,
+                    offPayrollType: 'mensal',
+                    offPayrollAmount: 0,
+                    iban: '',
+                    _salaryRestricted: true,
+                  }
             );
             return;
           }
