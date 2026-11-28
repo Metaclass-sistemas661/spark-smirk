@@ -5,6 +5,7 @@
 
 import { store } from '../core/store.js';
 import {
+  computeCompanyCashSummary,
   computeProjectFinancials,
   computeProjectInvoiceSummary,
   escapeHtml,
@@ -124,11 +125,7 @@ export class DashboardModule {
     });
     const attRateGlobal = totalP + totalAbs > 0 ? Math.round((totalP / (totalP + totalAbs)) * 100) : 100;
 
-    const yearStr = month.slice(0, 4);
-    const yearPayslips = canSeeDashValues
-      ? state.payslips.filter((p) => String(p.month || '').startsWith(yearStr))
-      : [];
-    const yearNetTotal = yearPayslips.reduce((s, p) => s + (Number(p.netSalary) || 0), 0);
+    const cashSummary = canSeeDashValues ? computeCompanyCashSummary(state) : null;
 
     // Filtered projects for Bar Chart
     const chartProjects = projectStats.filter(
@@ -180,22 +177,31 @@ export class DashboardModule {
                 <span class="erp-kpi-card__icon">${ICONS.building}</span>
               </div>
               <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalContracted))}</div>
-              <div class="erp-kpi-card__meta">${state.projects.length} obra(s) · ${overallPaidPct}% liquidado</div>
+              <div class="erp-kpi-card__meta">Já entrou em Caixa: ${escapeHtml(formatCurrency(cashSummary.portfolioReceived))} (${overallPaidPct}% liquidado)</div>
             </div>
 
             <div class="erp-kpi-card ${overdueInstallments.length > 0 ? 'erp-kpi-card--danger' : 'erp-kpi-card--warning'}">
               <div class="erp-kpi-card__head">
-                <span class="erp-kpi-card__label">Saldo Total em Aberto</span>
+                <span class="erp-kpi-card__label">A Receber das Carteiras</span>
                 <span class="erp-kpi-card__icon">${ICONS.clock}</span>
               </div>
               <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(totalOpen))}</div>
               <div class="erp-kpi-card__meta">
                 ${
                   overdueInstallments.length > 0
-                    ? `${overdueInstallments.length} parcela(s) em atraso · ${escapeHtml(formatCurrency(totalPaid))} pago`
-                    : `${openInstallments.length} parcela(s) por vencer`
+                    ? `${overdueInstallments.length} parcela(s) em atraso · ${openInstallments.length} em aberto`
+                    : `${openInstallments.length} parcela(s) por receber`
                 }
               </div>
+            </div>
+
+            <div class="erp-kpi-card" style="cursor:pointer;" data-dash-nav="relatorios-avancados" title="Abrir Relatórios Avançados &amp; Caixa da Empresa">
+              <div class="erp-kpi-card__head">
+                <span class="erp-kpi-card__label">Caixa Real da Empresa</span>
+                <span class="erp-kpi-card__icon">${ICONS.euro}</span>
+              </div>
+              <div class="erp-kpi-card__value" style="color:${cashSummary.currentBalance < 0 ? 'var(--erp-danger)' : 'var(--erp-success)'};">${escapeHtml(formatCurrency(cashSummary.currentBalance))}</div>
+              <div class="erp-kpi-card__meta">${totalInvoicesCount} fatura(s) -${escapeHtml(formatCurrency(cashSummary.invoicesOutflow))} · RH -${escapeHtml(formatCurrency(cashSummary.salariesOutflow + cashSummary.advancesOutflow))}</div>
             </div>
 
             <div class="erp-kpi-card erp-kpi-card--success">
@@ -204,16 +210,7 @@ export class DashboardModule {
                 <span class="erp-kpi-card__icon">${ICONS.checkCircle}</span>
               </div>
               <div class="erp-kpi-card__value">${attRateGlobal}%</div>
-              <div class="erp-kpi-card__meta">${totalP} presenças · ${totalAbs} faltas (${activeEmployees.length} ativos)</div>
-            </div>
-
-            <div class="erp-kpi-card">
-              <div class="erp-kpi-card__head">
-                <span class="erp-kpi-card__label">Faturas &amp; Saldo de Obras</span>
-                <span class="erp-kpi-card__icon">${ICONS.receipt}</span>
-              </div>
-              <div class="erp-kpi-card__value" style="color:${totalBudgetRemaining < 0 ? 'var(--erp-danger)' : 'var(--erp-success)'};">${escapeHtml(formatCurrency(totalBudgetRemaining))}</div>
-              <div class="erp-kpi-card__meta">${totalInvoicesCount} fatura(s) · ${escapeHtml(formatCurrency(totalInvoicedCosts))} gasto em materiais (${escapeHtml(yearStr)}: ${escapeHtml(formatCurrency(yearNetTotal))} RH)</div>
+              <div class="erp-kpi-card__meta">${totalP} presenças · ${totalAbs} faltas · Saldo Obras ${escapeHtml(formatCurrency(totalBudgetRemaining))}</div>
             </div>
           `
             : `

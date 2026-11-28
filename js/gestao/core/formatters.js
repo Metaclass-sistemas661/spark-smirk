@@ -608,33 +608,55 @@ export function buildConsolidatedCashMovements(state = {}) {
 export function computeCompanyCashSummary(state = {}) {
   const openingBalance = Number(state.cashOpeningBalance) || 0;
   const movements = buildConsolidatedCashMovements(state);
-  let totalInflows = 0;
-  let totalOutflows = 0;
+
+  // Alinhamento direto com Carteiras Contratadas & Obras (mesma fonte única do Dashboard)
+  let portfolioContracted = 0;
+  let portfolioReceived = 0;
+  let portfolioOpen = 0;
+  (state.projects || []).forEach((proj) => {
+    const fin = computeProjectFinancials(proj);
+    portfolioContracted += fin.contractTotal;
+    portfolioReceived += fin.paidAmount;
+    portfolioOpen += fin.balanceOpen;
+  });
+
+  let manualInflows = 0;
+  let otherOutflow = 0;
+  let portfolioMovementInflows = 0;
   let salariesOutflow = 0;
   let advancesOutflow = 0;
   let invoicesOutflow = 0;
-  let otherOutflow = 0;
 
   movements.forEach((m) => {
     const val = Number(m.amount) || 0;
     if (m.type === 'entrada') {
-      totalInflows += val;
-    } else {
-      totalOutflows += val;
-      if (m.originType === 'recibo_vencimento' || m.category === 'Salários & Ordenados') {
-        salariesOutflow += val;
-      } else if (m.originType === 'adiantamento' || m.category === 'Adiantamento / Vale') {
-        advancesOutflow += val;
-      } else if (m.originType === 'fatura_obra' || m.category === 'Fatura de Obra / Materiais') {
-        invoicesOutflow += val;
+      if (m.originType === 'recebimento_obra' || m.category === 'Recebimento de Obra') {
+        portfolioMovementInflows += val;
       } else {
-        otherOutflow += val;
+        manualInflows += val;
       }
+    } else if (m.originType === 'recibo_vencimento' || m.category === 'Salários & Ordenados') {
+      salariesOutflow += val;
+    } else if (m.originType === 'adiantamento' || m.category === 'Adiantamento / Vale') {
+      advancesOutflow += val;
+    } else if (m.originType === 'fatura_obra' || m.category === 'Fatura de Obra / Materiais') {
+      invoicesOutflow += val;
+    } else {
+      otherOutflow += val;
     }
   });
 
+  // Garante sincronia exata entre Carteiras Contratadas (pagamentos marcados como Pago) e Caixa
+  const syncedPortfolioReceived = Math.max(portfolioReceived, portfolioMovementInflows);
+  const totalInflows = syncedPortfolioReceived + manualInflows;
+  const totalOutflows = salariesOutflow + advancesOutflow + invoicesOutflow + otherOutflow;
+
   return {
     openingBalance: Number(openingBalance.toFixed(2)),
+    portfolioContracted: Number(portfolioContracted.toFixed(2)),
+    portfolioReceived: Number(syncedPortfolioReceived.toFixed(2)),
+    portfolioOpen: Number(portfolioOpen.toFixed(2)),
+    manualInflows: Number(manualInflows.toFixed(2)),
     totalInflows: Number(totalInflows.toFixed(2)),
     totalOutflows: Number(totalOutflows.toFixed(2)),
     salariesOutflow: Number(salariesOutflow.toFixed(2)),

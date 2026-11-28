@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    SPARK & SMIRK ERP — Relatórios Avançados & Caixa da Empresa
-   Filtros robustos, abate automático no Caixa e PDF Spark & Smirk
+   Sincronizado com Carteiras Contratadas, Faturas, RH e PDF
    ═══════════════════════════════════════════════════════════ */
 
 import { store } from '../core/store.js';
@@ -33,14 +33,14 @@ const TAX_MODE_LABELS = {
   misto: 'Misto (SS + Por Fora)',
   adiantamento: 'Adiantamento / Vale',
   fatura: 'Fatura / Materiais',
-  receita: 'Recebimento Obra',
+  receita: 'Carteira Contratada',
   geral: 'Geral',
 };
 
 export class RelatoriosAvancadosModule {
   constructor() {
     this.viewMode = 'overview'; // 'overview' | 'cash' | 'saturdays'
-    this.periodMode = 'month'; // 'month' | 'range' | 'year' | 'all'
+    this.periodMode = 'all'; // 'all' | 'month' | 'year' | 'range'
     this.dateFrom = '';
     this.dateTo = '';
     this.yearFilter = String(new Date().getFullYear());
@@ -79,7 +79,7 @@ export class RelatoriosAvancadosModule {
       const b = this.dateTo ? formatDatePT(this.dateTo) : 'Hoje';
       return `${a} até ${b}`;
     }
-    return 'Histórico Completo';
+    return 'Carteira Global & Histórico Completo';
   }
 
   _getFilterSummaryText(employees, projects, month) {
@@ -111,43 +111,44 @@ export class RelatoriosAvancadosModule {
     const cashSummary = computeCompanyCashSummary(state);
 
     // 1. Movimentos de Caixa filtrados no período + filtros robustos
-    const cashRows = cashSummary.movements.filter((m) => {
-      if (!this._matchesPeriodDate(m.date, m.month, month)) return false;
-      if (this.employeeFilter !== 'all' && m.employeeId !== this.employeeFilter) return false;
-      if (this.projectFilter !== 'all' && m.projectId !== this.projectFilter) return false;
-      if (this.deptFilter !== 'all') {
-        const emp = empMap.get(m.employeeId);
-        if (!emp || emp.department !== this.deptFilter) return false;
-      }
-      if (this.flowFilter === 'entrada' && m.type !== 'entrada') return false;
-      if (this.flowFilter === 'saida' && m.type !== 'saida') return false;
-      if (
-        this.flowFilter === 'rh' &&
-        !['recibo_vencimento', 'adiantamento'].includes(m.originType) &&
-        !['Salários & Ordenados', 'Adiantamento / Vale'].includes(m.category)
-      ) {
-        return false;
-      }
-      if (
-        this.flowFilter === 'obras' &&
-        !['fatura_obra', 'recebimento_obra'].includes(m.originType) &&
-        !['Fatura de Obra / Materiais', 'Recebimento de Obra'].includes(m.category)
-      ) {
-        return false;
-      }
-      if (this.taxFilter !== 'all' && m.taxMode !== this.taxFilter) return false;
-      if (query) {
-        const hay = `${m.description || ''} ${m.category || ''} ${m.notes || ''} ${m.projectId || ''}`.toLowerCase();
-        if (!hay.includes(query)) return false;
-      }
-      return true;
-    }).map((m) => ({
-      ...m,
-      taxModeLabel: TAX_MODE_LABELS[m.taxMode] || m.taxMode || 'Geral',
-    }));
+    const cashRows = cashSummary.movements
+      .filter((m) => {
+        if (!this._matchesPeriodDate(m.date, m.month, month)) return false;
+        if (this.employeeFilter !== 'all' && m.employeeId !== this.employeeFilter) return false;
+        if (this.projectFilter !== 'all' && m.projectId !== this.projectFilter) return false;
+        if (this.deptFilter !== 'all') {
+          const emp = empMap.get(m.employeeId);
+          if (!emp || emp.department !== this.deptFilter) return false;
+        }
+        if (this.flowFilter === 'entrada' && m.type !== 'entrada') return false;
+        if (this.flowFilter === 'saida' && m.type !== 'saida') return false;
+        if (
+          this.flowFilter === 'rh' &&
+          !['recibo_vencimento', 'adiantamento'].includes(m.originType) &&
+          !['Salários & Ordenados', 'Adiantamento / Vale'].includes(m.category)
+        ) {
+          return false;
+        }
+        if (
+          this.flowFilter === 'obras' &&
+          !['fatura_obra', 'recebimento_obra'].includes(m.originType) &&
+          !['Fatura de Obra / Materiais', 'Recebimento de Obra'].includes(m.category)
+        ) {
+          return false;
+        }
+        if (this.taxFilter !== 'all' && m.taxMode !== this.taxFilter) return false;
+        if (query) {
+          const hay = `${m.description || ''} ${m.category || ''} ${m.notes || ''} ${m.projectId || ''}`.toLowerCase();
+          if (!hay.includes(query)) return false;
+        }
+        return true;
+      })
+      .map((m) => ({
+        ...m,
+        taxModeLabel: TAX_MODE_LABELS[m.taxMode] || m.taxMode || 'Geral',
+      }));
 
-    // 2. RH & Sábados filtrados
-    const targetMonthForRh = this.periodMode === 'month' ? month : month;
+    // 2. RH & Sábados (sempre usa o mês de referência da barra superior para assiduidade/sábados)
     const rhEmployees = allEmployees.filter((emp) => {
       if (this.employeeFilter !== 'all' && emp.id !== this.employeeFilter) return false;
       if (this.deptFilter !== 'all' && emp.department !== this.deptFilter) return false;
@@ -172,7 +173,7 @@ export class RelatoriosAvancadosModule {
           emp,
           state.attendance,
           state.employeeAdvances,
-          targetMonthForRh
+          month
         );
         const empPayslips = payslipsByEmp.get(emp.id) || [];
         return {
@@ -205,7 +206,7 @@ export class RelatoriosAvancadosModule {
         return true;
       });
 
-    // 3. Faturas (Saídas) e Recebimentos (Entradas) de Obras
+    // 3. Faturas (Saídas) e Recebimentos das Carteiras Contratadas (Entradas)
     const invoiceRows = (state.projectInvoices || [])
       .filter((inv) => {
         if (this.projectFilter !== 'all' && inv.projectId !== this.projectFilter) return false;
@@ -242,7 +243,7 @@ export class RelatoriosAvancadosModule {
           date: dt,
           projectLabel: `${proj.code} — ${proj.name}`,
           clientName: proj.clientName,
-          description: pay.description || 'Recebimento de Obra',
+          description: pay.description || 'Recebimento de Carteira Contratada',
           method: pay.method || 'Transferência Bancária',
           amount: Number(pay.amount) || 0,
         });
@@ -267,7 +268,7 @@ export class RelatoriosAvancadosModule {
         employeeName: empMap.get(adv.employeeId)?.name || 'Colaborador',
       }));
 
-    // KPIs agregados do período filtrado
+    // KPIs filtrados no período selecionado
     const periodInflows = cashRows
       .filter((m) => m.type === 'entrada')
       .reduce((s, m) => s + (Number(m.amount) || 0), 0);
@@ -293,6 +294,9 @@ export class RelatoriosAvancadosModule {
       kpis: {
         openingBalance: cashSummary.openingBalance,
         cashBalance: cashSummary.currentBalance,
+        portfolioContracted: cashSummary.portfolioContracted,
+        portfolioReceived: cashSummary.portfolioReceived,
+        portfolioOpen: cashSummary.portfolioOpen,
         periodInflows,
         inflowsCount: cashRows.filter((m) => m.type === 'entrada').length,
         periodOutflows,
@@ -326,13 +330,14 @@ export class RelatoriosAvancadosModule {
     });
     const years = [...yearsSet].sort().reverse();
     const departments = [...new Set((state.employees || []).map((e) => e.department).filter(Boolean))].sort();
+    const isGlobalMode = this.periodMode === 'all' && this.employeeFilter === 'all' && this.deptFilter === 'all' && this.projectFilter === 'all' && this.flowFilter === 'all' && this.taxFilter === 'all' && !query;
 
     container.innerHTML = `
-      <div class="erp-dash-banner" style="margin-bottom:18px;">
+      <div class="erp-dash-banner">
         <div>
           <div class="erp-dash-banner__title">Relatórios Avançados &amp; Caixa da Empresa</div>
           <div class="erp-dash-banner__sub">
-            Consolidação inteligente em tempo real de Salários, Sábados, Vales, Faturas de Obras, Entradas e Abate Automático no Caixa (${escapeHtml(this._getPeriodLabel(month))}).
+            Sincronizado 100% com as <strong>Carteiras Contratadas</strong>: todo o recebimento das obras entra no Caixa e todo o salário, vale e fatura abate automaticamente.
           </div>
         </div>
         <div class="erp-dash-banner__actions" style="flex-wrap:wrap;">
@@ -355,51 +360,51 @@ export class RelatoriosAvancadosModule {
         </div>
       </div>
 
-      <!-- KPIs Executivos -->
-      <div class="erp-kpi-grid" style="margin-bottom:18px;">
+      <!-- KPIs Reconciliados (Carteira Contratada -> Entradas -> Abates -> Saldo em Caixa) -->
+      <div class="erp-kpi-grid">
         <div class="erp-kpi-card erp-kpi-card--primary">
           <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Saldo Atual em Caixa</span>
-            <span class="erp-kpi-card__icon">${ICONS.euro}</span>
+            <span class="erp-kpi-card__label">Carteira Contratada Total</span>
+            <span class="erp-kpi-card__icon">${ICONS.building}</span>
           </div>
-          <div class="erp-kpi-card__value" style="color:${kpis.cashBalance >= 0 ? 'var(--erp-success)' : 'var(--erp-danger)'};">${escapeHtml(formatCurrency(kpis.cashBalance))}</div>
-          <div class="erp-kpi-card__meta">Inicial ${escapeHtml(formatCurrency(kpis.openingBalance))} · Abate RH e Faturas automático</div>
+          <div class="erp-kpi-card__value">${escapeHtml(formatCurrency(cashSummary.portfolioContracted))}</div>
+          <div class="erp-kpi-card__meta">A receber em aberto: ${escapeHtml(formatCurrency(cashSummary.portfolioOpen))}</div>
         </div>
 
         <div class="erp-kpi-card erp-kpi-card--success">
           <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Entradas (${escapeHtml(this._getPeriodLabel(month))})</span>
-            <span class="erp-kpi-card__icon">${ICONS.building}</span>
+            <span class="erp-kpi-card__label">Entradas no Caixa (Carteiras)</span>
+            <span class="erp-kpi-card__icon">${ICONS.checkCircle}</span>
           </div>
-          <div class="erp-kpi-card__value" style="color:var(--erp-success);">+ ${escapeHtml(formatCurrency(kpis.periodInflows))}</div>
-          <div class="erp-kpi-card__meta">${kpis.inflowsCount} recebimento(s) / reforço(s)</div>
+          <div class="erp-kpi-card__value" style="color:var(--erp-success);">+ ${escapeHtml(formatCurrency(isGlobalMode ? cashSummary.totalInflows : kpis.periodInflows))}</div>
+          <div class="erp-kpi-card__meta">Carteiras: ${escapeHtml(formatCurrency(cashSummary.portfolioReceived))}${cashSummary.manualInflows > 0 ? ` · Aportes: ${escapeHtml(formatCurrency(cashSummary.manualInflows))}` : ''}</div>
         </div>
 
         <div class="erp-kpi-card erp-kpi-card--danger">
           <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Saídas RH + Faturas</span>
+            <span class="erp-kpi-card__label">Saídas Abatidas (Faturas + RH)</span>
             <span class="erp-kpi-card__icon">${ICONS.receipt}</span>
           </div>
-          <div class="erp-kpi-card__value" style="color:var(--erp-danger);">- ${escapeHtml(formatCurrency(kpis.periodOutflows))}</div>
-          <div class="erp-kpi-card__meta">RH ${escapeHtml(formatCurrency(kpis.periodPayrollTotal))} · Faturas ${escapeHtml(formatCurrency(kpis.periodInvoices))}</div>
+          <div class="erp-kpi-card__value" style="color:var(--erp-danger);">- ${escapeHtml(formatCurrency(isGlobalMode ? cashSummary.totalOutflows : kpis.periodOutflows))}</div>
+          <div class="erp-kpi-card__meta">Faturas: ${escapeHtml(formatCurrency(isGlobalMode ? cashSummary.invoicesOutflow : kpis.periodInvoices))} · RH: ${escapeHtml(formatCurrency(isGlobalMode ? cashSummary.salariesOutflow + cashSummary.advancesOutflow : kpis.periodPayrollTotal))}</div>
         </div>
 
         <div class="erp-kpi-card erp-kpi-card--warning">
           <div class="erp-kpi-card__head">
-            <span class="erp-kpi-card__label">Trabalho aos Sábados</span>
-            <span class="erp-kpi-card__icon">${ICONS.calendar}</span>
+            <span class="erp-kpi-card__label">Saldo Real do Caixa da Empresa</span>
+            <span class="erp-kpi-card__icon">${ICONS.euro}</span>
           </div>
-          <div class="erp-kpi-card__value" style="color:var(--erp-accent-dark);">${kpis.saturdayCount} sáb. · ${escapeHtml(formatCurrency(kpis.saturdayTotal))}</div>
-          <div class="erp-kpi-card__meta">Recibo SS ${escapeHtml(formatCurrency(kpis.saturdayReceiptTotal))} · Por Fora ${escapeHtml(formatCurrency(kpis.saturdayOffTotal))}</div>
+          <div class="erp-kpi-card__value" style="color:${cashSummary.currentBalance >= 0 ? 'var(--erp-success)' : 'var(--erp-danger)'};">${escapeHtml(formatCurrency(cashSummary.currentBalance))}</div>
+          <div class="erp-kpi-card__meta">Inicial ${escapeHtml(formatCurrency(cashSummary.openingBalance))} + Entradas - Saídas</div>
         </div>
       </div>
 
-      <!-- Painel de Filtros Avançados -->
-      <section class="erp-panel" style="margin-bottom:18px;">
+      <!-- Painel de Filtros Avançados (Ponta a Ponta) -->
+      <section class="erp-panel">
         <div class="erp-panel__header">
           <div class="erp-panel__title-group">
-            <h2 class="erp-panel__title">Filtros Inteligentes &amp; Sub-abas de Análise</h2>
-            <p class="erp-panel__desc">Refine o período, colaborador, departamento, obra, tipo de fluxo ou regime fiscal antes de analisar ou gerar o PDF.</p>
+            <h2 class="erp-panel__title">Filtros Inteligentes &amp; Sub-abas</h2>
+            <p class="erp-panel__desc">Mesmos dados do Dashboard e Carteiras Contratadas — alterne entre Carteira Completa, Mês de Referência ou Filtros Avançados.</p>
           </div>
           <div class="erp-subtabs">
             <button type="button" class="erp-subtab ${this.viewMode === 'overview' ? 'is-active' : ''}" data-rep-tab="overview">Resumo &amp; PDF</button>
@@ -407,23 +412,20 @@ export class RelatoriosAvancadosModule {
               Caixa da Empresa <span class="erp-subtab__badge">${dataset.cashRows.length}</span>
             </button>
             <button type="button" class="erp-subtab ${this.viewMode === 'saturdays' ? 'is-active' : ''}" data-rep-tab="saturdays">
-              RH, Sábados &amp; Obras <span class="erp-subtab__badge">${dataset.rhRows.length}</span>
+              RH, Sábados &amp; Carteiras <span class="erp-subtab__badge">${dataset.rhRows.length}</span>
             </button>
           </div>
         </div>
 
         <div class="erp-panel__body">
-          <div class="erp-form-grid erp-form-grid--3" style="margin-bottom:12px;">
-            <div class="erp-field">
-              <label for="repPeriodMode">Período de Análise</label>
-              <select id="repPeriodMode">
-                <option value="month" ${this.periodMode === 'month' ? 'selected' : ''}>Mês de Referência (${escapeHtml(formatMonthLabel(month))})</option>
-                <option value="range" ${this.periodMode === 'range' ? 'selected' : ''}>Intervalo de Datas Personalizado</option>
-                <option value="year" ${this.periodMode === 'year' ? 'selected' : ''}>Ano Completo</option>
-                <option value="all" ${this.periodMode === 'all' ? 'selected' : ''}>Todo o Histórico</option>
-              </select>
-            </div>
+          <div class="erp-pill-switch" style="margin-bottom:14px;">
+            <button type="button" class="${this.periodMode === 'all' ? 'is-active' : ''}" data-rep-period-pill="all">Toda a Carteira &amp; Histórico</button>
+            <button type="button" class="${this.periodMode === 'month' ? 'is-active' : ''}" data-rep-period-pill="month">Mês: ${escapeHtml(formatMonthLabel(month))}</button>
+            <button type="button" class="${this.periodMode === 'year' ? 'is-active' : ''}" data-rep-period-pill="year">Ano: ${escapeHtml(this.yearFilter)}</button>
+            <button type="button" class="${this.periodMode === 'range' ? 'is-active' : ''}" data-rep-period-pill="range">Intervalo de Datas</button>
+          </div>
 
+          <div class="erp-form-grid erp-form-grid--3" style="margin-bottom:12px;">
             ${
               this.periodMode === 'range'
                 ? `<div class="erp-field">
@@ -436,7 +438,7 @@ export class RelatoriosAvancadosModule {
                    </div>`
                 : this.periodMode === 'year'
                   ? `<div class="erp-field">
-                       <label for="repYearSelect">Selecionar Ano</label>
+                       <label for="repYearSelect">Ano</label>
                        <select id="repYearSelect">
                          ${years.map((y) => `<option value="${escapeHtml(y)}" ${this.yearFilter === y ? 'selected' : ''}>${escapeHtml(y)}</option>`).join('')}
                        </select>
@@ -461,7 +463,7 @@ export class RelatoriosAvancadosModule {
             </div>
 
             <div class="erp-field">
-              <label for="repProjFilter">Obra / Projeto</label>
+              <label for="repProjFilter">Obra / Carteira Contratada</label>
               <select id="repProjFilter">
                 <option value="all">Todas as Obras</option>
                 ${(state.projects || []).map((p) => `<option value="${escapeHtml(p.code || p.id)}" ${this.projectFilter === (p.code || p.id) ? 'selected' : ''}>${escapeHtml(p.code)} — ${escapeHtml(p.name)}</option>`).join('')}
@@ -498,14 +500,14 @@ export class RelatoriosAvancadosModule {
         </div>
       </section>
 
-      <div id="repSubContent"></div>
+      <div id="repSubContent" style="display:flex;flex-direction:column;gap:20px;"></div>
     `;
 
     const subTarget = container.querySelector('#repSubContent');
     if (this.viewMode === 'cash') {
       this._renderCashTab(subTarget, dataset, canManageCash);
     } else if (this.viewMode === 'saturdays') {
-      this._renderDetailsTab(subTarget, dataset);
+      this._renderDetailsTab(subTarget, dataset, month);
     } else {
       this._renderOverviewPdfTab(subTarget, dataset, month);
     }
@@ -517,10 +519,13 @@ export class RelatoriosAvancadosModule {
       });
     });
 
-    container.querySelector('#repPeriodMode')?.addEventListener('change', (e) => {
-      this.periodMode = e.target.value;
-      store._commit();
+    container.querySelectorAll('[data-rep-period-pill]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.periodMode = btn.dataset.repPeriodPill;
+        store._commit();
+      });
     });
+
     container.querySelector('#repDateFrom')?.addEventListener('change', (e) => {
       this.dateFrom = e.target.value;
       store._commit();
@@ -554,7 +559,7 @@ export class RelatoriosAvancadosModule {
       store._commit();
     });
     container.querySelector('#btnClearReportFilters')?.addEventListener('click', () => {
-      this.periodMode = 'month';
+      this.periodMode = 'all';
       this.dateFrom = '';
       this.dateTo = '';
       this.flowFilter = 'all';
@@ -580,14 +585,14 @@ export class RelatoriosAvancadosModule {
   }
 
   _renderOverviewPdfTab(target, dataset, month) {
-    const { kpis, rhRows, cashRows, invoiceRows, inflowRows } = dataset;
+    const { cashSummary, kpis, rhRows, cashRows, invoiceRows, inflowRows } = dataset;
 
     target.innerHTML = `
-      <section class="erp-panel" style="margin-bottom:18px;">
+      <section class="erp-panel">
         <div class="erp-panel__header">
           <div class="erp-panel__title-group">
-            <h3 class="erp-panel__title">Personalizar Secções do PDF Executivo Spark &amp; Smirk</h3>
-            <p class="erp-panel__desc">Escolha exatamente o que pretende incluir no documento PDF oficial para direção ou contabilidade.</p>
+            <h3 class="erp-panel__title">Construtor de Relatório PDF Spark &amp; Smirk</h3>
+            <p class="erp-panel__desc">Selecione as secções incluídas no PDF oficial para direção ou contabilidade.</p>
           </div>
           <button type="button" class="erp-btn erp-btn--primary erp-btn--sm" id="btnPdfFromBuilder">
             ${ICONS.download}<span>Gerar &amp; Baixar PDF Agora</span>
@@ -597,15 +602,15 @@ export class RelatoriosAvancadosModule {
           <div class="erp-form-grid">
             <label class="erp-check-row">
               <input type="checkbox" data-pdf-sec="rh" ${this.pdfSections.rh ? 'checked' : ''}>
-              <span><strong>1. Folha RH &amp; Sábados Trabalhados</strong> (${rhRows.length} colaborador(es) · ${kpis.saturdayCount} sáb. pagos)</span>
+              <span><strong>1. Folha RH &amp; Sábados Trabalhados</strong> (${rhRows.length} colaborador(es) · ${kpis.saturdayCount} sáb. em ${escapeHtml(formatMonthLabel(month))})</span>
             </label>
             <label class="erp-check-row">
               <input type="checkbox" data-pdf-sec="cash" ${this.pdfSections.cash ? 'checked' : ''}>
-              <span><strong>2. Extrato do Caixa da Empresa</strong> (${cashRows.length} movimento(s) · Saldo ${escapeHtml(formatCurrency(kpis.cashBalance))})</span>
+              <span><strong>2. Extrato do Caixa da Empresa</strong> (${cashRows.length} movimento(s) · Saldo Real ${escapeHtml(formatCurrency(cashSummary.currentBalance))})</span>
             </label>
             <label class="erp-check-row">
               <input type="checkbox" data-pdf-sec="projects" ${this.pdfSections.projects ? 'checked' : ''}>
-              <span><strong>3. Faturas de Obras &amp; Entradas</strong> (${invoiceRows.length} fatura(s) · ${inflowRows.length} recebimento(s))</span>
+              <span><strong>3. Faturas de Obras &amp; Carteiras</strong> (${invoiceRows.length} fatura(s) · ${inflowRows.length} entrada(s))</span>
             </label>
             <label class="erp-check-row">
               <input type="checkbox" data-pdf-sec="advances" ${this.pdfSections.advances ? 'checked' : ''}>
@@ -615,92 +620,123 @@ export class RelatoriosAvancadosModule {
         </div>
       </section>
 
-      <div class="erp-account-grid">
-        <section class="erp-panel">
-          <div class="erp-panel__header">
-            <div class="erp-panel__title-group">
-              <h3 class="erp-panel__title">Fecho Financeiro — ${escapeHtml(this._getPeriodLabel(month))}</h3>
-              <p class="erp-panel__desc">Resumo de entradas, saídas RH, faturas e impacto no Caixa da Empresa</p>
-            </div>
+      <!-- Reconciliação Ponta a Ponta -->
+      <section class="erp-panel">
+        <div class="erp-panel__header">
+          <div class="erp-panel__title-group">
+            <h3 class="erp-panel__title">Reconciliação: Carteiras Contratadas → Caixa da Empresa</h3>
+            <p class="erp-panel__desc">Alinhamento exato com os valores do Dashboard: é através dos recebimentos das Carteiras Contratadas que o dinheiro entra em Caixa.</p>
           </div>
-          <div class="erp-table-wrap">
-            <table class="erp-table">
-              <tbody>
-                <tr>
-                  <td><strong>Saldo Inicial de Abertura do Caixa</strong></td>
-                  <td style="text-align:right;font-weight:700;">${escapeHtml(formatCurrency(kpis.openingBalance))}</td>
-                </tr>
-                <tr>
-                  <td><strong>(+) Entradas / Recebimentos de Obras &amp; Aportes</strong></td>
-                  <td style="text-align:right;font-weight:700;color:var(--erp-success);">+ ${escapeHtml(formatCurrency(kpis.periodInflows))}</td>
-                </tr>
-                <tr>
-                  <td><strong>(-) Pagamentos de Salários &amp; Ordenados (Recibos Pagos)</strong></td>
-                  <td style="text-align:right;font-weight:700;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(kpis.periodSalaries))}</td>
-                </tr>
-                <tr>
-                  <td><strong>(-) Adiantamentos / Vales Retirados</strong></td>
-                  <td style="text-align:right;font-weight:700;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(kpis.periodAdvances))}</td>
-                </tr>
-                <tr>
-                  <td><strong>(-) Saídas de Faturas de Obras &amp; Materiais</strong></td>
-                  <td style="text-align:right;font-weight:700;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(kpis.periodInvoices))}</td>
-                </tr>
-                <tr style="background:var(--erp-surface-alt);">
-                  <td><strong>Balanço Líquido do Período</strong></td>
-                  <td style="text-align:right;font-weight:800;color:${kpis.periodNetResult >= 0 ? 'var(--erp-success)' : 'var(--erp-danger)'};">${escapeHtml(formatCurrency(kpis.periodNetResult))}</td>
-                </tr>
-                <tr style="background:var(--erp-primary-soft);">
-                  <td><strong style="font-size:14px;">SALDO FINAL ATUAL EM CAIXA</strong></td>
-                  <td style="text-align:right;font-size:16px;font-weight:900;color:${kpis.cashBalance >= 0 ? 'var(--erp-success)' : 'var(--erp-danger)'};">${escapeHtml(formatCurrency(kpis.cashBalance))}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+          <span class="erp-badge erp-badge--success">100% Sincronizado com Dashboard</span>
+        </div>
+        <div class="erp-table-wrap">
+          <table class="erp-table">
+            <thead>
+              <tr>
+                <th>Rubrica Financeira</th>
+                <th>Origem no Sistema</th>
+                <th style="text-align:right">Global (Carteiras &amp; Caixa)</th>
+                <th style="text-align:right">No Filtro (${escapeHtml(this._getPeriodLabel(month))})</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Carteira Contratada c/ IVA (Total Obras)</strong></td>
+                <td><span class="erp-cell-sub">Soma contratual de todas as obras</span></td>
+                <td style="text-align:right;font-weight:700;">${escapeHtml(formatCurrency(cashSummary.portfolioContracted))}</td>
+                <td style="text-align:right;color:var(--erp-text-muted);">—</td>
+              </tr>
+              <tr>
+                <td><strong>Saldo em Aberto nas Carteiras (Por Receber)</strong></td>
+                <td><span class="erp-cell-sub">Prestações ainda por liquidar pelos clientes</span></td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-warning);">${escapeHtml(formatCurrency(cashSummary.portfolioOpen))}</td>
+                <td style="text-align:right;color:var(--erp-text-muted);">—</td>
+              </tr>
+              <tr>
+                <td><strong>(+) Dinheiro Recebido das Carteiras Contratadas</strong></td>
+                <td><span class="erp-cell-sub">Prestações marcadas como Pagas nas Obras</span></td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-success);">+ ${escapeHtml(formatCurrency(cashSummary.portfolioReceived))}</td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-success);">+ ${escapeHtml(formatCurrency(inflowRows.reduce((s, r) => s + r.amount, 0)))}</td>
+              </tr>
+              <tr>
+                <td><strong>(+) Saldo Inicial + Aportes Manuais</strong></td>
+                <td><span class="erp-cell-sub">Saldo inicial configurado e reforços de caixa</span></td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-success);">+ ${escapeHtml(formatCurrency(cashSummary.openingBalance + cashSummary.manualInflows))}</td>
+                <td style="text-align:right;color:var(--erp-text-muted);">—</td>
+              </tr>
+              <tr>
+                <td><strong>(-) Saídas de Faturas &amp; Materiais de Obras</strong></td>
+                <td><span class="erp-cell-sub">Faturas lançadas nas obras (abate automático)</span></td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(cashSummary.invoicesOutflow))}</td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(kpis.periodInvoices))}</td>
+              </tr>
+              <tr>
+                <td><strong>(-) Pagamentos de Ordenados (Recibos Pagos)</strong></td>
+                <td><span class="erp-cell-sub">Fechos mensais emitidos como Pago (abate automático)</span></td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(cashSummary.salariesOutflow))}</td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(kpis.periodSalaries))}</td>
+              </tr>
+              <tr>
+                <td><strong>(-) Adiantamentos / Vales Retirados (RH)</strong></td>
+                <td><span class="erp-cell-sub">Vales adiantados aos colaboradores (abate automático)</span></td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(cashSummary.advancesOutflow))}</td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(kpis.periodAdvances))}</td>
+              </tr>
+              <tr style="background:var(--erp-primary-soft);">
+                <td colspan="2"><strong style="font-size:14px;">SALDO REAL ATUAL NO CAIXA DA EMPRESA</strong></td>
+                <td style="text-align:right;font-size:16px;font-weight:900;color:${cashSummary.currentBalance >= 0 ? 'var(--erp-success)' : 'var(--erp-danger)'};">${escapeHtml(formatCurrency(cashSummary.currentBalance))}</td>
+                <td style="text-align:right;font-weight:800;color:${kpis.periodNetResult >= 0 ? 'var(--erp-success)' : 'var(--erp-danger)'};">${escapeHtml(formatCurrency(kpis.periodNetResult))} (fluxo)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-        <section class="erp-panel">
-          <div class="erp-panel__header">
-            <div class="erp-panel__title-group">
-              <h3 class="erp-panel__title">Últimos Abates &amp; Entradas no Caixa</h3>
-              <p class="erp-panel__desc">Sincronização automática a partir dos recibos, vales e faturas</p>
-            </div>
+      <!-- Lista com Scroll Interno (Ponta a Ponta) -->
+      <section class="erp-panel">
+        <div class="erp-panel__header">
+          <div class="erp-panel__title-group">
+            <h3 class="erp-panel__title">Últimas Entradas &amp; Abates no Caixa (${cashRows.length})</h3>
+            <p class="erp-panel__desc">Lista com scroll interno — recebimentos das carteiras, faturas, salários e adiantamentos.</p>
           </div>
-          <div class="erp-table-wrap">
-            <table class="erp-table">
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Movimento</th>
-                  <th style="text-align:right">Valor</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${
-                  cashRows.length === 0
-                    ? `<tr><td colspan="3" style="text-align:center;color:var(--erp-text-muted);padding:24px;">Sem movimentos neste filtro.</td></tr>`
-                    : cashRows
-                        .slice(0, 8)
-                        .map(
-                          (m) => `
-                      <tr>
-                        <td>${escapeHtml(formatDatePT(m.date))}</td>
-                        <td>
-                          <div class="erp-cell-title">${escapeHtml(m.description)}</div>
-                          <div class="erp-cell-sub">${escapeHtml(m.category)}</div>
-                        </td>
-                        <td style="text-align:right;font-weight:700;color:${m.type === 'entrada' ? 'var(--erp-success)' : 'var(--erp-danger)'};">
-                          ${m.type === 'entrada' ? '+' : '-'} ${escapeHtml(formatCurrency(m.amount))}
-                        </td>
-                      </tr>`
-                        )
-                        .join('')
-                }
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
+        </div>
+        <div class="erp-table-wrap">
+          <table class="erp-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Categoria</th>
+                <th>Descrição</th>
+                <th>Regime</th>
+                <th style="text-align:right">Valor (€)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                cashRows.length === 0
+                  ? `<tr><td colspan="5" style="text-align:center;color:var(--erp-text-muted);padding:28px;">Sem movimentos para os filtros selecionados.</td></tr>`
+                  : cashRows
+                      .map(
+                        (m) => `
+                    <tr>
+                      <td style="white-space:nowrap;">${escapeHtml(formatDatePT(m.date))}</td>
+                      <td><span class="erp-badge ${m.type === 'entrada' ? 'erp-badge--success' : 'erp-badge--danger'}">${escapeHtml(m.category)}</span></td>
+                      <td>
+                        <div class="erp-cell-title">${escapeHtml(m.description)}</div>
+                        ${m.notes ? `<div class="erp-cell-sub">${escapeHtml(m.notes)}</div>` : ''}
+                      </td>
+                      <td><span class="erp-badge erp-badge--neutral">${escapeHtml(m.taxModeLabel)}</span></td>
+                      <td style="text-align:right;font-weight:800;white-space:nowrap;color:${m.type === 'entrada' ? 'var(--erp-success)' : 'var(--erp-danger)'};">
+                        ${m.type === 'entrada' ? '+' : '-'} ${escapeHtml(formatCurrency(m.amount))}
+                      </td>
+                    </tr>`
+                      )
+                      .join('')
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
     `;
 
     target.querySelectorAll('[data-pdf-sec]').forEach((cb) => {
@@ -721,13 +757,13 @@ export class RelatoriosAvancadosModule {
       <section class="erp-panel">
         <div class="erp-panel__header">
           <div class="erp-panel__title-group">
-            <h3 class="erp-panel__title">Livro de Caixa Empresarial — Entradas &amp; Saídas</h3>
-            <p class="erp-panel__desc">Pagamentos de ordenados, adiantamentos e faturas abatem automaticamente do Caixa da Empresa.</p>
+            <h3 class="erp-panel__title">Livro de Caixa Empresarial — Entradas &amp; Saídas (${cashRows.length})</h3>
+            <p class="erp-panel__desc">Entradas das Carteiras Contratadas e abates automáticos de salários, vales e faturas.</p>
           </div>
         </div>
         ${
           cashRows.length === 0
-            ? `<div class="erp-empty">${ICONS.euro}<div class="erp-empty__title">Nenhum movimento de caixa encontrado</div><p class="erp-empty__desc">Emita recibos pagos, adiantamentos, faturas ou registe um movimento manual.</p></div>`
+            ? `<div class="erp-empty">${ICONS.euro}<div class="erp-empty__title">Nenhum movimento de caixa encontrado</div><p class="erp-empty__desc">Emita recibos pagos, adiantamentos, faturas ou marque prestações pagas nas Obras.</p></div>`
             : `<div class="erp-table-wrap">
                  <table class="erp-table">
                    <thead>
@@ -752,20 +788,20 @@ export class RelatoriosAvancadosModule {
                                : 'erp-badge--danger';
                          return `
                          <tr>
-                           <td>${escapeHtml(formatDatePT(m.date))}</td>
+                           <td style="white-space:nowrap;">${escapeHtml(formatDatePT(m.date))}</td>
                            <td>
                              <span class="erp-badge ${badgeCls}">${escapeHtml(m.category)}</span>
-                             <div class="erp-cell-sub" style="margin-top:3px;">${isManual ? 'Lançamento Manual' : 'Abate/Crédito Automático'}</div>
+                             <div class="erp-cell-sub" style="margin-top:3px;">${isManual ? 'Lançamento Manual' : 'Sincronização Automática'}</div>
                            </td>
                            <td>
                              <div class="erp-cell-title">${escapeHtml(m.description)}</div>
                              ${m.notes ? `<div class="erp-cell-sub">${escapeHtml(m.notes)}</div>` : ''}
                            </td>
                            <td><span class="erp-badge erp-badge--neutral">${escapeHtml(m.taxModeLabel)}</span></td>
-                           <td style="text-align:right;font-weight:800;color:${m.type === 'entrada' ? 'var(--erp-success)' : 'var(--erp-danger)'};">
+                           <td style="text-align:right;font-weight:800;white-space:nowrap;color:${m.type === 'entrada' ? 'var(--erp-success)' : 'var(--erp-danger)'};">
                              ${m.type === 'entrada' ? '+' : '-'} ${escapeHtml(formatCurrency(m.amount))}
                            </td>
-                           <td style="text-align:right">
+                           <td style="text-align:right;white-space:nowrap;">
                              ${
                                isManual && canManageCash
                                  ? `<button type="button" class="erp-icon-btn erp-icon-btn--danger" data-del-cash="${escapeHtml(m.id)}" title="Remover Movimento Manual">${ICONS.trash}</button>`
@@ -796,14 +832,14 @@ export class RelatoriosAvancadosModule {
     });
   }
 
-  _renderDetailsTab(target, dataset) {
+  _renderDetailsTab(target, dataset, month) {
     const { rhRows, invoiceRows, inflowRows } = dataset;
 
     target.innerHTML = `
-      <section class="erp-panel" style="margin-bottom:18px;">
+      <section class="erp-panel">
         <div class="erp-panel__header">
           <div class="erp-panel__title-group">
-            <h3 class="erp-panel__title">Colaboradores — Dias Úteis (Seg–Sex) vs Sábados Pagos</h3>
+            <h3 class="erp-panel__title">Colaboradores — Seg–Sex vs Sábados Pagos (${escapeHtml(formatMonthLabel(month))})</h3>
             <p class="erp-panel__desc">Detalhe completo de quantos sábados trabalhou cada funcionário e quanto recebeu em Recibo SS vs Por Fora.</p>
           </div>
         </div>
@@ -842,20 +878,20 @@ export class RelatoriosAvancadosModule {
                         ${
                           r.saturdayCount > 0
                             ? `<span class="erp-badge erp-badge--warning">${r.saturdayCount} sáb.</span>`
-                            : '<span class="erp-cell-sub">0</span>'
+                            : '<span class="erp-cell-sub">0 sáb.</span>'
                         }
                       </td>
-                      <td style="color:${r.saturdayReceiptTotal > 0 ? 'var(--erp-info)' : 'var(--erp-text-muted)'};font-weight:700;">
+                      <td style="color:${r.saturdayReceiptTotal > 0 ? 'var(--erp-info)' : 'var(--erp-text-muted)'};font-weight:700;white-space:nowrap;">
                         ${r.saturdayReceiptTotal > 0 ? `+ ${escapeHtml(formatCurrency(r.saturdayReceiptTotal))}` : '€ 0,00'}
                       </td>
-                      <td style="color:${r.saturdayOffTotal > 0 ? 'var(--erp-accent-dark)' : 'var(--erp-text-muted)'};font-weight:700;">
+                      <td style="color:${r.saturdayOffTotal > 0 ? 'var(--erp-accent-dark)' : 'var(--erp-text-muted)'};font-weight:700;white-space:nowrap;">
                         ${r.saturdayOffTotal > 0 ? `+ ${escapeHtml(formatCurrency(r.saturdayOffTotal))}` : '€ 0,00'}
                       </td>
                       <td>
                         <div class="erp-cell-sub">Duod. +${escapeHtml(formatCurrency(r.twelfthsTotal))}</div>
                         <div class="erp-cell-sub" style="color:var(--erp-danger);">SS -${escapeHtml(formatCurrency(r.ssDeduction))}</div>
                       </td>
-                      <td style="text-align:right;font-weight:800;color:var(--erp-success);">${escapeHtml(formatCurrency(r.netToPay))}</td>
+                      <td style="text-align:right;font-weight:800;white-space:nowrap;color:var(--erp-success);">${escapeHtml(formatCurrency(r.netToPay))}</td>
                     </tr>`
                       )
                       .join('')
@@ -865,89 +901,104 @@ export class RelatoriosAvancadosModule {
         </div>
       </section>
 
-      <div class="erp-account-grid">
-        <section class="erp-panel">
-          <div class="erp-panel__header">
-            <div class="erp-panel__title-group">
-              <h3 class="erp-panel__title">Saídas de Faturas de Obras (${invoiceRows.length})</h3>
-            </div>
+      <section class="erp-panel">
+        <div class="erp-panel__header">
+          <div class="erp-panel__title-group">
+            <h3 class="erp-panel__title">Entradas no Caixa via Carteiras Contratadas (${inflowRows.length})</h3>
+            <p class="erp-panel__desc">Prestações liquidadas pelos clientes das obras que alimentam diretamente o Caixa da Empresa.</p>
           </div>
-          <div class="erp-table-wrap">
-            <table class="erp-table">
-              <thead>
-                <tr><th>Data</th><th>Fornecedor / Obra</th><th style="text-align:right">Valor</th></tr>
-              </thead>
-              <tbody>
-                ${
-                  invoiceRows.length === 0
-                    ? `<tr><td colspan="3" style="text-align:center;color:var(--erp-text-muted);padding:20px;">Sem faturas neste filtro.</td></tr>`
-                    : invoiceRows
-                        .map(
-                          (inv) => `
-                        <tr>
-                          <td>${escapeHtml(formatDatePT(inv.invoiceDate))}</td>
-                          <td>
-                            <div class="erp-cell-title">#${escapeHtml(inv.invoiceNumber)} · ${escapeHtml(inv.supplier)}</div>
-                            <div class="erp-cell-sub">${escapeHtml(inv.projectLabel)}</div>
-                          </td>
-                          <td style="text-align:right;font-weight:700;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(inv.amount))}</td>
-                        </tr>`
-                        )
-                        .join('')
-                }
-              </tbody>
-            </table>
-          </div>
-        </section>
+        </div>
+        <div class="erp-table-wrap">
+          <table class="erp-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Obra / Carteira</th>
+                <th>Cliente</th>
+                <th>Prestação / Método</th>
+                <th style="text-align:right">Entrada (€)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                inflowRows.length === 0
+                  ? `<tr><td colspan="5" style="text-align:center;color:var(--erp-text-muted);padding:24px;">Sem recebimentos neste filtro.</td></tr>`
+                  : inflowRows
+                      .map(
+                        (inf) => `
+                      <tr>
+                        <td style="white-space:nowrap;">${escapeHtml(formatDatePT(inf.date))}</td>
+                        <td><div class="erp-cell-title">${escapeHtml(inf.projectLabel)}</div></td>
+                        <td>${escapeHtml(inf.clientName || '—')}</td>
+                        <td>
+                          <div class="erp-cell-title">${escapeHtml(inf.description)}</div>
+                          <div class="erp-cell-sub">${escapeHtml(inf.method)}</div>
+                        </td>
+                        <td style="text-align:right;font-weight:800;white-space:nowrap;color:var(--erp-success);">+ ${escapeHtml(formatCurrency(inf.amount))}</td>
+                      </tr>`
+                      )
+                      .join('')
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-        <section class="erp-panel">
-          <div class="erp-panel__header">
-            <div class="erp-panel__title-group">
-              <h3 class="erp-panel__title">Entradas / Recebimentos de Obras (${inflowRows.length})</h3>
-            </div>
+      <section class="erp-panel">
+        <div class="erp-panel__header">
+          <div class="erp-panel__title-group">
+            <h3 class="erp-panel__title">Saídas de Faturas &amp; Materiais de Obras (${invoiceRows.length})</h3>
+            <p class="erp-panel__desc">Todas as faturas de compras e subempreitadas abatidas do Caixa e do orçamento das obras.</p>
           </div>
-          <div class="erp-table-wrap">
-            <table class="erp-table">
-              <thead>
-                <tr><th>Data</th><th>Obra / Cliente</th><th style="text-align:right">Valor</th></tr>
-              </thead>
-              <tbody>
-                ${
-                  inflowRows.length === 0
-                    ? `<tr><td colspan="3" style="text-align:center;color:var(--erp-text-muted);padding:20px;">Sem recebimentos neste filtro.</td></tr>`
-                    : inflowRows
-                        .map(
-                          (inf) => `
-                        <tr>
-                          <td>${escapeHtml(formatDatePT(inf.date))}</td>
-                          <td>
-                            <div class="erp-cell-title">${escapeHtml(inf.description)}</div>
-                            <div class="erp-cell-sub">${escapeHtml(inf.projectLabel)} · ${escapeHtml(inf.clientName || '')}</div>
-                          </td>
-                          <td style="text-align:right;font-weight:700;color:var(--erp-success);">+ ${escapeHtml(formatCurrency(inf.amount))}</td>
-                        </tr>`
-                        )
-                        .join('')
-                }
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
+        </div>
+        <div class="erp-table-wrap">
+          <table class="erp-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>N.º Fatura</th>
+                <th>Fornecedor</th>
+                <th>Obra</th>
+                <th>Categoria</th>
+                <th style="text-align:right">Saída (€)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                invoiceRows.length === 0
+                  ? `<tr><td colspan="6" style="text-align:center;color:var(--erp-text-muted);padding:24px;">Sem faturas neste filtro.</td></tr>`
+                  : invoiceRows
+                      .map(
+                        (inv) => `
+                      <tr>
+                        <td style="white-space:nowrap;">${escapeHtml(formatDatePT(inv.invoiceDate))}</td>
+                        <td><strong>#${escapeHtml(inv.invoiceNumber)}</strong></td>
+                        <td>${escapeHtml(inv.supplier)}</td>
+                        <td><div class="erp-cell-title">${escapeHtml(inv.projectLabel)}</div></td>
+                        <td><span class="erp-badge erp-badge--neutral">${escapeHtml(inv.category)}</span></td>
+                        <td style="text-align:right;font-weight:800;white-space:nowrap;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(inv.amount))}</td>
+                      </tr>`
+                      )
+                      .join('')
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
     `;
   }
 
   _openCashOpeningModal(cashSummary) {
     openModal({
       title: 'Definir Saldo Inicial do Caixa da Empresa',
-      subtitle: 'Base de tesouraria guardada no Supabase para apuramento automático do saldo atual',
+      subtitle: 'Base de tesouraria guardada no Supabase para somar com as Carteiras Contratadas',
       bodyHtml: `
         <form id="cashOpeningForm">
           <div class="erp-form-grid">
             <div class="erp-field erp-field--full">
               <label for="cashOpenAmt">Saldo Inicial / Base em Caixa (€) *</label>
               <input type="text" inputmode="numeric" data-currency-euro id="cashOpenAmt" value="${escapeHtml(cashSummary.openingBalance || 0)}" required>
-              <span class="erp-field__hint">Este valor soma todas as entradas e abate automaticamente salários, adiantamentos e faturas.</span>
+              <span class="erp-field__hint">Este valor soma aos recebimentos das Carteiras Contratadas e abate salários, vales e faturas.</span>
             </div>
             <div class="erp-field erp-field--full">
               <label for="cashOpenNote">Nota / Referência Bancária</label>
@@ -985,7 +1036,7 @@ export class RelatoriosAvancadosModule {
             <div class="erp-field">
               <label for="cxType">Tipo de Movimento *</label>
               <select id="cxType">
-                <option value="entrada">Entrada (+) — Aporte / Receita</option>
+                <option value="entrada">Entrada (+) — Aporte / Reforço</option>
                 <option value="saida">Saída (-) — Despesa / Retirada</option>
               </select>
             </div>

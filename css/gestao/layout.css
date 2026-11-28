@@ -653,16 +653,17 @@ a {
   color: #fff;
 }
 
-/* ── Content Workspace ── */
+/* ── Content Workspace (Ponta a Ponta) ── */
 .erp-content {
   flex: 1;
-  padding: 24px 28px 36px;
-  max-width: 1460px;
+  min-width: 0;
+  padding: 20px 24px 36px;
+  max-width: none;
   width: 100%;
-  margin: 0 auto;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 20px;
 }
 
 /* ── Internal System Footer ── */
