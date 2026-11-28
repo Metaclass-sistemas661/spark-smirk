@@ -255,6 +255,86 @@ export function computeProjectInvoiceSummary(project, projectInvoices = []) {
   };
 }
 
+export const TWELFTHS_OPTIONS = [
+  {
+    value: 'Não',
+    label: 'Não (Pagamento integral — Junho e Novembro)',
+    shortLabel: 'Sem duodécimos',
+  },
+  {
+    value: 'ferias',
+    label: 'Só Subsídio de Férias em duodécimos (1/12 = +8,33%/mês)',
+    shortLabel: 'Duod. Férias (1/12)',
+  },
+  {
+    value: 'natal',
+    label: 'Só Subsídio de Natal em duodécimos (1/12 = +8,33%/mês)',
+    shortLabel: 'Duod. Natal (1/12)',
+  },
+  {
+    value: 'ambos_100',
+    label: 'Férias + Natal a 100% em duodécimos (2/12 = +16,67%/mês)',
+    shortLabel: 'Férias + Natal (100%)',
+  },
+  {
+    value: 'ambos_50',
+    label: 'Regime misto: 50% Férias + 50% Natal (1/12 = +8,33%/mês)',
+    shortLabel: '50% Férias + Natal',
+  },
+  {
+    value: 'personalizado',
+    label: 'Valor manual personalizado (€ Férias / € Natal)',
+    shortLabel: 'Duodécimos Manuais',
+  },
+];
+
+export function normalizeTwelfthsMode(rawMode) {
+  if (rawMode === 'Sim') return 'ambos_100';
+  const valid = ['Não', 'ferias', 'natal', 'ambos_100', 'ambos_50', 'personalizado'];
+  return valid.includes(rawMode) ? rawMode : 'Não';
+}
+
+export function getTwelfthsOptionMeta(rawMode) {
+  const mode = normalizeTwelfthsMode(rawMode);
+  return TWELFTHS_OPTIONS.find((opt) => opt.value === mode) || TWELFTHS_OPTIONS[0];
+}
+
+export function computeTwelfthsBreakdown(
+  earnedBase = 0,
+  rawMode = 'Não',
+  customVacation = 0,
+  customChristmas = 0
+) {
+  const mode = normalizeTwelfthsMode(rawMode);
+  const base = Math.max(0, Number(earnedBase) || 0);
+  let twelfthsVacation = 0;
+  let twelfthsChristmas = 0;
+
+  if (mode === 'ferias') {
+    twelfthsVacation = base / 12;
+  } else if (mode === 'natal') {
+    twelfthsChristmas = base / 12;
+  } else if (mode === 'ambos_100') {
+    twelfthsVacation = base / 12;
+    twelfthsChristmas = base / 12;
+  } else if (mode === 'ambos_50') {
+    twelfthsVacation = base / 24;
+    twelfthsChristmas = base / 24;
+  } else if (mode === 'personalizado') {
+    twelfthsVacation = Math.max(0, Number(customVacation) || 0);
+    twelfthsChristmas = Math.max(0, Number(customChristmas) || 0);
+  }
+
+  const vac = Number(twelfthsVacation.toFixed(2));
+  const xmas = Number(twelfthsChristmas.toFixed(2));
+  return {
+    twelfthsMode: mode,
+    twelfthsVacation: vac,
+    twelfthsChristmas: xmas,
+    twelfthsTotal: Number((vac + xmas).toFixed(2)),
+  };
+}
+
 export function computeEmployeeMonthlyPayroll(employee, attendanceMap = {}, employeeAdvances = [], yearMonth = currentYearMonth()) {
   const empAtt = attendanceMap[employee?.id] || {};
   const daysCount = getDaysInMonth(yearMonth);
@@ -305,6 +385,18 @@ export function computeEmployeeMonthlyPayroll(employee, attendanceMap = {}, empl
   const mealPerDay = Math.max(0, Number(employee?.mealAllowance) || 0);
   const mealEarned = remType === 'diaria' || remType === 'hora' ? present * mealPerDay : 0;
 
+  const {
+    twelfthsMode,
+    twelfthsVacation,
+    twelfthsChristmas,
+    twelfthsTotal,
+  } = computeTwelfthsBreakdown(
+    earnedBase,
+    employee?.twelfths,
+    employee?.twelfthsVacationManual,
+    employee?.twelfthsChristmasManual
+  );
+
   const rawOffType = ['diaria', 'mensal'].includes(employee?.offPayrollType)
     ? employee.offPayrollType
     : 'mensal';
@@ -312,13 +404,14 @@ export function computeEmployeeMonthlyPayroll(employee, attendanceMap = {}, empl
   const offPayrollAmount = Math.max(0, Number(employee?.offPayrollAmount) || 0);
   const offPayrollEarned = offPayrollType === 'diaria' ? present * offPayrollAmount : offPayrollAmount;
 
-  const grossPay = earnedBase + mealEarned;
+  const grossPay = Number((earnedBase + mealEarned + twelfthsTotal).toFixed(2));
   const ssPercentage =
     employee?.ssPercentage !== undefined && employee?.ssPercentage !== null && employee?.ssPercentage !== ''
       ? Math.min(100, Math.max(0, Number(employee.ssPercentage) || 0))
       : 11;
-  // Segurança Social aplica-se exclusivamente ao valor declarado em recibo.
-  const ssDeduction = Number((earnedBase * (ssPercentage / 100)).toFixed(2));
+  // Segurança Social aplica-se ao vencimento e duodécimos em recibo; não incide sobre pagamento por fora.
+  const ssSubjectBase = Number((earnedBase + twelfthsTotal).toFixed(2));
+  const ssDeduction = Number((ssSubjectBase * (ssPercentage / 100)).toFixed(2));
   const receiptNetPay = Math.max(0, Number((grossPay - ssDeduction).toFixed(2)));
   const totalCombinedGross = Number((grossPay + offPayrollEarned).toFixed(2));
 
@@ -344,7 +437,11 @@ export function computeEmployeeMonthlyPayroll(employee, attendanceMap = {}, empl
     baseSalaryFixed,
     earnedBase: Number(earnedBase.toFixed(2)),
     mealEarned: Number(mealEarned.toFixed(2)),
-    grossPay: Number(grossPay.toFixed(2)),
+    twelfthsMode,
+    twelfthsVacation,
+    twelfthsChristmas,
+    twelfthsTotal,
+    grossPay,
     ssPercentage,
     ssDeduction,
     receiptNetPay,

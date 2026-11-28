@@ -4,15 +4,19 @@
 
 import { store, saveEmployeeContractFile, getEmployeeContractFile } from '../core/store.js';
 import {
+  TWELFTHS_OPTIONS,
   computeEmployeeMonthlyPayroll,
+  computeTwelfthsBreakdown,
   escapeHtml,
   formatCurrency,
   formatDatePT,
   formatMonthLabel,
   getDaysInMonth,
   getInitials,
+  getTwelfthsOptionMeta,
   getWeekdayShortPT,
   isValidNIF,
+  normalizeTwelfthsMode,
   parseCurrencyInput,
   generateId,
   todayISO,
@@ -292,6 +296,7 @@ export class RhFuncionariosModule {
                         canSeeSalary
                           ? `<div class="erp-cell-title">${escapeHtml(rateValue)}</div>
                              <div class="erp-cell-sub">${escapeHtml(remLabel)} · SS ${stats.ssPercentage}%${stats.remunerationType !== 'mensal' && Number(emp.mealAllowance) > 0 ? ` · Sub. Alim. ${escapeHtml(formatCurrency(emp.mealAllowance))}/d` : ''}</div>
+                             ${stats.twelfthsMode !== 'Não' ? `<div class="erp-cell-sub" style="color:var(--erp-navy);font-weight:600;">+ ${escapeHtml(getTwelfthsOptionMeta(stats.twelfthsMode).shortLabel)}: ${escapeHtml(formatCurrency(stats.twelfthsTotal))}</div>` : ''}
                              ${stats.offPayrollAmount > 0 ? `<div class="erp-cell-sub" style="color:var(--erp-accent-dark);font-weight:600;">+ Por fora SS: ${escapeHtml(formatCurrency(stats.offPayrollAmount))}/${stats.offPayrollType === 'diaria' ? 'dia' : 'mês'}</div>` : ''}`
                           : `<div class="erp-cell-title">${escapeHtml(remLabel)}</div>
                              <div class="erp-cell-sub">Valores de ordenado restritos</div>`
@@ -616,7 +621,10 @@ export class RhFuncionariosModule {
                   </td>
                   ${
                     canSeeSalary
-                      ? `<td><span class="erp-cell-title">${escapeHtml(formatCurrency(s.earnedBase))}</span></td>
+                      ? `<td>
+                           <div class="erp-cell-title">${escapeHtml(formatCurrency(s.earnedBase))}</div>
+                           ${s.twelfthsTotal > 0 ? `<div class="erp-cell-sub">+ Duodécimos: ${escapeHtml(formatCurrency(s.twelfthsTotal))}</div>` : ''}
+                         </td>
                          <td>-${escapeHtml(formatCurrency(s.ssDeduction))} (${s.ssPercentage}%)</td>
                          <td><span style="color:${s.offPayrollEarned > 0 ? 'var(--erp-accent-dark)' : 'var(--erp-text-muted)'};font-weight:${s.offPayrollEarned > 0 ? '700' : '400'};">${s.offPayrollEarned > 0 ? `+${escapeHtml(formatCurrency(s.offPayrollEarned))}` : '€ 0,00'}</span></td>`
                       : ''
@@ -667,7 +675,16 @@ export class RhFuncionariosModule {
       'Total Faltas',
       'Férias',
       'Taxa Assiduidade (%)',
-      ...(canSeeSalary ? ['Base Recibo (€)', 'Subsídio Alimentação Apurado (€)', 'SS (€)', 'Por Fora SS (€)'] : []),
+      ...(canSeeSalary
+        ? [
+            'Base Recibo (€)',
+            'Duodécimo Férias (€)',
+            'Duodécimo Natal (€)',
+            'Subsídio Alimentação Apurado (€)',
+            'SS (€)',
+            'Por Fora SS (€)',
+          ]
+        : []),
       ...(canSeePayable ? ['Líquido Final a Pagar (€)'] : []),
     ];
     const rows = state.employees.map((emp) => {
@@ -685,7 +702,16 @@ export class RhFuncionariosModule {
         s.totalAbsences,
         s.vacation,
         s.attendanceRate,
-        ...(canSeeSalary ? [s.earnedBase.toFixed(2), s.mealEarned.toFixed(2), s.ssDeduction.toFixed(2), s.offPayrollEarned.toFixed(2)] : []),
+        ...(canSeeSalary
+          ? [
+              s.earnedBase.toFixed(2),
+              s.twelfthsVacation.toFixed(2),
+              s.twelfthsChristmas.toFixed(2),
+              s.mealEarned.toFixed(2),
+              s.ssDeduction.toFixed(2),
+              s.offPayrollEarned.toFixed(2),
+            ]
+          : []),
         ...(canSeePayable ? [s.netToPay.toFixed(2)] : []),
       ];
     });
@@ -1256,25 +1282,82 @@ export class RhFuncionariosModule {
     const emp = state.employees.find((e) => e.id === empId);
     if (!emp) return;
 
-    const s = computeMonthlyAttendance(emp, state.attendance, month, state.employeeAdvances);
+    const baseStats = computeMonthlyAttendance(emp, state.attendance, month, state.employeeAdvances);
     const canEmitPayslip = !this._can || this._can('rh_recibos', 'emitir');
     const remDesc =
-      s.remunerationType === 'diaria'
-        ? `${s.present} dia(s) com presença × ${formatCurrency(s.dailyRate)}/dia`
-        : s.remunerationType === 'hora'
-          ? `${s.totalHours}h em ${s.present} dia(s) × ${formatCurrency(s.hourlyRate)}/h`
+      baseStats.remunerationType === 'diaria'
+        ? `${baseStats.present} dia(s) com presença × ${formatCurrency(baseStats.dailyRate)}/dia`
+        : baseStats.remunerationType === 'hora'
+          ? `${baseStats.totalHours}h em ${baseStats.present} dia(s) × ${formatCurrency(baseStats.hourlyRate)}/h`
           : `Vencimento Fixo Mensal (presenças não alteram este valor)`;
 
-    openModal({
-      title: `Fecho de Mês — ${emp.name}`,
-      subtitle: `${formatMonthLabel(month)} · ${REMUNERATION_LABELS[s.remunerationType] || 'Fixo Mensal'}`,
-      bodyHtml: `
-        <div class="erp-cred-box" style="margin-bottom:16px;text-align:center;">
+    let activeTwelfthsMode = normalizeTwelfthsMode(emp.twelfths);
+    let customVacVal = Number(emp.twelfthsVacationManual) || 0;
+    let customXmasVal = Number(emp.twelfthsChristmasManual) || 0;
+
+    const calcCloseSummary = () => {
+      const tw = computeTwelfthsBreakdown(
+        baseStats.earnedBase,
+        activeTwelfthsMode,
+        customVacVal,
+        customXmasVal
+      );
+      const ssBasis = Number((baseStats.earnedBase + tw.twelfthsTotal).toFixed(2));
+      const ssDeduction = Number((ssBasis * (baseStats.ssPercentage / 100)).toFixed(2));
+      const grossPay = Number((baseStats.earnedBase + baseStats.mealEarned + tw.twelfthsTotal).toFixed(2));
+      const receiptNetPay = Math.max(0, Number((grossPay - ssDeduction).toFixed(2)));
+      const netToPay = Math.max(
+        0,
+        Number((receiptNetPay + baseStats.offPayrollEarned - baseStats.advancesTotal).toFixed(2))
+      );
+      return {
+        ...baseStats,
+        twelfthsMode: tw.twelfthsMode,
+        twelfthsVacation: tw.twelfthsVacation,
+        twelfthsChristmas: tw.twelfthsChristmas,
+        twelfthsTotal: tw.twelfthsTotal,
+        ssDeduction,
+        grossPay,
+        receiptNetPay,
+        netToPay,
+      };
+    };
+
+    const renderCloseBody = () => {
+      const s = calcCloseSummary();
+      return `
+        <div class="erp-cred-box" style="margin-bottom:14px;text-align:center;">
           <div class="erp-summary-item__label">Total Final a Pagar ao Funcionário em ${escapeHtml(formatMonthLabel(month))}</div>
           <div style="font-family:var(--erp-font-heading);font-size:28px;font-weight:900;color:var(--erp-success);margin:4px 0;">
             ${escapeHtml(formatCurrency(s.netToPay))}
           </div>
-          <span class="erp-cell-sub">${escapeHtml(remDesc)}${s.offPayrollEarned > 0 ? ` · + ${escapeHtml(formatCurrency(s.offPayrollEarned))} por fora SS` : ''}</span>
+          <span class="erp-cell-sub">${escapeHtml(remDesc)}${s.twelfthsTotal > 0 ? ` · + ${escapeHtml(formatCurrency(s.twelfthsTotal))} duodécimos` : ''}${s.offPayrollEarned > 0 ? ` · + ${escapeHtml(formatCurrency(s.offPayrollEarned))} por fora SS` : ''}</span>
+        </div>
+
+        <div class="erp-inline-invoice-box" style="margin-bottom:14px;">
+          <div class="erp-form-section__title" style="margin-bottom:8px;">Qual a opção de Duodécimos (Férias &amp; Natal) pretende aplicar neste mês?</div>
+          <div class="erp-form-grid">
+            <div class="erp-field erp-field--full">
+              <label for="closeMonthTwelfthsMode">Modalidade de Duodécimos (Gestor)</label>
+              <select id="closeMonthTwelfthsMode">
+                ${TWELFTHS_OPTIONS.map((opt) => `<option value="${escapeHtml(opt.value)}" ${activeTwelfthsMode === opt.value ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="erp-field" id="wrapCloseCustomVac" style="display:${activeTwelfthsMode === 'personalizado' ? 'flex' : 'none'};">
+              <label for="closeCustomVac">Duodécimo Subsídio de Férias (€)</label>
+              <input type="text" inputmode="numeric" data-currency-euro id="closeCustomVac" value="${escapeHtml(customVacVal)}" placeholder="€ 0,00">
+            </div>
+            <div class="erp-field" id="wrapCloseCustomXmas" style="display:${activeTwelfthsMode === 'personalizado' ? 'flex' : 'none'};">
+              <label for="closeCustomXmas">Duodécimo Subsídio de Natal (€)</label>
+              <input type="text" inputmode="numeric" data-currency-euro id="closeCustomXmas" value="${escapeHtml(customXmasVal)}" placeholder="€ 0,00">
+            </div>
+            <div class="erp-field erp-field--full" style="margin-top:2px;">
+              <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer;">
+                <input type="checkbox" id="closeMonthSaveTwelfths">
+                <span>Guardar esta preferência de duodécimos como padrão na ficha de ${escapeHtml(emp.name)}</span>
+              </label>
+            </div>
+          </div>
         </div>
 
         <div class="erp-table-wrap">
@@ -1283,6 +1366,14 @@ export class RhFuncionariosModule {
               <tr>
                 <td><strong>Base em Recibo (${escapeHtml(REMUNERATION_LABELS[s.remunerationType] || 'Fixo Mensal')})</strong></td>
                 <td style="text-align:right;font-weight:700;">+ ${escapeHtml(formatCurrency(s.earnedBase))}</td>
+              </tr>
+              <tr>
+                <td><strong>Duodécimo Subsídio de Férias (${escapeHtml(getTwelfthsOptionMeta(s.twelfthsMode).shortLabel)})</strong></td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-navy);">+ ${escapeHtml(formatCurrency(s.twelfthsVacation))}</td>
+              </tr>
+              <tr>
+                <td><strong>Duodécimo Subsídio de Natal</strong></td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-navy);">+ ${escapeHtml(formatCurrency(s.twelfthsChristmas))}</td>
               </tr>
               ${
                 s.remunerationType !== 'mensal' || s.mealEarned > 0
@@ -1293,7 +1384,7 @@ export class RhFuncionariosModule {
                   : ''
               }
               <tr>
-                <td><strong>Desconto Segurança Social (${s.ssPercentage}% sobre valor em recibo)</strong></td>
+                <td><strong>Desconto Segurança Social (${s.ssPercentage}% sobre base + duodécimos)</strong></td>
                 <td style="text-align:right;font-weight:700;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(s.ssDeduction))}</td>
               </tr>
               <tr>
@@ -1311,7 +1402,13 @@ export class RhFuncionariosModule {
             </tbody>
           </table>
         </div>
-      `,
+      `;
+    };
+
+    openModal({
+      title: `Fecho de Mês — ${emp.name}`,
+      subtitle: `${formatMonthLabel(month)} · ${REMUNERATION_LABELS[baseStats.remunerationType] || 'Fixo Mensal'}`,
+      bodyHtml: `<div id="closeMonthWrap">${renderCloseBody()}</div>`,
       footerHtml: `
         <button type="button" class="erp-btn erp-btn--outline" id="btnCloseMonthAdvance">Registar / Ver Adiantamentos</button>
         ${
@@ -1322,29 +1419,77 @@ export class RhFuncionariosModule {
         <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Fechar</button>
       `,
       onMount: (modal) => {
+        const wrap = modal.querySelector('#closeMonthWrap');
+        const bindCloseControls = (keepFocusSelector = null) => {
+          attachEuroMasks(wrap);
+          const modeSelect = modal.querySelector('#closeMonthTwelfthsMode');
+          const vacInput = modal.querySelector('#closeCustomVac');
+          const xmasInput = modal.querySelector('#closeCustomXmas');
+
+          modeSelect?.addEventListener('change', (e) => {
+            activeTwelfthsMode = e.target.value;
+            const saveDefaultChecked = Boolean(modal.querySelector('#closeMonthSaveTwelfths')?.checked);
+            wrap.innerHTML = renderCloseBody();
+            bindCloseControls();
+            const cb = modal.querySelector('#closeMonthSaveTwelfths');
+            if (cb) cb.checked = saveDefaultChecked;
+          });
+
+          const onCustomChange = (fieldSel) => {
+            customVacVal = parseCurrencyInput(vacInput?.value);
+            customXmasVal = parseCurrencyInput(xmasInput?.value);
+            const saveDefaultChecked = Boolean(modal.querySelector('#closeMonthSaveTwelfths')?.checked);
+            wrap.innerHTML = renderCloseBody();
+            bindCloseControls(fieldSel);
+            const cb = modal.querySelector('#closeMonthSaveTwelfths');
+            if (cb) cb.checked = saveDefaultChecked;
+          };
+
+          vacInput?.addEventListener('change', () => onCustomChange('#closeCustomVac'));
+          xmasInput?.addEventListener('change', () => onCustomChange('#closeCustomXmas'));
+
+          if (keepFocusSelector) {
+            modal.querySelector(keepFocusSelector)?.focus();
+          }
+        };
+        bindCloseControls();
+
         modal.querySelector('#btnCloseMonthAdvance')?.addEventListener('click', () => {
           this._openAdvancePopup(emp.id, month);
         });
-        modal.querySelector('#btnConfirmCloseMonth')?.addEventListener('click', () => {
+        modal.querySelector('#btnConfirmCloseMonth')?.addEventListener('click', async () => {
+          const finalSummary = calcCloseSummary();
+          const shouldSaveDefault = Boolean(modal.querySelector('#closeMonthSaveTwelfths')?.checked);
+
+          if (shouldSaveDefault) {
+            await store.updateEmployee(emp.id, {
+              twelfths: finalSummary.twelfthsMode,
+              twelfthsVacationManual: finalSummary.twelfthsMode === 'personalizado' ? customVacVal : 0,
+              twelfthsChristmasManual: finalSummary.twelfthsMode === 'personalizado' ? customXmasVal : 0,
+            });
+          }
+
           const payslipId = generateId('REC');
           store.addPayslip({
             id: payslipId,
             employeeId: emp.id,
             month,
-            baseSalary: s.earnedBase,
-            mealAllowanceTotal: s.mealEarned,
+            baseSalary: finalSummary.earnedBase,
+            mealAllowanceTotal: finalSummary.mealEarned,
+            twelfthVacation: finalSummary.twelfthsVacation,
+            twelfthChristmas: finalSummary.twelfthsChristmas,
             overtimeBonus: 0,
-            socialSecurity: s.ssDeduction,
+            socialSecurity: finalSummary.ssDeduction,
             irsRetention: 0,
-            otherDeductions: s.advancesTotal,
-            offPayroll: s.offPayrollEarned,
-            netSalary: s.netToPay,
+            otherDeductions: finalSummary.advancesTotal,
+            offPayroll: finalSummary.offPayrollEarned,
+            netSalary: finalSummary.netToPay,
             paymentDate: todayISO(),
             status: 'pago',
-            notes: `Fecho mensal (${REMUNERATION_LABELS[s.remunerationType]} · SS ${s.ssPercentage}%${s.offPayrollEarned > 0 ? ` · Por fora SS: ${formatCurrency(s.offPayrollEarned)}` : ''}${s.advancesTotal > 0 ? ` · Adiantamentos: ${formatCurrency(s.advancesTotal)}` : ''})`,
+            notes: `Fecho mensal (${REMUNERATION_LABELS[finalSummary.remunerationType]} · ${getTwelfthsOptionMeta(finalSummary.twelfthsMode).shortLabel}${finalSummary.twelfthsTotal > 0 ? `: ${formatCurrency(finalSummary.twelfthsTotal)}` : ''} · SS ${finalSummary.ssPercentage}%${finalSummary.offPayrollEarned > 0 ? ` · Por fora SS: ${formatCurrency(finalSummary.offPayrollEarned)}` : ''}${finalSummary.advancesTotal > 0 ? ` · Adiantamentos: ${formatCurrency(finalSummary.advancesTotal)}` : ''})`,
           });
           showToast(
-            `Mês fechado para ${emp.name}! Valor pago registado: ${formatCurrency(s.netToPay)} (${payslipId}).`,
+            `Mês fechado para ${emp.name}! Valor pago registado: ${formatCurrency(finalSummary.netToPay)} (${payslipId}).`,
             'success',
             5500
           );
@@ -1383,11 +1528,14 @@ export class RhFuncionariosModule {
       offPayrollType: 'mensal',
       offPayrollAmount: 0,
       twelfths: 'Não',
+      twelfthsVacationManual: 0,
+      twelfthsChristmasManual: 0,
       status: 'ativo',
       notes: '',
     };
     const remType = ['diaria', 'hora', 'mensal'].includes(emp.remunerationType) ? emp.remunerationType : 'mensal';
     const offType = remType === 'mensal' ? 'mensal' : emp.offPayrollType === 'diaria' ? 'diaria' : 'mensal';
+    const twelfthsMode = normalizeTwelfthsMode(emp.twelfths);
 
     const bodyHtml = `
       <form id="employeeForm">
@@ -1514,13 +1662,26 @@ export class RhFuncionariosModule {
                      <label for="empMeal">Sub. Alimentação em Recibo (€/dia)</label>
                      <input type="text" inputmode="numeric" data-currency-euro id="empMeal" name="mealAllowance" value="${escapeHtml(emp.mealAllowance)}" placeholder="€ 0,00">
                    </div>
+                 </div>
 
-                   <div class="erp-field">
-                     <label for="empTwelfths">Duodécimos (Férias/Natal)</label>
-                     <select id="empTwelfths" name="twelfths">
-                       <option value="Não" ${emp.twelfths === 'Não' ? 'selected' : ''}>Não (Pagamento integral)</option>
-                       <option value="Sim" ${emp.twelfths === 'Sim' ? 'selected' : ''}>Sim (Mensal em duodécimos)</option>
-                     </select>
+                 <div class="erp-inline-invoice-box" style="margin:12px 0;">
+                   <div class="erp-form-section__title" style="margin-bottom:8px;">Duodécimos (Subsídio de Férias &amp; Natal — Sujeito a Segurança Social)</div>
+                   <div class="erp-form-grid">
+                     <div class="erp-field erp-field--full">
+                       <label for="empTwelfths">Qual a opção de duodécimos pretendida para este colaborador?</label>
+                       <select id="empTwelfths" name="twelfths">
+                         ${TWELFTHS_OPTIONS.map((opt) => `<option value="${escapeHtml(opt.value)}" ${twelfthsMode === opt.value ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`).join('')}
+                       </select>
+                       <span class="erp-field__hint">Os duodécimos de Férias e Natal entram na base de cálculo da Segurança Social (${escapeHtml(emp.ssPercentage ?? 11)}%) e somam no recibo.</span>
+                     </div>
+                     <div class="erp-field" id="wrapTwelfthsVacManual" style="display:${twelfthsMode === 'personalizado' ? 'flex' : 'none'};">
+                       <label for="empTwelfthsVacManual">Duodécimo Férias Mensal (€)</label>
+                       <input type="text" inputmode="numeric" data-currency-euro id="empTwelfthsVacManual" name="twelfthsVacationManual" value="${escapeHtml(emp.twelfthsVacationManual ?? 0)}" placeholder="€ 0,00">
+                     </div>
+                     <div class="erp-field" id="wrapTwelfthsXmasManual" style="display:${twelfthsMode === 'personalizado' ? 'flex' : 'none'};">
+                       <label for="empTwelfthsXmasManual">Duodécimo Natal Mensal (€)</label>
+                       <input type="text" inputmode="numeric" data-currency-euro id="empTwelfthsXmasManual" name="twelfthsChristmasManual" value="${escapeHtml(emp.twelfthsChristmasManual ?? 0)}" placeholder="€ 0,00">
+                     </div>
                    </div>
                  </div>
 
@@ -1715,6 +1876,11 @@ export class RhFuncionariosModule {
         const offPayrollAmountInput = modal.querySelector('#empOffPayrollAmount');
         const offPayrollHint = modal.querySelector('#offPayrollTypeHint');
         const offPayrollLbl = modal.querySelector('#lblOffPayrollAmount');
+        const twelfthsSelect = modal.querySelector('#empTwelfths');
+        const twelfthsVacManualInput = modal.querySelector('#empTwelfthsVacManual');
+        const twelfthsXmasManualInput = modal.querySelector('#empTwelfthsXmasManual');
+        const wrapTwelfthsVacManual = modal.querySelector('#wrapTwelfthsVacManual');
+        const wrapTwelfthsXmasManual = modal.querySelector('#wrapTwelfthsXmasManual');
         const salaryPreviewEl = modal.querySelector('#empSalaryPreview');
 
         const renderSalaryPreview = () => {
@@ -1732,42 +1898,57 @@ export class RhFuncionariosModule {
             offPayrollLbl.textContent = `Valor Por Fora da SS (${offMode === 'diaria' ? '€/dia' : '€/mês'})`;
           }
 
-          let receiptGross = 0;
-          let ssBasis = 0;
+          let earnedBaseEst = 0;
+          let mealEst = 0;
           let periodTag = 'Mensal';
           let offPeriodVal = offVal;
 
           if (active === 'mensal') {
-            ssBasis = Math.max(0, parseCurrencyInput(modal.querySelector('#empSalary')?.value));
-            receiptGross = ssBasis;
+            earnedBaseEst = Math.max(0, parseCurrencyInput(modal.querySelector('#empSalary')?.value));
             periodTag = 'Mensal Fixo';
           } else if (active === 'diaria') {
             const refDays = 22;
             const dRate = Math.max(0, parseCurrencyInput(modal.querySelector('#empDailyRate')?.value));
-            ssBasis = dRate * refDays;
-            receiptGross = ssBasis + mealVal * refDays;
+            earnedBaseEst = dRate * refDays;
+            mealEst = mealVal * refDays;
             offPeriodVal = offMode === 'diaria' ? offVal * refDays : offVal;
             periodTag = 'Est. 22 dias (P)';
           } else {
             const refHours = 176;
             const hRate = Math.max(0, parseCurrencyInput(modal.querySelector('#empHourlyRate')?.value));
-            ssBasis = hRate * refHours;
-            receiptGross = ssBasis + mealVal * 22;
+            earnedBaseEst = hRate * refHours;
+            mealEst = mealVal * 22;
             offPeriodVal = offMode === 'diaria' ? offVal * 22 : offVal;
             periodTag = 'Est. 176h/22d';
           }
 
+          const tw = computeTwelfthsBreakdown(
+            earnedBaseEst,
+            twelfthsSelect?.value || 'Não',
+            parseCurrencyInput(twelfthsVacManualInput?.value),
+            parseCurrencyInput(twelfthsXmasManualInput?.value)
+          );
+          const ssBasis = Number((earnedBaseEst + tw.twelfthsTotal).toFixed(2));
+          const receiptGross = Number((earnedBaseEst + mealEst + tw.twelfthsTotal).toFixed(2));
           const ssCut = Number((ssBasis * (ssPct / 100)).toFixed(2));
           const receiptNet = Math.max(0, Number((receiptGross - ssCut).toFixed(2)));
           const totalFinal = Number((receiptNet + offPeriodVal).toFixed(2));
 
           salaryPreviewEl.innerHTML = `
             <div>
-              <div class="erp-summary-item__label">Líquido Recibo (${escapeHtml(periodTag)} c/ -${ssPct}% SS)</div>
+              <div class="erp-summary-item__label">Base + Alimentação (${escapeHtml(periodTag)})</div>
+              <div class="erp-summary-item__val">${escapeHtml(formatCurrency(earnedBaseEst + mealEst))}</div>
+            </div>
+            <div>
+              <div class="erp-summary-item__label">+ Duodécimos (Fér./Nat.)</div>
+              <div class="erp-summary-item__val" style="color:var(--erp-navy);">+${escapeHtml(formatCurrency(tw.twelfthsTotal))}</div>
+            </div>
+            <div>
+              <div class="erp-summary-item__label">Líquido Recibo (-${ssPct}% SS)</div>
               <div class="erp-summary-item__val">${escapeHtml(formatCurrency(receiptNet))}</div>
             </div>
             <div>
-              <div class="erp-summary-item__label">+ Por Fora SS (sem desconto)</div>
+              <div class="erp-summary-item__label">+ Por Fora SS (sem SS)</div>
               <div class="erp-summary-item__val" style="color:var(--erp-accent-dark);">+${escapeHtml(formatCurrency(offPeriodVal))}</div>
             </div>
             <div>
@@ -1792,6 +1973,10 @@ export class RhFuncionariosModule {
           if (wrapHourly) wrapHourly.style.display = active === 'hora' ? 'flex' : 'none';
           if (wrapMeal) wrapMeal.style.display = active !== 'mensal' ? 'flex' : 'none';
 
+          const isCustomTwelfths = twelfthsSelect?.value === 'personalizado';
+          if (wrapTwelfthsVacManual) wrapTwelfthsVacManual.style.display = isCustomTwelfths ? 'flex' : 'none';
+          if (wrapTwelfthsXmasManual) wrapTwelfthsXmasManual.style.display = isCustomTwelfths ? 'flex' : 'none';
+
           if (offPayrollSelect) {
             if (active === 'mensal') {
               offPayrollSelect.value = 'mensal';
@@ -1812,7 +1997,17 @@ export class RhFuncionariosModule {
           r.addEventListener('change', syncRemUI);
         });
         offPayrollSelect?.addEventListener('change', renderSalaryPreview);
-        ['#empSalary', '#empDailyRate', '#empHourlyRate', '#empSsPct', '#empMeal', '#empOffPayrollAmount'].forEach((sel) => {
+        twelfthsSelect?.addEventListener('change', syncRemUI);
+        [
+          '#empSalary',
+          '#empDailyRate',
+          '#empHourlyRate',
+          '#empSsPct',
+          '#empMeal',
+          '#empOffPayrollAmount',
+          '#empTwelfthsVacManual',
+          '#empTwelfthsXmasManual',
+        ].forEach((sel) => {
           modal.querySelector(sel)?.addEventListener('input', renderSalaryPreview);
         });
         syncRemUI();
@@ -1840,6 +2035,17 @@ export class RhFuncionariosModule {
           const offPayrollAmount = canSeeSalary
             ? Math.max(0, parseCurrencyInput(offPayrollAmountInput?.value ?? data.offPayrollAmount))
             : Number(emp.offPayrollAmount ?? 0);
+          const chosenTwelfths = canSeeSalary
+            ? normalizeTwelfthsMode(twelfthsSelect?.value ?? data.twelfths)
+            : normalizeTwelfthsMode(emp.twelfths);
+          const twelfthsVacationManual =
+            canSeeSalary && chosenTwelfths === 'personalizado'
+              ? Math.max(0, parseCurrencyInput(twelfthsVacManualInput?.value ?? data.twelfthsVacationManual))
+              : Number(emp.twelfthsVacationManual ?? 0);
+          const twelfthsChristmasManual =
+            canSeeSalary && chosenTwelfths === 'personalizado'
+              ? Math.max(0, parseCurrencyInput(twelfthsXmasManualInput?.value ?? data.twelfthsChristmasManual))
+              : Number(emp.twelfthsChristmasManual ?? 0);
 
           if (canSeeSalary) {
             if (chosenType === 'mensal' && baseSalary <= 0) {
@@ -1888,6 +2094,9 @@ export class RhFuncionariosModule {
               : Number(emp.mealAllowance ?? 0),
             offPayrollType,
             offPayrollAmount,
+            twelfths: chosenTwelfths,
+            twelfthsVacationManual: chosenTwelfths === 'personalizado' ? twelfthsVacationManual : 0,
+            twelfthsChristmasManual: chosenTwelfths === 'personalizado' ? twelfthsChristmasManual : 0,
           };
           const empId = isEdit ? emp.id : generateId('FUNC');
           if (isEdit) {

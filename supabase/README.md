@@ -26,6 +26,7 @@ Os scripts SQL estão separados por **schemas PostgreSQL distintos** e organizad
 - [`07-fix-recibos-constraints.sql`](./02-recursos-humanos/07-fix-recibos-constraints.sql) — Substitui os índices parciais de recibos/anexos/pagamentos por índices `UNIQUE` completos e blinda as RPCs contra erros `ON CONFLICT`.
 - [`08-candidaturas-recrutamento.sql`](./02-recursos-humanos/08-candidaturas-recrutamento.sql) — Tabela `rh.candidaturas`, bucket privado `curriculos-candidatos` e RPCs para gestão de candidaturas da página Trabalhe Connosco.
 - [`09-pagamento-por-fora-ss.sql`](./02-recursos-humanos/09-pagamento-por-fora-ss.sql) — Suporte a pagamento por fora da Segurança Social em `rh.funcionarios` e `rh.recibos_vencimento` e consolidação completa da RPC `spark_erp_snapshot`.
+- [`10-duodecimos-profissionais.sql`](./02-recursos-humanos/10-duodecimos-profissionais.sql) — Regimes profissionais de duodécimos de Férias e Natal (100%, 50%, só Férias, só Natal ou manual) em `rh.funcionarios`, `rh.recibos_vencimento` e RPCs.
 
 ### `03-operacional/` — Schema `operacional`
 - [`01-obras.sql`](./03-operacional/01-obras.sql) — Tabela `operacional.obras` (obras em andamento, a iniciar e concluídas).
@@ -58,6 +59,7 @@ Execute exatamente pela numeração das pastas e ficheiros:
 18. `02-recursos-humanos/07-fix-recibos-constraints.sql`
 19. `02-recursos-humanos/08-candidaturas-recrutamento.sql`
 20. `02-recursos-humanos/09-pagamento-por-fora-ss.sql`
+21. `02-recursos-humanos/10-duodecimos-profissionais.sql`
 
 ## Expor os Schemas na API do Supabase
 

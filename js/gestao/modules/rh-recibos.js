@@ -8,7 +8,9 @@ import {
   getAttachmentFile,
 } from '../core/store.js';
 import {
+  TWELFTHS_OPTIONS,
   computeEmployeeMonthlyPayroll,
+  computeTwelfthsBreakdown,
   downloadCSV,
   escapeHtml,
   formatCurrency,
@@ -17,6 +19,7 @@ import {
   formatMonthLabel,
   generateId,
   getInitials,
+  normalizeTwelfthsMode,
   parseCurrencyInput,
   todayISO,
 } from '../core/formatters.js';
@@ -105,7 +108,13 @@ export class RhRecibosModule {
     });
 
     const totalGross = filtered.reduce(
-      (s, p) => s + (Number(p.baseSalary) || 0) + (Number(p.mealAllowanceTotal) || 0) + (Number(p.overtimeBonus) || 0),
+      (s, p) =>
+        s +
+        (Number(p.baseSalary) || 0) +
+        (Number(p.mealAllowanceTotal) || 0) +
+        (Number(p.twelfthVacation) || 0) +
+        (Number(p.twelfthChristmas) || 0) +
+        (Number(p.overtimeBonus) || 0),
       0
     );
     const totalDeductions = filtered.reduce(
@@ -283,6 +292,7 @@ export class RhRecibosModule {
               ${filtered
                 .map((p) => {
                   const emp = empMap.get(p.employeeId);
+                  const twelfthsVal = (Number(p.twelfthVacation) || 0) + (Number(p.twelfthChristmas) || 0);
                   const totalDesc = (Number(p.socialSecurity) || 0) + (Number(p.irsRetention) || 0) + (Number(p.otherDeductions) || 0);
                   return `
                   <tr>
@@ -302,6 +312,7 @@ export class RhRecibosModule {
                     <td>
                       <div class="erp-cell-title">${escapeHtml(formatCurrency(p.baseSalary))}</div>
                       <div class="erp-cell-sub">Sub. Alim. ${escapeHtml(formatCurrency(p.mealAllowanceTotal))}${Number(p.overtimeBonus) > 0 ? ` · Extra ${escapeHtml(formatCurrency(p.overtimeBonus))}` : ''}</div>
+                      ${twelfthsVal > 0 ? `<div class="erp-cell-sub" style="color:var(--erp-navy);font-weight:600;">+ Duodécimos (Fér./Nat.): ${escapeHtml(formatCurrency(twelfthsVal))}</div>` : ''}
                       ${Number(p.offPayroll) > 0 ? `<div class="erp-cell-sub" style="color:var(--erp-accent-dark);font-weight:600;">+ Por fora SS: ${escapeHtml(formatCurrency(p.offPayroll))}</div>` : ''}
                     </td>
                     <td>
@@ -679,6 +690,8 @@ export class RhRecibosModule {
       'Funcionário',
       'NIF',
       'Base (€)',
+      'Duodécimo Férias (€)',
+      'Duodécimo Natal (€)',
       'Sub. Alimentação (€)',
       'Extra/Prémios (€)',
       'Seg. Social (€)',
@@ -697,6 +710,8 @@ export class RhRecibosModule {
         emp?.name || '',
         emp?.nif || '',
         Number(p.baseSalary || 0).toFixed(2),
+        Number(p.twelfthVacation || 0).toFixed(2),
+        Number(p.twelfthChristmas || 0).toFixed(2),
         Number(p.mealAllowanceTotal || 0).toFixed(2),
         Number(p.overtimeBonus || 0).toFixed(2),
         Number(p.socialSecurity || 0).toFixed(2),
@@ -783,6 +798,8 @@ export class RhRecibosModule {
       employeeId: targetEmp.id,
       month: defaultMonth,
       baseSalary: defaultPayroll.earnedBase,
+      twelfthVacation: defaultPayroll.twelfthsVacation,
+      twelfthChristmas: defaultPayroll.twelfthsChristmas,
       mealAllowanceTotal: defaultPayroll.mealEarned,
       overtimeBonus: 0,
       socialSecurity: defaultPayroll.ssDeduction,
@@ -794,6 +811,11 @@ export class RhRecibosModule {
       status: 'pago',
       notes: '',
     };
+    const initialTwelfthsMode = existing
+      ? Number(existing.twelfthVacation || 0) > 0 || Number(existing.twelfthChristmas || 0) > 0
+        ? 'personalizado'
+        : 'Não'
+      : normalizeTwelfthsMode(targetEmp?.twelfths);
 
     let selectedFile = null;
 
@@ -818,7 +840,7 @@ export class RhRecibosModule {
         </div>
 
         <div class="erp-form-section">
-          <div class="erp-form-section__title">2. Abonos em Recibo, Descontos &amp; Por Fora da SS (Portugal)</div>
+          <div class="erp-form-section__title">2. Abonos em Recibo, Duodécimos, Descontos &amp; Por Fora da SS (Portugal)</div>
           <div class="erp-form-grid erp-form-grid--3">
             <div class="erp-field">
               <label for="payBase">Vencimento Base em Recibo (€)</label>
@@ -848,6 +870,26 @@ export class RhRecibosModule {
           </div>
 
           <div class="erp-inline-invoice-box" style="margin-top:14px;">
+            <div class="erp-form-section__title" style="margin-bottom:8px;">Duodécimos (Subsídio de Férias &amp; Natal — Sujeitos a Seg. Social)</div>
+            <div class="erp-form-grid erp-form-grid--3">
+              <div class="erp-field">
+                <label for="payTwelfthsPreset">Qual opção aplicar neste recibo?</label>
+                <select id="payTwelfthsPreset">
+                  ${TWELFTHS_OPTIONS.map((opt) => `<option value="${escapeHtml(opt.value)}" ${initialTwelfthsMode === opt.value ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="erp-field">
+                <label for="payTwelfthVacation">Duodécimo Férias (€)</label>
+                <input type="text" inputmode="numeric" data-currency-euro id="payTwelfthVacation" name="twelfthVacation" value="${escapeHtml(pay.twelfthVacation ?? 0)}" placeholder="€ 0,00">
+              </div>
+              <div class="erp-field">
+                <label for="payTwelfthChristmas">Duodécimo Natal (€)</label>
+                <input type="text" inputmode="numeric" data-currency-euro id="payTwelfthChristmas" name="twelfthChristmas" value="${escapeHtml(pay.twelfthChristmas ?? 0)}" placeholder="€ 0,00">
+              </div>
+            </div>
+          </div>
+
+          <div class="erp-inline-invoice-box" style="margin-top:12px;">
             <div class="erp-form-grid">
               <div class="erp-field erp-field--full">
                 <label for="payOffPayroll">Pagamento Por Fora da Segurança Social (€)</label>
@@ -927,6 +969,9 @@ export class RhRecibosModule {
         const baseInput = modal.querySelector('#payBase');
         const mealInput = modal.querySelector('#payMeal');
         const bonusInput = modal.querySelector('#payBonus');
+        const twelfthsPresetSelect = modal.querySelector('#payTwelfthsPreset');
+        const twelfthVacInput = modal.querySelector('#payTwelfthVacation');
+        const twelfthXmasInput = modal.querySelector('#payTwelfthChristmas');
         const ssInput = modal.querySelector('#paySS');
         const irsInput = modal.querySelector('#payIrs');
         const otherInput = modal.querySelector('#payOther');
@@ -935,16 +980,18 @@ export class RhRecibosModule {
         const recalc = () => {
           const base = parseCurrencyInput(baseInput.value);
           const meal = parseCurrencyInput(mealInput.value);
+          const twVac = parseCurrencyInput(twelfthVacInput.value);
+          const twXmas = parseCurrencyInput(twelfthXmasInput.value);
           const bonus = parseCurrencyInput(bonusInput.value);
           const ss = parseCurrencyInput(ssInput.value);
           const irs = parseCurrencyInput(irsInput.value);
           const other = parseCurrencyInput(otherInput.value);
           const offPayroll = parseCurrencyInput(offPayrollInput.value);
 
-          const gross = base + meal + bonus;
+          const gross = base + meal + twVac + twXmas + bonus;
           const ded = ss + irs + other;
           const net = Math.max(0, gross - ded + offPayroll);
-          const tsu = (base + bonus) * 0.2375;
+          const tsu = (base + twVac + twXmas + bonus) * 0.2375;
 
           modal.querySelector('#sumGross').textContent = formatCurrency(gross);
           modal.querySelector('#sumDed').textContent = formatCurrency(ded);
@@ -952,6 +999,27 @@ export class RhRecibosModule {
           modal.querySelector('#sumTsu').textContent = formatCurrency(tsu);
           modal.querySelector('#sumNet').textContent = formatCurrency(net);
           return net;
+        };
+
+        const applyTwelfthsPreset = () => {
+          const emp = state.employees.find((e) => e.id === empSelect.value);
+          const ssPct =
+            emp?.ssPercentage !== undefined && emp?.ssPercentage !== null && emp?.ssPercentage !== ''
+              ? Math.min(100, Math.max(0, Number(emp.ssPercentage) || 0))
+              : 11;
+          const mode = twelfthsPresetSelect?.value || 'Não';
+          if (mode !== 'personalizado') {
+            const base = parseCurrencyInput(baseInput.value);
+            const tw = computeTwelfthsBreakdown(base, mode, 0, 0);
+            twelfthVacInput.value = formatEuroInputValue(tw.twelfthsVacation);
+            twelfthXmasInput.value = formatEuroInputValue(tw.twelfthsChristmas);
+          }
+          const baseNow = parseCurrencyInput(baseInput.value);
+          const vacNow = parseCurrencyInput(twelfthVacInput.value);
+          const xmasNow = parseCurrencyInput(twelfthXmasInput.value);
+          const bonusNow = parseCurrencyInput(bonusInput.value);
+          ssInput.value = formatEuroInputValue((baseNow + vacNow + xmasNow + bonusNow) * (ssPct / 100));
+          recalc();
         };
 
         const syncEmployeeDefaults = () => {
@@ -967,8 +1035,16 @@ export class RhRecibosModule {
           if (!isEdit) {
             baseInput.value = formatEuroInputValue(payroll.earnedBase);
             mealInput.value = formatEuroInputValue(payroll.mealEarned);
+            if (twelfthsPresetSelect) {
+              twelfthsPresetSelect.value = payroll.twelfthsMode;
+            }
+            twelfthVacInput.value = formatEuroInputValue(payroll.twelfthsVacation);
+            twelfthXmasInput.value = formatEuroInputValue(payroll.twelfthsChristmas);
             ssInput.value = formatEuroInputValue(
-              (payroll.earnedBase + parseCurrencyInput(bonusInput.value)) * (payroll.ssPercentage / 100)
+              (payroll.earnedBase +
+                payroll.twelfthsTotal +
+                parseCurrencyInput(bonusInput.value)) *
+                (payroll.ssPercentage / 100)
             );
             otherInput.value = formatEuroInputValue(payroll.advancesTotal);
             offPayrollInput.value = formatEuroInputValue(payroll.offPayrollEarned);
@@ -978,8 +1054,24 @@ export class RhRecibosModule {
 
         empSelect.addEventListener('change', syncEmployeeDefaults);
         monthInput.addEventListener('change', syncEmployeeDefaults);
-        [baseInput, mealInput, bonusInput, ssInput, irsInput, otherInput, offPayrollInput].forEach((inp) => {
+        twelfthsPresetSelect?.addEventListener('change', applyTwelfthsPreset);
+        [
+          baseInput,
+          mealInput,
+          twelfthVacInput,
+          twelfthXmasInput,
+          bonusInput,
+          ssInput,
+          irsInput,
+          otherInput,
+          offPayrollInput,
+        ].forEach((inp) => {
           inp.addEventListener('input', recalc);
+        });
+        [twelfthVacInput, twelfthXmasInput].forEach((inp) => {
+          inp.addEventListener('input', () => {
+            if (twelfthsPresetSelect) twelfthsPresetSelect.value = 'personalizado';
+          });
         });
         recalc();
 
@@ -1007,6 +1099,8 @@ export class RhRecibosModule {
             month: refMonth,
             baseSalary: parseCurrencyInput(baseInput.value),
             mealAllowanceTotal: parseCurrencyInput(mealInput.value),
+            twelfthVacation: parseCurrencyInput(twelfthVacInput.value),
+            twelfthChristmas: parseCurrencyInput(twelfthXmasInput.value),
             overtimeBonus: parseCurrencyInput(bonusInput.value),
             socialSecurity: parseCurrencyInput(ssInput.value),
             irsRetention: parseCurrencyInput(irsInput.value),

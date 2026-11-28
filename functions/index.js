@@ -302,6 +302,8 @@ async function upsertPayslipFallback(supabaseAdmin, payload, actorId) {
   const mes = Math.min(12, Math.max(1, Number(mesRaw) || new Date().getMonth() + 1));
   const baseSalary = Number(payload?.baseSalary) || 0;
   const mealAllowance = Number(payload?.mealAllowanceTotal) || 0;
+  const twelfthVac = Math.max(0, Number(payload?.twelfthVacation) || 0);
+  const twelfthXmas = Math.max(0, Number(payload?.twelfthChristmas) || 0);
   const overtimeBonus = Number(payload?.overtimeBonus) || 0;
   const ssVal = Number(payload?.socialSecurity) || 0;
   const irsVal = Number(payload?.irsRetention) || 0;
@@ -322,12 +324,14 @@ async function upsertPayslipFallback(supabaseAdmin, payload, actorId) {
     mes,
     salario_base: baseSalary,
     subsidio_alimentacao: mealAllowance,
+    duodecimo_ferias: twelfthVac,
+    duodecimo_natal: twelfthXmas,
     horas_extra_valor: overtimeBonus,
     ss_valor: ssVal,
     irs_valor: irsVal,
     outras_deducoes: otherDed,
     pagamento_por_fora: offPayrollVal,
-    total_bruto: baseSalary + mealAllowance + overtimeBonus,
+    total_bruto: baseSalary + mealAllowance + twelfthVac + twelfthXmas + overtimeBonus,
     total_liquido: netVal,
     estado_pagamento: statusVal,
     data_pagamento: payDate,
@@ -343,6 +347,8 @@ async function upsertPayslipFallback(supabaseAdmin, payload, actorId) {
     if (updErr && updErr.code === 'PGRST204') {
       const legacyValues = { ...rowValues };
       delete legacyValues.pagamento_por_fora;
+      delete legacyValues.duodecimo_ferias;
+      delete legacyValues.duodecimo_natal;
       ({ data: updated, error: updErr } = await rhTable
         .update(legacyValues)
         .eq('id', existingId)
@@ -360,6 +366,8 @@ async function upsertPayslipFallback(supabaseAdmin, payload, actorId) {
   if (insErr && insErr.code === 'PGRST204') {
     const legacyValues = { ...rowValues, emitido_por: actorId || null };
     delete legacyValues.pagamento_por_fora;
+    delete legacyValues.duodecimo_ferias;
+    delete legacyValues.duodecimo_natal;
     ({ data: inserted, error: insErr } = await rhTable
       .insert(legacyValues)
       .select('id, codigo_recibo')
@@ -786,6 +794,9 @@ function redactSnapshotForProfile(rawSnapshot, profile) {
       ssPercentage: 0,
       offPayrollType: 'mensal',
       offPayrollAmount: 0,
+      twelfths: 'Não',
+      twelfthsVacationManual: 0,
+      twelfthsChristmasManual: 0,
       iban: '',
       _salaryRestricted: true,
     }));
@@ -2588,6 +2599,9 @@ exports.api = onRequest(
             rawEmp.ssPercentage = 11;
             rawEmp.offPayrollType = 'mensal';
             rawEmp.offPayrollAmount = 0;
+            rawEmp.twelfths = 'Não';
+            rawEmp.twelfthsVacationManual = 0;
+            rawEmp.twelfthsChristmasManual = 0;
           } else {
             rawEmp.offPayrollType =
               rawEmp.remunerationType === 'mensal'
@@ -2596,6 +2610,10 @@ exports.api = onRequest(
                   ? 'diaria'
                   : 'mensal';
             rawEmp.offPayrollAmount = Math.max(0, Number(rawEmp.offPayrollAmount) || 0);
+            rawEmp.twelfthsVacationManual =
+              rawEmp.twelfths === 'personalizado' ? Math.max(0, Number(rawEmp.twelfthsVacationManual) || 0) : 0;
+            rawEmp.twelfthsChristmasManual =
+              rawEmp.twelfths === 'personalizado' ? Math.max(0, Number(rawEmp.twelfthsChristmasManual) || 0) : 0;
           }
           const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_employee', {
             p_payload: rawEmp,
@@ -2627,6 +2645,9 @@ exports.api = onRequest(
                   ssPercentage: 0,
                   offPayrollType: 'mensal',
                   offPayrollAmount: 0,
+                  twelfths: 'Não',
+                  twelfthsVacationManual: 0,
+                  twelfthsChristmasManual: 0,
                   iban: '',
                   _salaryRestricted: true,
                 }
@@ -2664,6 +2685,8 @@ exports.api = onRequest(
                   offPayrollAmount: existingEmp.offPayrollAmount ?? 0,
                   iban: existingEmp.iban || '',
                   twelfths: existingEmp.twelfths || 'Não',
+                  twelfthsVacationManual: existingEmp.twelfthsVacationManual ?? 0,
+                  twelfthsChristmasManual: existingEmp.twelfthsChristmasManual ?? 0,
                 };
               }
             } else {
@@ -2674,6 +2697,14 @@ exports.api = onRequest(
                     ? 'diaria'
                     : 'mensal';
               empPayload.offPayrollAmount = Math.max(0, Number(empPayload.offPayrollAmount) || 0);
+              empPayload.twelfthsVacationManual =
+                empPayload.twelfths === 'personalizado'
+                  ? Math.max(0, Number(empPayload.twelfthsVacationManual) || 0)
+                  : 0;
+              empPayload.twelfthsChristmasManual =
+                empPayload.twelfths === 'personalizado'
+                  ? Math.max(0, Number(empPayload.twelfthsChristmasManual) || 0)
+                  : 0;
             }
             const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_employee', {
               p_payload: empPayload,
@@ -2705,6 +2736,9 @@ exports.api = onRequest(
                     ssPercentage: 0,
                     offPayrollType: 'mensal',
                     offPayrollAmount: 0,
+                    twelfths: 'Não',
+                    twelfthsVacationManual: 0,
+                    twelfthsChristmasManual: 0,
                     iban: '',
                     _salaryRestricted: true,
                   }
