@@ -63,6 +63,8 @@
     "@supabase/supabase-js": "^2.119.2",
     "firebase": "^13.4.0",
     "gsap": "^3.12.5",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.9",
     "lenis": "^1.1.14"
   },
   "browserslist": [

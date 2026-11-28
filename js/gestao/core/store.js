@@ -248,6 +248,9 @@ const EMPTY_STATE = {
   projectContracts: [],
   technicalManagers: [],
   technicalCertificates: [],
+  cashMovements: [],
+  cashOpeningBalance: 0,
+  cashOpeningNote: '',
 };
 
 class ErpStore {
@@ -287,6 +290,9 @@ class ErpStore {
       projectContracts: Array.isArray(snapshot?.projectContracts) ? snapshot.projectContracts : [],
       technicalManagers: Array.isArray(snapshot?.technicalManagers) ? snapshot.technicalManagers : [],
       technicalCertificates: Array.isArray(snapshot?.technicalCertificates) ? snapshot.technicalCertificates : [],
+      cashMovements: Array.isArray(snapshot?.cashMovements) ? snapshot.cashMovements : [],
+      cashOpeningBalance: Number(snapshot?.cashOpeningBalance) || 0,
+      cashOpeningNote: String(snapshot?.cashOpeningNote || ''),
     };
   }
 
@@ -364,26 +370,52 @@ class ErpStore {
     );
   }
 
-  /* ── Presenças e Faltas ── */
-  setAttendance(employeeId, dateISO, status, note = '', hours = 8) {
+  /* ── Presenças e Faltas (com suporte a Sábado Pago) ── */
+  setAttendance(
+    employeeId,
+    dateISO,
+    status,
+    note = '',
+    hours = 8,
+    saturdayBonus = 0,
+    saturdayTaxMode = 'por_fora'
+  ) {
     if (!this.state.attendance[employeeId]) {
       this.state.attendance[employeeId] = {};
     }
+    const satBonus = Math.max(0, Number(saturdayBonus) || 0);
+    const satMode = saturdayTaxMode === 'recibo_ss' ? 'recibo_ss' : 'por_fora';
     if (!status) {
       delete this.state.attendance[employeeId][dateISO];
     } else {
-      this.state.attendance[employeeId][dateISO] = { status, note, hours: status === 'P' ? Number(hours) || 8 : 0 };
+      this.state.attendance[employeeId][dateISO] = {
+        status,
+        note,
+        hours: status === 'P' ? Number(hours) || 8 : 0,
+        saturdayBonus: status === 'P' ? satBonus : 0,
+        saturdayTaxMode: status === 'P' ? satMode : 'por_fora',
+      };
     }
     this._notify();
-    this._syncMutation(
+    return this._syncMutation(
       '/api/erp/attendance',
       'PUT',
-      { employeeId, dateISO, status: status || '', note, hours: Number(hours) || 8 },
+      {
+        employeeId,
+        dateISO,
+        status: status || '',
+        note,
+        hours: Number(hours) || 8,
+        saturdayBonus: satBonus,
+        saturdayTaxMode: satMode,
+      },
       'Erro ao guardar assiduidade na base de dados.'
     );
   }
 
-  markAllPresent(dateISO) {
+  markAllPresent(dateISO, saturdayBonus = 0, saturdayTaxMode = 'por_fora') {
+    const satBonus = Math.max(0, Number(saturdayBonus) || 0);
+    const satMode = saturdayTaxMode === 'recibo_ss' ? 'recibo_ss' : 'por_fora';
     this.state.employees
       .filter((e) => e.status === 'ativo')
       .forEach((emp) => {
@@ -391,15 +423,75 @@ class ErpStore {
           this.state.attendance[emp.id] = {};
         }
         if (!this.state.attendance[emp.id][dateISO]) {
-          this.state.attendance[emp.id][dateISO] = { status: 'P', note: '', hours: 8 };
+          this.state.attendance[emp.id][dateISO] = {
+            status: 'P',
+            note: '',
+            hours: 8,
+            saturdayBonus: satBonus,
+            saturdayTaxMode: satMode,
+          };
         }
       });
     this._notify();
-    this._syncMutation(
+    return this._syncMutation(
       '/api/erp/attendance',
       'PUT',
-      { action: 'mark_all_present', dateISO },
+      { action: 'mark_all_present', dateISO, saturdayBonus: satBonus, saturdayTaxMode: satMode },
       'Erro ao registar presenças em lote na base de dados.'
+    );
+  }
+
+  _syncLocalCashOrigin(originType, originCode, movData) {
+    if (!Array.isArray(this.state.cashMovements)) {
+      this.state.cashMovements = [];
+    }
+    this.state.cashMovements = this.state.cashMovements.filter(
+      (m) => !(m.originType === originType && m.originCode === originCode)
+    );
+    if (movData && (Number(movData.amount) || 0) > 0) {
+      this.state.cashMovements.unshift({
+        ...movData,
+        originType,
+        originCode,
+      });
+    }
+  }
+
+  /* ── Caixa da Empresa (Entradas, Saídas & Saldo Inicial) ── */
+  addCashMovement(mov) {
+    if (!Array.isArray(this.state.cashMovements)) {
+      this.state.cashMovements = [];
+    }
+    this.state.cashMovements.unshift({ ...mov, originType: 'manual' });
+    this._notify();
+    return this._syncMutation(
+      '/api/erp/cash-movements',
+      'POST',
+      mov,
+      'Erro ao registar movimento no caixa da empresa.'
+    );
+  }
+
+  deleteCashMovement(id) {
+    this.state.cashMovements = (this.state.cashMovements || []).filter((m) => m.id !== id);
+    this._notify();
+    return this._syncMutation(
+      `/api/erp/cash-movements/${encodeURIComponent(id)}`,
+      'DELETE',
+      null,
+      'Erro ao eliminar movimento de caixa.'
+    );
+  }
+
+  setCashOpeningBalance(openingBalance, openingNote = '') {
+    this.state.cashOpeningBalance = Number(openingBalance) || 0;
+    this.state.cashOpeningNote = String(openingNote || '');
+    this._notify();
+    return this._syncMutation(
+      '/api/erp/cash-opening',
+      'PUT',
+      { openingBalance: this.state.cashOpeningBalance, openingNote: this.state.cashOpeningNote },
+      'Erro ao guardar saldo inicial de caixa.'
     );
   }
 
@@ -409,6 +501,19 @@ class ErpStore {
       this.state.employeeAdvances = [];
     }
     this.state.employeeAdvances.unshift(advance);
+    const emp = (this.state.employees || []).find((e) => e.id === advance.employeeId);
+    this._syncLocalCashOrigin('adiantamento', advance.id, {
+      id: `CX-ADT-${advance.id}`,
+      type: 'saida',
+      category: 'Adiantamento / Vale',
+      date: advance.date,
+      month: advance.month || String(advance.date || '').slice(0, 7),
+      description: `Vale / Adiantamento — ${emp?.name || 'Colaborador'}`,
+      amount: Number(advance.amount) || 0,
+      taxMode: 'adiantamento',
+      employeeId: advance.employeeId,
+      notes: advance.notes || '',
+    });
     this._notify();
     return this._syncMutation(
       '/api/erp/employee-advances',
@@ -420,6 +525,7 @@ class ErpStore {
 
   deleteEmployeeAdvance(id) {
     this.state.employeeAdvances = (this.state.employeeAdvances || []).filter((a) => a.id !== id);
+    this._syncLocalCashOrigin('adiantamento', id, null);
     this._notify();
     this._syncMutation(
       `/api/erp/employee-advances/${encodeURIComponent(id)}`,
@@ -506,6 +612,21 @@ class ErpStore {
   /* ── Recibos de Vencimento ── */
   addPayslip(payslip) {
     this.state.payslips.unshift(payslip);
+    const emp = (this.state.employees || []).find((e) => e.id === payslip.employeeId);
+    if (payslip.status === 'pago' && (Number(payslip.netSalary) || 0) > 0) {
+      this._syncLocalCashOrigin('recibo_vencimento', payslip.id, {
+        id: `CX-REC-${payslip.id}`,
+        type: 'saida',
+        category: 'Salários & Ordenados',
+        date: payslip.paymentDate || `${payslip.month || ''}-28`,
+        month: payslip.month,
+        description: `Pagamento de ordenado — ${emp?.name || 'Colaborador'} (${payslip.month || ''})`,
+        amount: Number(payslip.netSalary) || 0,
+        taxMode: (Number(payslip.offPayroll) || 0) > 0 ? 'misto' : 'recibo_ss',
+        employeeId: payslip.employeeId,
+        notes: payslip.notes || '',
+      });
+    }
     this._notify();
     return this._syncMutation(
       '/api/erp/payslips',
@@ -520,6 +641,23 @@ class ErpStore {
     if (idx === -1) return Promise.resolve(null);
     const updated = { ...this.state.payslips[idx], ...patch };
     this.state.payslips[idx] = updated;
+    const emp = (this.state.employees || []).find((e) => e.id === updated.employeeId);
+    if (updated.status === 'pago' && (Number(updated.netSalary) || 0) > 0) {
+      this._syncLocalCashOrigin('recibo_vencimento', updated.id, {
+        id: `CX-REC-${updated.id}`,
+        type: 'saida',
+        category: 'Salários & Ordenados',
+        date: updated.paymentDate || `${updated.month || ''}-28`,
+        month: updated.month,
+        description: `Pagamento de ordenado — ${emp?.name || 'Colaborador'} (${updated.month || ''})`,
+        amount: Number(updated.netSalary) || 0,
+        taxMode: (Number(updated.offPayroll) || 0) > 0 ? 'misto' : 'recibo_ss',
+        employeeId: updated.employeeId,
+        notes: updated.notes || '',
+      });
+    } else {
+      this._syncLocalCashOrigin('recibo_vencimento', updated.id, null);
+    }
     this._notify();
     return this._syncMutation(
       `/api/erp/payslips/${encodeURIComponent(id)}`,
@@ -531,6 +669,7 @@ class ErpStore {
 
   deletePayslip(id) {
     this.state.payslips = this.state.payslips.filter((p) => p.id !== id);
+    this._syncLocalCashOrigin('recibo_vencimento', id, null);
     this._notify();
     return this._syncMutation(
       `/api/erp/payslips/${encodeURIComponent(id)}`,
@@ -586,6 +725,27 @@ class ErpStore {
     const current = this.state.projects[idx];
     const updated = { ...current, ...patch };
     this.state.projects[idx] = updated;
+    if (Array.isArray(updated.payments)) {
+      updated.payments.forEach((pay) => {
+        if (pay.status === 'pago' && (Number(pay.amount) || 0) > 0) {
+          const dt = pay.paidDate || pay.dueDate || '';
+          this._syncLocalCashOrigin('recebimento_obra', pay.id, {
+            id: `CX-PAG-${pay.id}`,
+            type: 'entrada',
+            category: 'Recebimento de Obra',
+            date: dt,
+            month: String(dt).slice(0, 7),
+            description: `Recebimento (${updated.code || 'Obra'}) — ${pay.description || updated.name || 'Prestação'}`,
+            amount: Number(pay.amount) || 0,
+            taxMode: 'receita',
+            projectId: updated.code || updated.id,
+            notes: pay.method || 'Transferência Bancária',
+          });
+        } else {
+          this._syncLocalCashOrigin('recebimento_obra', pay.id, null);
+        }
+      });
+    }
     this._notify();
 
     const patchKeys = Object.keys(patch || {});
@@ -625,6 +785,18 @@ class ErpStore {
       this.state.projectInvoices = [];
     }
     this.state.projectInvoices.unshift(invoice);
+    this._syncLocalCashOrigin('fatura_obra', invoice.id, {
+      id: `CX-FAT-${invoice.id}`,
+      type: 'saida',
+      category: 'Fatura de Obra / Materiais',
+      date: invoice.invoiceDate || invoice.createdAt || '',
+      month: String(invoice.invoiceDate || invoice.createdAt || '').slice(0, 7),
+      description: `Fatura #${invoice.invoiceNumber || invoice.id} — ${invoice.supplier || 'Fornecedor'}`,
+      amount: Number(invoice.amount) || 0,
+      taxMode: 'fatura',
+      projectId: invoice.projectId || '',
+      notes: invoice.category || 'Materiais de Construção',
+    });
     this._notify();
 
     const pending = pendingInvoicePayloads.get(invoice.id);
@@ -646,6 +818,7 @@ class ErpStore {
 
   deleteProjectInvoice(id) {
     this.state.projectInvoices = (this.state.projectInvoices || []).filter((inv) => inv.id !== id);
+    this._syncLocalCashOrigin('fatura_obra', id, null);
     this._notify();
     this._syncMutation(
       `/api/erp/project-invoices/${encodeURIComponent(id)}`,

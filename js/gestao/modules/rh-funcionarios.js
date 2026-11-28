@@ -5,6 +5,7 @@
 import { store, saveEmployeeContractFile, getEmployeeContractFile } from '../core/store.js';
 import {
   escapeHtml,
+  formatCurrency,
   formatDatePT,
   formatMonthLabel,
   getDaysInMonth,
@@ -12,10 +13,17 @@ import {
   getWeekdayShortPT,
   isValidNIF,
   generateId,
+  parseCurrencyInput,
   todayISO,
   downloadCSV,
 } from '../core/formatters.js';
 import { ICONS, openModal, closeModal, confirmAction, showToast } from '../core/ui.js';
+
+function isSaturdayISO(dateISO) {
+  const parts = String(dateISO || '').split('-').map(Number);
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return false;
+  return new Date(parts[0], parts[1] - 1, parts[2]).getDay() === 6;
+}
 
 const ATTENDANCE_LABELS = {
   P: { code: 'P', label: 'Presente', cls: 'P' },
@@ -46,6 +54,11 @@ function computeMonthlyAttendance(employee, attendanceMap = {}, yearMonth) {
   const daysCount = getDaysInMonth(yearMonth);
   let workingDays = 0;
   let present = 0;
+  let weekdayPresent = 0;
+  let saturdayCount = 0;
+  let saturdayBonusTotal = 0;
+  let saturdayReceiptTotal = 0;
+  let saturdayOffTotal = 0;
   let totalHours = 0;
   let justified = 0;
   let unjustified = 0;
@@ -60,6 +73,18 @@ function computeMonthlyAttendance(employee, attendanceMap = {}, yearMonth) {
     if (rec.status === 'P') {
       present += 1;
       totalHours += Number(rec.hours) > 0 ? Number(rec.hours) : 8;
+      if (wd === 6) {
+        saturdayCount += 1;
+        const satVal = Math.max(0, Number(rec.saturdayBonus) || 0);
+        saturdayBonusTotal += satVal;
+        if (rec.saturdayTaxMode === 'recibo_ss') {
+          saturdayReceiptTotal += satVal;
+        } else {
+          saturdayOffTotal += satVal;
+        }
+      } else {
+        weekdayPresent += 1;
+      }
     } else if (rec.status === 'FJ') {
       justified += 1;
     } else if (rec.status === 'FI') {
@@ -75,6 +100,11 @@ function computeMonthlyAttendance(employee, attendanceMap = {}, yearMonth) {
   return {
     workingDays,
     present,
+    weekdayPresent,
+    saturdayCount,
+    saturdayBonusTotal: Number(saturdayBonusTotal.toFixed(2)),
+    saturdayReceiptTotal: Number(saturdayReceiptTotal.toFixed(2)),
+    saturdayOffTotal: Number(saturdayOffTotal.toFixed(2)),
     totalHours,
     justified,
     unjustified,
@@ -362,12 +392,14 @@ export class RhFuncionariosModule {
 
   _renderDailyAttendance(target, employees, attendanceMap) {
     const activeEmployees = employees.filter((e) => e.status === 'ativo');
+    const isSatSelected = isSaturdayISO(this.selectedDate);
 
     target.innerHTML = `
       <div class="erp-attendance-controls">
         <div class="erp-filter-bar">
           <label style="font-size:12.5px;font-weight:700;color:var(--erp-heading);">Data da Folha de Ponto:</label>
           <input type="date" class="erp-select-sm" id="attDatePicker" value="${escapeHtml(this.selectedDate)}">
+          ${isSatSelected ? '<span class="erp-badge erp-badge--warning">Sábado — Valor Adicional Configurável</span>' : ''}
           <button type="button" class="erp-btn erp-btn--secondary erp-btn--sm" id="btnMarkAllPresent">
             ${ICONS.checkCircle}
             <span>Marcar Todos Presentes</span>
@@ -380,6 +412,14 @@ export class RhFuncionariosModule {
           <span class="erp-legend__item"><span class="erp-att-pill erp-att-pill--FE">FE</span> Férias</span>
         </div>
       </div>
+
+      ${
+        isSatSelected
+          ? `<div class="erp-smart-banner" style="margin-bottom:12px;">
+               <span><strong>Dia de Sábado (${escapeHtml(formatDatePT(this.selectedDate))}):</strong> A empresa opera de Seg–Sex; ao marcar Presença (P) neste sábado será pedido o valor pago pelo sábado e se entra <strong>Por Fora</strong> ou em <strong>Segurança Social</strong>.</span>
+             </div>`
+          : ''
+      }
 
       <div class="erp-table-wrap">
         <table class="erp-table">
@@ -399,6 +439,8 @@ export class RhFuncionariosModule {
                 const remType = emp.remunerationType || 'mensal';
                 const remTag = REMUNERATION_LABELS[remType] || 'Fixo Mensal';
                 const dayHours = Number(rec.hours) > 0 ? Number(rec.hours) : 8;
+                const satBonus = Number(rec.saturdayBonus) || 0;
+                const satTaxLabel = rec.saturdayTaxMode === 'recibo_ss' ? 'c/ SS' : 'Por Fora SS';
                 return `
                 <tr>
                   <td>
@@ -413,7 +455,8 @@ export class RhFuncionariosModule {
                   <td>
                     ${
                       meta
-                        ? `<span class="erp-att-pill erp-att-pill--${meta.cls}">${meta.code} · ${escapeHtml(meta.label)}${rec.status === 'P' && remType === 'hora' ? ` (${dayHours}h)` : ''}</span>`
+                        ? `<span class="erp-att-pill erp-att-pill--${meta.cls}">${meta.code} · ${escapeHtml(meta.label)}${rec.status === 'P' && remType === 'hora' ? ` (${dayHours}h)` : ''}</span>
+                           ${isSatSelected && rec.status === 'P' ? `<div class="erp-cell-sub" style="margin-top:4px;color:var(--erp-accent-dark);font-weight:600;">Sábado: +${escapeHtml(formatCurrency(satBonus))} (${escapeHtml(satTaxLabel)})</div>` : ''}`
                         : `<span class="erp-att-pill erp-att-pill--empty">Sem registo</span>`
                     }
                   </td>
@@ -458,6 +501,14 @@ export class RhFuncionariosModule {
     });
 
     target.querySelector('#btnMarkAllPresent').addEventListener('click', () => {
+      if (isSaturdayISO(this.selectedDate)) {
+        this._openSaturdayAttendanceModal({
+          mode: 'batch',
+          dateISO: this.selectedDate,
+          activeCount: activeEmployees.length,
+        });
+        return;
+      }
       store.markAllPresent(this.selectedDate);
       showToast(`Presenças marcadas para ${formatDatePT(this.selectedDate)}.`);
     });
@@ -469,9 +520,21 @@ export class RhFuncionariosModule {
         const noteInput = target.querySelector(`[data-att-note="${empId}"]`);
         const hoursInput = target.querySelector(`[data-att-hours="${empId}"]`);
         const hrs = hoursInput ? Number(hoursInput.value) || 8 : 8;
-        store.setAttendance(empId, this.selectedDate, code, noteInput ? noteInput.value : '', hrs);
-
         const emp = store.getState().employees.find((x) => x.id === empId);
+
+        if (code === 'P' && isSaturdayISO(this.selectedDate) && emp) {
+          this._openSaturdayAttendanceModal({
+            mode: 'single',
+            emp,
+            dateISO: this.selectedDate,
+            hours: hrs,
+            note: noteInput ? noteInput.value : '',
+          });
+          return;
+        }
+
+        store.setAttendance(empId, this.selectedDate, code, noteInput ? noteInput.value : '', hrs, 0, 'por_fora');
+
         if (emp) {
           if (code === 'P') {
             showToast(`Presença registada (${emp.name}).`, 'success');
@@ -492,10 +555,119 @@ export class RhFuncionariosModule {
         const empId = input.dataset.attNote;
         const current = (store.getState().attendance[empId] || {})[this.selectedDate];
         if (current && current.status) {
-          store.setAttendance(empId, this.selectedDate, current.status, input.value, current.hours || 8);
+          store.setAttendance(
+            empId,
+            this.selectedDate,
+            current.status,
+            input.value,
+            current.hours || 8,
+            current.saturdayBonus || 0,
+            current.saturdayTaxMode || 'por_fora'
+          );
           showToast('Observação guardada.');
         }
       });
+    });
+  }
+
+  _openSaturdayAttendanceModal({ mode, emp = null, dateISO, hours = 8, note = '', activeCount = 0 }) {
+    const existing = emp ? (store.getState().attendance[emp.id] || {})[dateISO] || {} : {};
+    const defaultAmt = Number(existing.saturdayBonus) > 0 ? Number(existing.saturdayBonus) : 0;
+    const defaultTaxMode = existing.saturdayTaxMode === 'recibo_ss' ? 'recibo_ss' : 'por_fora';
+    const remHint =
+      mode === 'single' && emp
+        ? emp.remunerationType === 'diaria'
+          ? `Referência Seg–Sex: diária normal de ${formatCurrency(emp.dailyRate)}. Indique quanto irá pagar por este Sábado.`
+          : emp.remunerationType === 'hora'
+            ? `Referência Seg–Sex: ${formatCurrency(emp.hourlyRate)}/h. Indique o valor total pago por este Sábado.`
+            : 'Colaborador em Ordenado Fixo (cobre Seg–Sex): o valor abaixo soma como extra de Sábado.'
+        : `Aplicar o valor deste Sábado aos ${activeCount} colaboradores ativos ainda sem marcação nesta data.`;
+
+    openModal({
+      title: `Presença ao Sábado — ${formatDatePT(dateISO)}`,
+      subtitle: mode === 'single' && emp ? `${emp.name} · ${emp.role}` : 'Marcação em lote (Todos Presentes)',
+      bodyHtml: `
+        <form id="satAttendanceForm">
+          <div class="erp-smart-banner" style="margin-bottom:14px;">
+            <span>${escapeHtml(remHint)}</span>
+          </div>
+
+          <div class="erp-form-grid">
+            <div class="erp-field erp-field--full">
+              <label for="satPayAmount">Valor a pagar por este Sábado (€) *</label>
+              <input type="text" inputmode="numeric" data-currency-euro id="satPayAmount" value="${escapeHtml(defaultAmt)}" required placeholder="€ 0,00">
+            </div>
+
+            <div class="erp-field erp-field--full">
+              <label>Como este valor de Sábado será processado? *</label>
+              <div class="erp-regime-group" id="satTaxGroup">
+                <label class="erp-regime-option ${defaultTaxMode === 'por_fora' ? 'is-selected' : ''}">
+                  <input type="radio" name="satTaxMode" value="por_fora" ${defaultTaxMode === 'por_fora' ? 'checked' : ''}>
+                  <div>
+                    <div class="erp-cell-title">Por Fora da Segurança Social</div>
+                    <div class="erp-cell-sub">Sem desconto de SS — soma integral ao total final a pagar.</div>
+                  </div>
+                </label>
+                <label class="erp-regime-option ${defaultTaxMode === 'recibo_ss' ? 'is-selected' : ''}">
+                  <input type="radio" name="satTaxMode" value="recibo_ss" ${defaultTaxMode === 'recibo_ss' ? 'checked' : ''}>
+                  <div>
+                    <div class="erp-cell-title">Em Recibo (Segurança Social)</div>
+                    <div class="erp-cell-sub">Entra no recibo oficial e aplica o desconto de SS do colaborador.</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            ${
+              mode === 'single'
+                ? `<div class="erp-field erp-field--full">
+                     <label for="satAttNote">Observação / Obra deste Sábado</label>
+                     <input type="text" id="satAttNote" value="${escapeHtml(note || existing.note || '')}" placeholder="Ex.: Turno extra de sábado em obra">
+                   </div>`
+                : ''
+            }
+          </div>
+        </form>
+      `,
+      footerHtml: `
+        <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Cancelar</button>
+        <button type="submit" form="satAttendanceForm" class="erp-btn erp-btn--primary">
+          ${ICONS.checkCircle}<span>Confirmar Presença no Sábado</span>
+        </button>
+      `,
+      onMount: (modal) => {
+        modal.querySelectorAll('input[name="satTaxMode"]').forEach((r) => {
+          r.addEventListener('change', () => {
+            modal.querySelectorAll('#satTaxGroup .erp-regime-option').forEach((lbl) => {
+              lbl.classList.toggle('is-selected', Boolean(lbl.querySelector('input')?.checked));
+            });
+          });
+        });
+
+        modal.querySelector('#satAttendanceForm')?.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const amt = Math.max(0, parseCurrencyInput(modal.querySelector('#satPayAmount')?.value));
+          const taxMode = modal.querySelector('input[name="satTaxMode"]:checked')?.value === 'recibo_ss' ? 'recibo_ss' : 'por_fora';
+          const satNote = modal.querySelector('#satAttNote')?.value?.trim() || note || '';
+
+          if (mode === 'batch') {
+            await store.markAllPresent(dateISO, amt, taxMode);
+            showToast(
+              `Sábado (${formatDatePT(dateISO)}) marcado para todos os ativos (${formatCurrency(amt)} · ${taxMode === 'recibo_ss' ? 'Segurança Social' : 'Por Fora SS'}).`,
+              'success',
+              4500
+            );
+          } else if (emp) {
+            await store.setAttendance(emp.id, dateISO, 'P', satNote, hours, amt, taxMode);
+            showToast(
+              `Sábado registado para ${emp.name}: +${formatCurrency(amt)} (${taxMode === 'recibo_ss' ? 'Recibo c/ SS' : 'Por Fora SS'}).`,
+              'success',
+              4500
+            );
+          }
+          closeModal();
+        });
+      },
     });
   }
 
@@ -511,7 +683,8 @@ export class RhFuncionariosModule {
           <thead>
             <tr>
               <th>Colaborador</th>
-              <th>Trabalhados / Horas</th>
+              <th>Trabalhados (Seg–Sex / Sáb.)</th>
+              <th>Sábados (€)</th>
               <th>Faltas (FJ / FI)</th>
               <th>Férias (FE)</th>
               <th>Taxa de Assiduidade</th>
@@ -533,7 +706,18 @@ export class RhFuncionariosModule {
                       </div>
                     </div>
                   </td>
-                  <td><span class="erp-att-pill erp-att-pill--P">${s.present} d${s.remunerationType === 'hora' ? ` (${s.totalHours}h)` : ''}</span></td>
+                  <td>
+                    <span class="erp-att-pill erp-att-pill--P">${s.weekdayPresent} d${s.remunerationType === 'hora' ? ` (${s.totalHours}h)` : ''}</span>
+                    ${s.saturdayCount > 0 ? `<span class="erp-badge erp-badge--warning" style="margin-left:4px;">${s.saturdayCount} Sáb.</span>` : ''}
+                  </td>
+                  <td>
+                    ${
+                      s.saturdayCount > 0
+                        ? `<div class="erp-cell-title" style="color:var(--erp-accent-dark);">+${escapeHtml(formatCurrency(s.saturdayBonusTotal))}</div>
+                           <div class="erp-cell-sub">${s.saturdayReceiptTotal > 0 ? `SS: ${formatCurrency(s.saturdayReceiptTotal)}` : ''}${s.saturdayReceiptTotal > 0 && s.saturdayOffTotal > 0 ? ' · ' : ''}${s.saturdayOffTotal > 0 ? `Fora: ${formatCurrency(s.saturdayOffTotal)}` : ''}</div>`
+                        : '<span class="erp-cell-sub">—</span>'
+                    }
+                  </td>
                   <td>
                     <span class="erp-att-pill erp-att-pill--FJ">${s.justified}FJ</span>
                     <span class="erp-att-pill erp-att-pill--FI">${s.unjustified}FI</span>
@@ -597,6 +781,8 @@ export class RhFuncionariosModule {
     const emp = state.employees.find((e) => e.id === empId);
     if (!emp) return;
 
+    let pendingSaturdayISO = null;
+
     const renderCalendarBody = () => {
       const att = store.getState().attendance[emp.id] || {};
       const days = getDaysInMonth(month);
@@ -615,33 +801,62 @@ export class RhFuncionariosModule {
         const rec = att[dateISO];
         const code = rec ? rec.status : '';
         const pillCls = code ? `erp-att-pill--${code}` : 'erp-att-pill--empty';
+        const satSub =
+          wd === 6 && code === 'P' && Number(rec?.saturdayBonus) > 0
+            ? `<span style="font-size:9px;font-weight:700;color:var(--erp-accent-dark);display:block;margin-top:2px;">+${escapeHtml(formatCurrency(rec.saturdayBonus))}</span>`
+            : '';
         cells += `
           <button type="button" class="erp-cal-day ${isWeekend ? 'erp-cal-day--weekend' : ''}" data-cal-day="${dateISO}">
             <span class="erp-cal-day__num">${d}</span>
             <span class="erp-att-pill ${pillCls}">${code || '—'}</span>
+            ${satSub}
           </button>`;
       }
+
+      const satEditorHtml = pendingSaturdayISO
+        ? `<div class="erp-inline-invoice-box" style="margin-bottom:14px;border-color:var(--erp-primary-border);">
+             <div class="erp-form-section__title" style="margin-bottom:8px;">Configurar Pagamento deste Sábado (${escapeHtml(formatDatePT(pendingSaturdayISO))})</div>
+             <div class="erp-form-grid">
+               <div class="erp-field">
+                 <label for="calSatBonus">Valor pago no Sábado (€) *</label>
+                 <input type="text" inputmode="numeric" id="calSatBonus" value="0" placeholder="€ 0,00">
+               </div>
+               <div class="erp-field">
+                 <label for="calSatTaxMode">Regime do Sábado</label>
+                 <select id="calSatTaxMode">
+                   <option value="por_fora">Por Fora da Segurança Social (sem desconto SS)</option>
+                   <option value="recibo_ss">Em Recibo (sujeito a Segurança Social)</option>
+                 </select>
+               </div>
+             </div>
+             <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;">
+               <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" id="btnCalSatCancel">Cancelar</button>
+               <button type="button" class="erp-btn erp-btn--primary erp-btn--sm" id="btnCalSatConfirm">Confirmar Sábado (P)</button>
+             </div>
+           </div>`
+        : '';
 
       return `
         <div class="erp-summary-box" style="margin-bottom:14px;">
           <div>
-            <div class="erp-summary-item__label">Trabalhados (P)</div>
-            <div class="erp-summary-item__val erp-summary-item__val--success">${stats.present} d${stats.remunerationType === 'hora' ? ` (${stats.totalHours}h)` : ''}</div>
+            <div class="erp-summary-item__label">Seg–Sex / Total (P)</div>
+            <div class="erp-summary-item__val erp-summary-item__val--success">${stats.weekdayPresent} ú. + ${stats.saturdayCount} sáb.</div>
+          </div>
+          <div>
+            <div class="erp-summary-item__label">Sábados Pagos</div>
+            <div class="erp-summary-item__val" style="color:var(--erp-accent-dark);">+${escapeHtml(formatCurrency(stats.saturdayBonusTotal))}</div>
           </div>
           <div>
             <div class="erp-summary-item__label">Faltas (FJ / FI)</div>
             <div class="erp-summary-item__val">${stats.justified}FJ · <span style="color:var(--erp-danger)">${stats.unjustified}FI</span></div>
           </div>
           <div>
-            <div class="erp-summary-item__label">Férias (FE)</div>
-            <div class="erp-summary-item__val">${stats.vacation} d</div>
-          </div>
-          <div>
             <div class="erp-summary-item__label">Taxa Assiduidade</div>
             <div class="erp-summary-item__val erp-summary-item__val--accent">${stats.attendanceRate}%</div>
           </div>
         </div>
-        <p class="erp-cell-sub" style="margin-bottom:10px;">Clique num dia para alternar: Presente (P) → Falta Justificada (FJ) → Falta Injustificada (FI) → Férias (FE) → Sem registo.</p>
+        ${satEditorHtml}
+        <p class="erp-cell-sub" style="margin-bottom:10px;">Clique num dia para alternar: Presente (P) → Falta Justificada (FJ) → Falta Injustificada (FI) → Férias (FE) → Sem registo. Aos sábados, ao marcar (P), define valor e regime (Por Fora / SS).</p>
         <div class="erp-cal-grid">
           <div class="erp-cal-head">Seg</div>
           <div class="erp-cal-head">Ter</div>
@@ -669,10 +884,40 @@ export class RhFuncionariosModule {
               const currentRec = (store.getState().attendance[emp.id] || {})[dateISO] || {};
               const current = currentRec.status || '';
               const next = cycle[(cycle.indexOf(current) + 1) % cycle.length];
-              store.setAttendance(emp.id, dateISO, next, '', currentRec.hours || 8);
+
+              if (next === 'P' && isSaturdayISO(dateISO)) {
+                pendingSaturdayISO = dateISO;
+                modal.querySelector('#empCalWrap').innerHTML = renderCalendarBody();
+                bindDays();
+                modal.querySelector('#calSatBonus')?.focus();
+                return;
+              }
+
+              pendingSaturdayISO = null;
+              store.setAttendance(emp.id, dateISO, next, '', currentRec.hours || 8, 0, 'por_fora');
               modal.querySelector('#empCalWrap').innerHTML = renderCalendarBody();
               bindDays();
             });
+          });
+
+          modal.querySelector('#btnCalSatCancel')?.addEventListener('click', () => {
+            pendingSaturdayISO = null;
+            modal.querySelector('#empCalWrap').innerHTML = renderCalendarBody();
+            bindDays();
+          });
+
+          modal.querySelector('#btnCalSatConfirm')?.addEventListener('click', () => {
+            if (!pendingSaturdayISO) return;
+            const bonus = Math.max(0, parseCurrencyInput(modal.querySelector('#calSatBonus')?.value));
+            const mode = modal.querySelector('#calSatTaxMode')?.value === 'recibo_ss' ? 'recibo_ss' : 'por_fora';
+            const rec = (store.getState().attendance[emp.id] || {})[pendingSaturdayISO] || {};
+            store.setAttendance(emp.id, pendingSaturdayISO, 'P', rec.note || '', rec.hours || 8, bonus, mode);
+            showToast(
+              `Sábado (${formatDatePT(pendingSaturdayISO)}) registado: +${formatCurrency(bonus)} (${mode === 'recibo_ss' ? 'Recibo c/ SS' : 'Por Fora SS'}).`
+            );
+            pendingSaturdayISO = null;
+            modal.querySelector('#empCalWrap').innerHTML = renderCalendarBody();
+            bindDays();
           });
         };
         bindDays();

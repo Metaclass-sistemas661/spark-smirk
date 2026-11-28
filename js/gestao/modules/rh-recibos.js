@@ -312,6 +312,7 @@ export class RhRecibosModule {
                     <td>
                       <div class="erp-cell-title">${escapeHtml(formatCurrency(p.baseSalary))}</div>
                       <div class="erp-cell-sub">Sub. Alim. ${escapeHtml(formatCurrency(p.mealAllowanceTotal))}${Number(p.overtimeBonus) > 0 ? ` · Extra ${escapeHtml(formatCurrency(p.overtimeBonus))}` : ''}</div>
+                      ${Number(p.saturdayCount) > 0 ? `<div class="erp-cell-sub" style="color:var(--erp-accent-dark);font-weight:600;">+ Sábados (${Number(p.saturdayCount)}): Recibo ${escapeHtml(formatCurrency(p.saturdayReceiptTotal || 0))} · Fora ${escapeHtml(formatCurrency(p.saturdayOffTotal || 0))}</div>` : ''}
                       ${twelfthsVal > 0 ? `<div class="erp-cell-sub" style="color:var(--erp-info);font-weight:600;">+ Duodécimos (Fér./Nat.): ${escapeHtml(formatCurrency(twelfthsVal))}</div>` : ''}
                       ${Number(p.offPayroll) > 0 ? `<div class="erp-cell-sub" style="color:var(--erp-accent-dark);font-weight:600;">+ Por fora SS: ${escapeHtml(formatCurrency(p.offPayroll))}</div>` : ''}
                     </td>

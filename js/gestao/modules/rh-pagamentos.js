@@ -5,6 +5,7 @@
 import { store } from '../core/store.js';
 import {
   TWELFTHS_OPTIONS,
+  computeCompanyCashSummary,
   computeEmployeeMonthlyPayroll,
   computeTwelfthsBreakdown,
   downloadCSV,
@@ -19,6 +20,7 @@ import {
   parseCurrencyInput,
   todayISO,
 } from '../core/formatters.js';
+import { generateSparkReportPdf } from '../core/pdf-report.js';
 import { ICONS, openModal, closeModal, confirmAction, showToast } from '../core/ui.js';
 
 const REMUNERATION_LABELS = {
@@ -55,6 +57,7 @@ export class RhPagamentosModule {
     this.advScope = 'month'; // 'month' | 'all'
     this.expandedAdvEmployees = new Set();
     this.onOpenPayslips = options.onOpenPayslips || null;
+    this.onOpenAdvancedReports = options.onOpenAdvancedReports || null;
   }
 
   _hasActiveFilters() {
@@ -445,7 +448,8 @@ export class RhPagamentosModule {
                           <div class="erp-cell-title">${escapeHtml(emp.name)}</div>
                           <div class="erp-cell-sub">
                             ${escapeHtml(emp.role)} ·
-                            <span class="erp-att-pill erp-att-pill--P" style="font-size:11px;padding:1px 6px;">${s.present}P</span>
+                            <span class="erp-att-pill erp-att-pill--P" style="font-size:11px;padding:1px 6px;">${s.weekdayPresent}d</span>
+                            ${s.saturdayCount > 0 ? `<span class="erp-badge erp-badge--warning" style="padding:1px 6px;font-size:10.5px;">${s.saturdayCount} Sáb. (+${escapeHtml(formatCurrency(s.saturdayTotal))})</span>` : ''}
                             ${s.remunerationType === 'mensal' ? '<span style="font-size:11px;color:var(--erp-text-muted);">Fixo</span>' : ''}
                           </div>
                         </div>
@@ -463,13 +467,13 @@ export class RhPagamentosModule {
                            </td>
                            <td>
                              <div class="erp-cell-title">${escapeHtml(formatCurrency(s.receiptNetPay))}</div>
-                             <div class="erp-cell-sub">Bruto ${escapeHtml(formatCurrency(s.grossPay))} · SS -${escapeHtml(formatCurrency(s.ssDeduction))}</div>
+                             <div class="erp-cell-sub">Bruto ${escapeHtml(formatCurrency(s.grossPay))} · SS -${escapeHtml(formatCurrency(s.ssDeduction))}${s.saturdayReceiptTotal > 0 ? ` · Sáb. +${escapeHtml(formatCurrency(s.saturdayReceiptTotal))}` : ''}</div>
                            </td>
                            <td>
                              <div class="erp-cell-title" style="color:${s.offPayrollEarned > 0 ? 'var(--erp-accent-dark)' : 'var(--erp-text-muted)'};">
                                ${s.offPayrollEarned > 0 ? `+ ${escapeHtml(formatCurrency(s.offPayrollEarned))}` : '€ 0,00'}
                              </div>
-                             <div class="erp-cell-sub">${s.offPayrollAmount > 0 ? (s.offPayrollType === 'diaria' ? `${formatCurrency(s.offPayrollAmount)}/dia` : 'Fixo mensal') : 'Sem complemento'}</div>
+                             <div class="erp-cell-sub">${s.saturdayOffTotal > 0 ? `Inclui Sáb. ${formatCurrency(s.saturdayOffTotal)}` : s.offPayrollAmount > 0 ? (s.offPayrollType === 'diaria' ? `${formatCurrency(s.offPayrollAmount)}/dia` : 'Fixo mensal') : 'Sem complemento'}</div>
                            </td>`
                         : ''
                     }
@@ -903,7 +907,7 @@ export class RhPagamentosModule {
               <tr>
                 <th style="width:36px;"><input type="checkbox" id="batchCheckAll" checked title="Selecionar todos"></th>
                 <th>Colaborador</th>
-                <th>Presenças / Base</th>
+                <th>Base / Sábados</th>
                 <th>Duodécimos</th>
                 <th>Por Fora SS</th>
                 <th>Vales</th>
@@ -922,7 +926,7 @@ export class RhPagamentosModule {
                   </td>
                   <td>
                     <div class="erp-cell-title">${escapeHtml(formatCurrency(stats.earnedBase))}</div>
-                    <div class="erp-cell-sub">${stats.present}P · SS -${escapeHtml(formatCurrency(stats.ssDeduction))}</div>
+                    <div class="erp-cell-sub">${stats.weekdayPresent}d úteis${stats.saturdayCount > 0 ? ` · ${stats.saturdayCount} sáb. (+${escapeHtml(formatCurrency(stats.saturdayTotal))})` : ''} · SS -${escapeHtml(formatCurrency(stats.ssDeduction))}</div>
                   </td>
                   <td style="color:${stats.twelfthsTotal > 0 ? 'var(--erp-info)' : 'var(--erp-text-muted)'};font-weight:600;">${stats.twelfthsTotal > 0 ? `+${escapeHtml(formatCurrency(stats.twelfthsTotal))}` : '—'}</td>
                   <td style="color:${stats.offPayrollEarned > 0 ? 'var(--erp-accent-dark)' : 'var(--erp-text-muted)'};font-weight:600;">${stats.offPayrollEarned > 0 ? `+${escapeHtml(formatCurrency(stats.offPayrollEarned))}` : '—'}</td>
@@ -938,7 +942,7 @@ export class RhPagamentosModule {
       footerHtml: `
         <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Cancelar</button>
         <button type="button" class="erp-btn erp-btn--primary" id="btnRunBatchClose">
-          ${ICONS.checkCircle}<span id="lblBatchBtn">Emitir ${rows.length} Recibo(s) Agora</span>
+          ${ICONS.checkCircle}<span id="lblBatchBtn">Emitir ${rows.length} Recibo(s) &amp; Fechar Mês</span>
         </button>
       `,
       onMount: (modal) => {
@@ -949,7 +953,7 @@ export class RhPagamentosModule {
 
         const syncCount = () => {
           const checkedCount = checks.filter((c) => c.checked).length;
-          if (lblRun) lblRun.textContent = `Emitir ${checkedCount} Recibo(s) Agora`;
+          if (lblRun) lblRun.textContent = `Emitir ${checkedCount} Recibo(s) & Fechar Mês`;
           if (btnRun) btnRun.disabled = checkedCount === 0;
         };
 
@@ -973,7 +977,7 @@ export class RhPagamentosModule {
           if (chosenRows.length === 0) return;
 
           btnRun.disabled = true;
-          if (lblRun) lblRun.textContent = 'A emitir recibos...';
+          if (lblRun) lblRun.textContent = 'A emitir recibos e abater do caixa...';
 
           let okCount = 0;
           for (const { emp, stats } of chosenRows) {
@@ -986,6 +990,9 @@ export class RhPagamentosModule {
               mealAllowanceTotal: stats.mealEarned,
               twelfthVacation: stats.twelfthsVacation,
               twelfthChristmas: stats.twelfthsChristmas,
+              saturdayCount: stats.saturdayCount,
+              saturdayReceiptTotal: stats.saturdayReceiptTotal,
+              saturdayOffTotal: stats.saturdayOffTotal,
               overtimeBonus: 0,
               socialSecurity: stats.ssDeduction,
               irsRetention: 0,
@@ -994,13 +1001,183 @@ export class RhPagamentosModule {
               netSalary: stats.netToPay,
               paymentDate: todayISO(),
               status: 'pago',
-              notes: `Fecho automático (${REMUNERATION_LABELS[stats.remunerationType]} · ${getTwelfthsOptionMeta(stats.twelfthsMode).shortLabel} · SS ${stats.ssPercentage}%)`,
+              notes: `Fecho automático (${REMUNERATION_LABELS[stats.remunerationType]} · ${getTwelfthsOptionMeta(stats.twelfthsMode).shortLabel}${stats.saturdayCount > 0 ? ` · ${stats.saturdayCount} Sáb.: ${formatCurrency(stats.saturdayTotal)}` : ''} · SS ${stats.ssPercentage}%)`,
             });
             if (res !== null) okCount += 1;
           }
 
-          showToast(`${okCount} recibo(s) de vencimento emitidos automaticamente para ${formatMonthLabel(month)}.`, 'success', 5500);
+          showToast(`${okCount} recibo(s) emitidos e abatidos automaticamente no Caixa da Empresa.`, 'success', 5500);
+          this._openBatchSummaryModal(okCount, chosenRows, month);
+        });
+      },
+    });
+  }
+
+  _openBatchSummaryModal(okCount, chosenRows, month) {
+    const latestState = store.getState();
+    const cashSummary = computeCompanyCashSummary(latestState);
+    const monthMovements = cashSummary.movements.filter((m) => String(m.month || m.date || '').slice(0, 7) === month);
+    const monthInflows = monthMovements.filter((m) => m.type === 'entrada').reduce((s, m) => s + (Number(m.amount) || 0), 0);
+    const monthOutflows = monthMovements.filter((m) => m.type === 'saida').reduce((s, m) => s + (Number(m.amount) || 0), 0);
+    const monthInvoices = monthMovements.filter((m) => m.originType === 'fatura_obra').reduce((s, m) => s + (Number(m.amount) || 0), 0);
+
+    const batchNetTotal = chosenRows.reduce((s, r) => s + r.stats.netToPay, 0);
+    const batchSatCount = chosenRows.reduce((s, r) => s + r.stats.saturdayCount, 0);
+    const batchSatTotal = chosenRows.reduce((s, r) => s + r.stats.saturdayTotal, 0);
+    const batchOffTotal = chosenRows.reduce((s, r) => s + r.stats.offPayrollEarned, 0);
+    const batchAdvancesTotal = chosenRows.reduce((s, r) => s + r.stats.advancesTotal, 0);
+
+    openModal({
+      title: `Relatório de Fecho do Mês — ${formatMonthLabel(month)}`,
+      subtitle: `${okCount} recibo(s) processado(s) · Caixa da Empresa atualizado na base de dados`,
+      size: 'wide',
+      bodyHtml: `
+        <div class="erp-smart-banner">
+          <span><strong>Fecho concluído com sucesso:</strong> Os pagamentos a funcionários foram abatidos automaticamente do Caixa da Empresa.</span>
+        </div>
+
+        <div class="erp-summary-box" style="margin-bottom:16px;">
+          <div>
+            <div class="erp-summary-item__label">Pago neste Fecho (${okCount} rec.)</div>
+            <div class="erp-summary-item__val erp-summary-item__val--danger">- ${escapeHtml(formatCurrency(batchNetTotal))}</div>
+          </div>
+          <div>
+            <div class="erp-summary-item__label">Sábados (${batchSatCount} sáb.)</div>
+            <div class="erp-summary-item__val" style="color:var(--erp-accent-dark);">+ ${escapeHtml(formatCurrency(batchSatTotal))}</div>
+          </div>
+          <div>
+            <div class="erp-summary-item__label">Entradas no Mês</div>
+            <div class="erp-summary-item__val erp-summary-item__val--success">+ ${escapeHtml(formatCurrency(monthInflows))}</div>
+          </div>
+          <div>
+            <div class="erp-summary-item__label">Saldo Atual em Caixa</div>
+            <div class="erp-summary-item__val" style="color:${cashSummary.currentBalance >= 0 ? 'var(--erp-success)' : 'var(--erp-danger)'};">${escapeHtml(formatCurrency(cashSummary.currentBalance))}</div>
+          </div>
+        </div>
+
+        <div class="erp-table-wrap">
+          <table class="erp-table">
+            <tbody>
+              <tr>
+                <td><strong>Pagamentos a Funcionários neste Fecho (Recibo + Por Fora SS)</strong></td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(batchNetTotal))}</td>
+              </tr>
+              <tr>
+                <td><strong>Parcela Por Fora da SS incluída (c/ Sábados Por Fora)</strong></td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-accent-dark);">${escapeHtml(formatCurrency(batchOffTotal))}</td>
+              </tr>
+              <tr>
+                <td><strong>Adiantamentos / Vales abatidos aos funcionários</strong></td>
+                <td style="text-align:right;font-weight:700;">${escapeHtml(formatCurrency(batchAdvancesTotal))}</td>
+              </tr>
+              <tr>
+                <td><strong>Saídas de Faturas de Obras no Mês</strong></td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-danger);">- ${escapeHtml(formatCurrency(monthInvoices))}</td>
+              </tr>
+              <tr>
+                <td><strong>Entradas / Recebimentos de Obras no Mês</strong></td>
+                <td style="text-align:right;font-weight:700;color:var(--erp-success);">+ ${escapeHtml(formatCurrency(monthInflows))}</td>
+              </tr>
+              <tr style="background:var(--erp-surface-alt);">
+                <td><strong style="font-size:14px;">Total de Saídas no Mês / Saldo Atual do Caixa</strong></td>
+                <td style="text-align:right;font-size:15px;font-weight:900;color:${cashSummary.currentBalance >= 0 ? 'var(--erp-success)' : 'var(--erp-danger)'};">${escapeHtml(formatCurrency(monthOutflows))} saídas · Caixa ${escapeHtml(formatCurrency(cashSummary.currentBalance))}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `,
+      footerHtml: `
+        <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Fechar</button>
+        ${
+          typeof this.onOpenAdvancedReports === 'function'
+            ? `<button type="button" class="erp-btn erp-btn--outline" id="btnGoAdvReportsAfterClose">Abrir Relatórios Avançados &amp; Caixa</button>`
+            : ''
+        }
+        <button type="button" class="erp-btn erp-btn--primary" id="btnBatchDownloadPdf">
+          ${ICONS.download}<span>Baixar Relatório PDF Spark &amp; Smirk</span>
+        </button>
+      `,
+      onMount: (modal) => {
+        modal.querySelector('#btnGoAdvReportsAfterClose')?.addEventListener('click', () => {
           closeModal();
+          this.onOpenAdvancedReports?.();
+        });
+
+        modal.querySelector('#btnBatchDownloadPdf')?.addEventListener('click', async () => {
+          const allEmps = latestState.employees || [];
+          const rhRows = allEmps.map((emp) => {
+            const c = computeEmployeeMonthlyPayroll(emp, latestState.attendance, latestState.employeeAdvances, month);
+            return {
+              ...c,
+              name: emp.name,
+              department: emp.department,
+              remunerationLabel: REMUNERATION_LABELS[c.remunerationType] || 'Fixo Mensal',
+            };
+          });
+          const projMap = new Map();
+          (latestState.projects || []).forEach((p) => {
+            projMap.set(p.id, p);
+            if (p.code) projMap.set(p.code, p);
+          });
+          const invoiceRows = (latestState.projectInvoices || [])
+            .filter((i) => String(i.invoiceDate || i.createdAt || '').slice(0, 7) === month)
+            .map((i) => {
+              const p = projMap.get(i.projectId);
+              return { ...i, projectLabel: p ? `${p.code} — ${p.name}` : i.projectId };
+            });
+          const inflowRows = [];
+          (latestState.projects || []).forEach((p) => {
+            (p.payments || []).forEach((pay) => {
+              const dt = pay.paidDate || pay.dueDate || '';
+              if (pay.status === 'pago' && String(dt).slice(0, 7) === month) {
+                inflowRows.push({
+                  date: dt,
+                  projectLabel: `${p.code} — ${p.name}`,
+                  clientName: p.clientName,
+                  description: pay.description || 'Recebimento de Obra',
+                  amount: Number(pay.amount) || 0,
+                });
+              }
+            });
+          });
+          const empMap = new Map(allEmps.map((e) => [e.id, e]));
+          const advanceRows = (latestState.employeeAdvances || [])
+            .filter((a) => String(a.month || a.date || '').slice(0, 7) === month)
+            .map((a) => ({ ...a, employeeName: empMap.get(a.employeeId)?.name || 'Colaborador' }));
+
+          const periodSalaries = monthMovements
+            .filter((m) => m.type === 'saida' && (m.originType === 'recibo_vencimento' || m.category === 'Salários & Ordenados'))
+            .reduce((s, m) => s + (Number(m.amount) || 0), 0);
+
+          await generateSparkReportPdf({
+            title: `Relatório Mensal de Fecho — ${formatMonthLabel(month)}`,
+            periodLabel: formatMonthLabel(month),
+            filterSummary: `Fecho do mês (${okCount} recibos emitidos) · Abate automático no Caixa da Empresa`,
+            kpis: {
+              openingBalance: cashSummary.openingBalance,
+              cashBalance: cashSummary.currentBalance,
+              periodInflows: monthInflows,
+              inflowsCount: monthMovements.filter((m) => m.type === 'entrada').length,
+              periodOutflows: monthOutflows,
+              periodSalaries,
+              periodAdvances: advanceRows.reduce((s, a) => s + (Number(a.amount) || 0), 0),
+              periodPayrollTotal: periodSalaries + advanceRows.reduce((s, a) => s + (Number(a.amount) || 0), 0),
+              periodInvoices: monthInvoices,
+              invoicesCount: invoiceRows.length,
+              saturdayCount: rhRows.reduce((s, r) => s + r.saturdayCount, 0),
+              saturdayReceiptTotal: rhRows.reduce((s, r) => s + r.saturdayReceiptTotal, 0),
+              saturdayOffTotal: rhRows.reduce((s, r) => s + r.saturdayOffTotal, 0),
+              saturdayTotal: rhRows.reduce((s, r) => s + r.saturdayTotal, 0),
+              periodNetResult: monthInflows - monthOutflows,
+            },
+            rhRows,
+            cashRows: monthMovements,
+            invoiceRows,
+            inflowRows,
+            advanceRows,
+            filename: `Spark-Smirk-Fecho-${month}.pdf`,
+          });
+          showToast('PDF de Fecho do Mês Spark & Smirk transferido!');
         });
       },
     });
@@ -1013,17 +1190,20 @@ export class RhPagamentosModule {
       'NIF',
       'IBAN',
       'Modalidade',
-      'Dias Trabalhados (P)',
+      'Dias Seg-Sex (P)',
+      'Sábados Trabalhados',
       ...(canSeeSalary
         ? [
             'Base Recibo (€)',
+            'Sábados em Recibo (€)',
+            'Sábados Por Fora (€)',
             'Regime Duodécimos',
             'Duodécimo Férias (€)',
             'Duodécimo Natal (€)',
             'Sub. Alimentação (€)',
             'SS (%)',
             'Desconto SS (€)',
-            'Por Fora SS (€)',
+            'Por Fora SS Total (€)',
           ]
         : []),
       ...(canSeePayable ? ['Adiantamentos (€)', 'Total Final a Pagar (€)'] : []),
@@ -1036,10 +1216,13 @@ export class RhPagamentosModule {
         emp.nif,
         canSeeSalary ? emp.iban || '' : '',
         REMUNERATION_LABELS[s.remunerationType] || 'Fixo Mensal',
-        s.present,
+        s.weekdayPresent,
+        s.saturdayCount,
         ...(canSeeSalary
           ? [
               s.earnedBase.toFixed(2),
+              s.saturdayReceiptTotal.toFixed(2),
+              s.saturdayOffTotal.toFixed(2),
               getTwelfthsOptionMeta(s.twelfthsMode).shortLabel,
               s.twelfthsVacation.toFixed(2),
               s.twelfthsChristmas.toFixed(2),
@@ -1551,9 +1734,9 @@ export class RhPagamentosModule {
         customVacVal,
         customXmasVal
       );
-      const ssBasis = Number((baseStats.earnedBase + tw.twelfthsTotal).toFixed(2));
+      const ssBasis = Number((baseStats.earnedBase + baseStats.saturdayReceiptTotal + tw.twelfthsTotal).toFixed(2));
       const ssDeduction = Number((ssBasis * (baseStats.ssPercentage / 100)).toFixed(2));
-      const grossPay = Number((baseStats.earnedBase + baseStats.mealEarned + tw.twelfthsTotal).toFixed(2));
+      const grossPay = Number((baseStats.earnedBase + baseStats.saturdayReceiptTotal + baseStats.mealEarned + tw.twelfthsTotal).toFixed(2));
       const receiptNetPay = Math.max(0, Number((grossPay - ssDeduction).toFixed(2)));
       const offEarned = Math.max(0, Number(activeOffPayroll) || 0);
       const netToPay = Math.max(
@@ -1642,6 +1825,14 @@ export class RhPagamentosModule {
                 <td><strong>Base em Recibo (${escapeHtml(REMUNERATION_LABELS[s0.remunerationType] || 'Fixo Mensal')})</strong></td>
                 <td style="text-align:right;font-weight:700;">+ ${escapeHtml(formatCurrency(s0.earnedBase))}</td>
               </tr>
+              ${
+                s0.saturdayCount > 0
+                  ? `<tr>
+                       <td><strong>Sábados Trabalhados (${s0.saturdayCount} sáb. — Recibo c/ SS / Total Sáb. ${escapeHtml(formatCurrency(s0.saturdayTotal))})</strong></td>
+                       <td style="text-align:right;font-weight:700;color:var(--erp-info);">+ ${escapeHtml(formatCurrency(s0.saturdayReceiptTotal))} (SS) · + ${escapeHtml(formatCurrency(s0.saturdayOffTotal))} (Fora)</td>
+                     </tr>`
+                  : ''
+              }
               <tr>
                 <td><strong id="closeRowVacLbl">Duodécimo Subsídio de Férias (${escapeHtml(getTwelfthsOptionMeta(s0.twelfthsMode).shortLabel)})</strong></td>
                 <td id="closeRowVacVal" style="text-align:right;font-weight:700;color:var(--erp-info);">+ ${escapeHtml(formatCurrency(s0.twelfthsVacation))}</td>
@@ -1770,6 +1961,9 @@ export class RhPagamentosModule {
             mealAllowanceTotal: finalSummary.mealEarned,
             twelfthVacation: finalSummary.twelfthsVacation,
             twelfthChristmas: finalSummary.twelfthsChristmas,
+            saturdayCount: finalSummary.saturdayCount,
+            saturdayReceiptTotal: finalSummary.saturdayReceiptTotal,
+            saturdayOffTotal: finalSummary.saturdayOffTotal,
             overtimeBonus: 0,
             socialSecurity: finalSummary.ssDeduction,
             irsRetention: 0,
@@ -1778,10 +1972,10 @@ export class RhPagamentosModule {
             netSalary: finalSummary.netToPay,
             paymentDate: todayISO(),
             status: 'pago',
-            notes: `Fecho mensal (${REMUNERATION_LABELS[finalSummary.remunerationType]} · ${getTwelfthsOptionMeta(finalSummary.twelfthsMode).shortLabel}${finalSummary.twelfthsTotal > 0 ? `: ${formatCurrency(finalSummary.twelfthsTotal)}` : ''} · SS ${finalSummary.ssPercentage}%${finalSummary.offPayrollEarned > 0 ? ` · Por fora SS: ${formatCurrency(finalSummary.offPayrollEarned)}` : ''}${finalSummary.advancesTotal > 0 ? ` · Adiantamentos: ${formatCurrency(finalSummary.advancesTotal)}` : ''})`,
+            notes: `Fecho mensal (${REMUNERATION_LABELS[finalSummary.remunerationType]} · ${getTwelfthsOptionMeta(finalSummary.twelfthsMode).shortLabel}${finalSummary.saturdayCount > 0 ? ` · ${finalSummary.saturdayCount} Sáb.: ${formatCurrency(finalSummary.saturdayTotal)}` : ''}${finalSummary.twelfthsTotal > 0 ? `: ${formatCurrency(finalSummary.twelfthsTotal)}` : ''} · SS ${finalSummary.ssPercentage}%${finalSummary.offPayrollEarned > 0 ? ` · Por fora SS: ${formatCurrency(finalSummary.offPayrollEarned)}` : ''}${finalSummary.advancesTotal > 0 ? ` · Adiantamentos: ${formatCurrency(finalSummary.advancesTotal)}` : ''})`,
           });
           showToast(
-            `Mês fechado para ${emp.name}! Valor pago registado: ${formatCurrency(finalSummary.netToPay)} (${payslipId}).`,
+            `Mês fechado para ${emp.name}! Valor pago (${formatCurrency(finalSummary.netToPay)}) abatido do Caixa da Empresa.`,
             'success',
             5500
           );

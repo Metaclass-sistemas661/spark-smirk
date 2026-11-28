@@ -304,6 +304,9 @@ async function upsertPayslipFallback(supabaseAdmin, payload, actorId) {
   const mealAllowance = Number(payload?.mealAllowanceTotal) || 0;
   const twelfthVac = Math.max(0, Number(payload?.twelfthVacation) || 0);
   const twelfthXmas = Math.max(0, Number(payload?.twelfthChristmas) || 0);
+  const satCount = Math.max(0, Math.round(Number(payload?.saturdayCount) || 0));
+  const satReceipt = Math.max(0, Number(payload?.saturdayReceiptTotal) || 0);
+  const satOff = Math.max(0, Number(payload?.saturdayOffTotal) || 0);
   const overtimeBonus = Number(payload?.overtimeBonus) || 0;
   const ssVal = Number(payload?.socialSecurity) || 0;
   const irsVal = Number(payload?.irsRetention) || 0;
@@ -326,12 +329,15 @@ async function upsertPayslipFallback(supabaseAdmin, payload, actorId) {
     subsidio_alimentacao: mealAllowance,
     duodecimo_ferias: twelfthVac,
     duodecimo_natal: twelfthXmas,
+    sabados_trabalhados: satCount,
+    sabados_valor_recibo: satReceipt,
+    sabados_valor_por_fora: satOff,
     horas_extra_valor: overtimeBonus,
     ss_valor: ssVal,
     irs_valor: irsVal,
     outras_deducoes: otherDed,
     pagamento_por_fora: offPayrollVal,
-    total_bruto: baseSalary + mealAllowance + twelfthVac + twelfthXmas + overtimeBonus,
+    total_bruto: baseSalary + satReceipt + mealAllowance + twelfthVac + twelfthXmas + overtimeBonus,
     total_liquido: netVal,
     estado_pagamento: statusVal,
     data_pagamento: payDate,
@@ -349,6 +355,9 @@ async function upsertPayslipFallback(supabaseAdmin, payload, actorId) {
       delete legacyValues.pagamento_por_fora;
       delete legacyValues.duodecimo_ferias;
       delete legacyValues.duodecimo_natal;
+      delete legacyValues.sabados_trabalhados;
+      delete legacyValues.sabados_valor_recibo;
+      delete legacyValues.sabados_valor_por_fora;
       ({ data: updated, error: updErr } = await rhTable
         .update(legacyValues)
         .eq('id', existingId)
@@ -368,6 +377,9 @@ async function upsertPayslipFallback(supabaseAdmin, payload, actorId) {
     delete legacyValues.pagamento_por_fora;
     delete legacyValues.duodecimo_ferias;
     delete legacyValues.duodecimo_natal;
+    delete legacyValues.sabados_trabalhados;
+    delete legacyValues.sabados_valor_recibo;
+    delete legacyValues.sabados_valor_por_fora;
     ({ data: inserted, error: insErr } = await rhTable
       .insert(legacyValues)
       .select('id, codigo_recibo')
@@ -829,6 +841,12 @@ function redactSnapshotForProfile(rawSnapshot, profile) {
         _valuesRestricted: true,
       }));
     }
+  }
+
+  if (!canSeeRecibos && !canSeeOpValues && !hasModuleAction(profile, 'dashboard', 'valores')) {
+    snap.cashMovements = [];
+    snap.cashOpeningBalance = 0;
+    snap.cashOpeningNote = '';
   }
 
   return snap;
@@ -2579,6 +2597,9 @@ exports.api = onRequest(
                 projectContracts: [],
                 technicalManagers: [],
                 technicalCertificates: [],
+                cashMovements: [],
+                cashOpeningBalance: 0,
+                cashOpeningNote: '',
               }),
               candidates,
             },
@@ -2805,11 +2826,23 @@ exports.api = onRequest(
             return;
           }
           const body = req.body && typeof req.body === 'object' ? req.body : {};
+          const satBonus = Math.max(0, Number(body.saturdayBonus) || 0);
+          const satTaxMode = body.saturdayTaxMode === 'recibo_ss' ? 'recibo_ss' : 'por_fora';
+
           if (body.action === 'mark_all_present') {
-            const { error } = await supabaseAdmin.rpc('spark_erp_mark_all_present', {
+            let { error } = await supabaseAdmin.rpc('spark_erp_mark_all_present', {
               p_date: body.dateISO,
               p_actor: ctx.authUser.id,
+              p_saturday_bonus: satBonus,
+              p_saturday_tax_mode: satTaxMode,
             });
+            if (error && String(error.message || '').includes('spark_erp_mark_all_present')) {
+              const fb = await supabaseAdmin.rpc('spark_erp_mark_all_present', {
+                p_date: body.dateISO,
+                p_actor: ctx.authUser.id,
+              });
+              error = fb.error;
+            }
             if (error) {
               res.status(400).json({
                 error: 'ATTENDANCE_BATCH_ERROR',
@@ -2818,14 +2851,27 @@ exports.api = onRequest(
               return;
             }
           } else {
-            const { error } = await supabaseAdmin.rpc('spark_erp_set_attendance', {
+            let { error } = await supabaseAdmin.rpc('spark_erp_set_attendance', {
               p_emp_code: body.employeeId,
               p_date: body.dateISO,
               p_status: body.status || '',
               p_note: body.note || '',
               p_actor: ctx.authUser.id,
               p_hours: body.hours !== undefined ? Number(body.hours) : 8,
+              p_saturday_bonus: satBonus,
+              p_saturday_tax_mode: satTaxMode,
             });
+            if (error && String(error.message || '').includes('spark_erp_set_attendance')) {
+              const fb = await supabaseAdmin.rpc('spark_erp_set_attendance', {
+                p_emp_code: body.employeeId,
+                p_date: body.dateISO,
+                p_status: body.status || '',
+                p_note: body.note || '',
+                p_actor: ctx.authUser.id,
+                p_hours: body.hours !== undefined ? Number(body.hours) : 8,
+              });
+              error = fb.error;
+            }
             if (error) {
               res.status(400).json({
                 error: 'ATTENDANCE_SAVE_ERROR',
@@ -2834,6 +2880,103 @@ exports.api = onRequest(
               return;
             }
           }
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        // ── CAIXA DA EMPRESA (MOVIMENTOS MANUAIS & SALDO INICIAL) ────────────
+        if (req.method === 'PUT' && requestPath === '/api/erp/cash-opening') {
+          const canCash =
+            hasModuleAction(ctx.profile, 'op_obras', 'pagamentos') ||
+            hasModuleAction(ctx.profile, 'rh_recibos', 'emitir');
+          if (!canCash) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para atualizar o saldo de abertura do caixa.' });
+            return;
+          }
+          const body = req.body && typeof req.body === 'object' ? req.body : {};
+          const openingBalance = Number(body.openingBalance) || 0;
+          const openingNote = String(body.openingNote || '').trim();
+          const { data, error } = await supabaseAdmin.rpc('spark_erp_set_cash_opening', {
+            p_saldo: openingBalance,
+            p_nota: openingNote || null,
+            p_actor: ctx.authUser.id,
+          });
+          if (error) {
+            res.status(400).json({
+              error: 'CASH_OPENING_ERROR',
+              message: formatUserSafeError(error, 'Execute a migração 11-sabados-caixa-relatorios.sql para guardar o saldo de abertura do caixa.', 'CASH_OPENING_ERROR'),
+            });
+            return;
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'tesouraria.caixa',
+            acao: 'ATUALIZAR_SALDO_INICIAL',
+            entidadeId: 'principal',
+            detalhes: { openingBalance },
+          });
+          res.status(200).json(data);
+          return;
+        }
+
+        if (req.method === 'POST' && requestPath === '/api/erp/cash-movements') {
+          const canCash =
+            hasModuleAction(ctx.profile, 'op_obras', 'pagamentos') ||
+            hasModuleAction(ctx.profile, 'rh_recibos', 'emitir');
+          if (!canCash) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para registar movimentos de caixa.' });
+            return;
+          }
+          const body = req.body && typeof req.body === 'object' ? req.body : {};
+          const { data, error } = await supabaseAdmin.rpc('spark_erp_upsert_cash_movement', {
+            p_payload: body,
+            p_actor: ctx.authUser.id,
+          });
+          if (error) {
+            res.status(400).json({
+              error: 'CASH_MOVEMENT_ERROR',
+              message: formatUserSafeError(error, 'Não foi possível guardar o movimento de caixa na base de dados.', 'CASH_MOVEMENT_ERROR'),
+            });
+            return;
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'tesouraria.caixa',
+            acao: 'REGISTAR_MOVIMENTO_CAIXA',
+            entidadeId: data?.id || body.id,
+            detalhes: { type: body.type, category: body.category, amount: body.amount },
+          });
+          res.status(201).json(data);
+          return;
+        }
+
+        const cashMatch = requestPath.match(/^\/api\/erp\/cash-movements\/([^/]+)$/);
+        if (cashMatch && req.method === 'DELETE') {
+          const canCash =
+            hasModuleAction(ctx.profile, 'op_obras', 'pagamentos') ||
+            hasModuleAction(ctx.profile, 'rh_recibos', 'excluir');
+          if (!canCash) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissão para eliminar movimentos de caixa.' });
+            return;
+          }
+          const movCode = decodeURIComponent(cashMatch[1]);
+          const { error } = await supabaseAdmin.rpc('spark_erp_delete_cash_movement', { p_code: movCode });
+          if (error) {
+            res.status(400).json({
+              error: 'CASH_DELETE_ERROR',
+              message: formatUserSafeError(error, 'Não foi possível eliminar o movimento de caixa.', 'CASH_DELETE_ERROR'),
+            });
+            return;
+          }
+          await writeAuditLog(supabaseAdmin, {
+            userId: ctx.authUser.id,
+            userEmail: ctx.authUser.email,
+            modulo: 'tesouraria.caixa',
+            acao: 'EXCLUIR_MOVIMENTO_CAIXA',
+            entidadeId: movCode,
+          });
           res.status(200).json({ ok: true });
           return;
         }

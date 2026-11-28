@@ -335,25 +335,58 @@ export function computeTwelfthsBreakdown(
   };
 }
 
-export function computeEmployeeMonthlyPayroll(employee, attendanceMap = {}, employeeAdvances = [], yearMonth = currentYearMonth()) {
+export function computeEmployeeMonthlyPayroll(
+  employee,
+  attendanceMap = {},
+  employeeAdvances = [],
+  yearMonth = currentYearMonth()
+) {
   const empAtt = attendanceMap[employee?.id] || {};
   const daysCount = getDaysInMonth(yearMonth);
   let workingDays = 0;
   let present = 0;
+  let weekdayPresent = 0;
+  let weekdayHours = 0;
   let totalHours = 0;
   let justified = 0;
   let unjustified = 0;
   let vacation = 0;
+  let saturdayCount = 0;
+  let saturdayReceiptTotal = 0;
+  let saturdayOffTotal = 0;
+  const saturdayDetails = [];
 
   for (let d = 1; d <= daysCount; d += 1) {
     const wd = getWeekdayShortPT(yearMonth, d);
-    if (wd !== 0 && wd !== 6) workingDays += 1;
+    const isSat = wd === 6;
+    if (wd !== 0 && !isSat) workingDays += 1;
     const dateISO = `${yearMonth}-${String(d).padStart(2, '0')}`;
     const rec = empAtt[dateISO];
     if (!rec) continue;
     if (rec.status === 'P') {
       present += 1;
-      totalHours += Number(rec.hours) > 0 ? Number(rec.hours) : 8;
+      const hrs = Number(rec.hours) > 0 ? Number(rec.hours) : 8;
+      totalHours += hrs;
+      if (isSat) {
+        saturdayCount += 1;
+        const satBonus = Math.max(0, Number(rec.saturdayBonus) || 0);
+        const satMode = rec.saturdayTaxMode === 'recibo_ss' ? 'recibo_ss' : 'por_fora';
+        if (satMode === 'recibo_ss') {
+          saturdayReceiptTotal += satBonus;
+        } else {
+          saturdayOffTotal += satBonus;
+        }
+        saturdayDetails.push({
+          date: dateISO,
+          hours: hrs,
+          saturdayBonus: Number(satBonus.toFixed(2)),
+          saturdayTaxMode: satMode,
+          note: rec.note || '',
+        });
+      } else {
+        weekdayPresent += 1;
+        weekdayHours += hrs;
+      }
     } else if (rec.status === 'FJ') {
       justified += 1;
     } else if (rec.status === 'FI') {
@@ -374,16 +407,16 @@ export function computeEmployeeMonthlyPayroll(employee, attendanceMap = {}, empl
   const hourlyRate = Math.max(0, Number(employee?.hourlyRate) || 0);
   const baseSalaryFixed = Math.max(0, Number(employee?.baseSalary) || 0);
 
+  // Seg–Sex usa a modalidade base; Sábados pagos utilizam o valor específico registado nesse sábado.
   let earnedBase = baseSalaryFixed;
   if (remType === 'diaria') {
-    earnedBase = present * dailyRate;
+    earnedBase = weekdayPresent * dailyRate;
   } else if (remType === 'hora') {
-    earnedBase = totalHours * hourlyRate;
+    earnedBase = weekdayHours * hourlyRate;
   }
 
-  // Em ordenado fixo mensal, a marcação de presenças (P) não altera o valor no painel.
   const mealPerDay = Math.max(0, Number(employee?.mealAllowance) || 0);
-  const mealEarned = remType === 'diaria' || remType === 'hora' ? present * mealPerDay : 0;
+  const mealEarned = remType === 'diaria' || remType === 'hora' ? weekdayPresent * mealPerDay : 0;
 
   const {
     twelfthsMode,
@@ -402,15 +435,20 @@ export function computeEmployeeMonthlyPayroll(employee, attendanceMap = {}, empl
     : 'mensal';
   const offPayrollType = remType === 'mensal' ? 'mensal' : rawOffType;
   const offPayrollAmount = Math.max(0, Number(employee?.offPayrollAmount) || 0);
-  const offPayrollEarned = offPayrollType === 'diaria' ? present * offPayrollAmount : offPayrollAmount;
+  const baseOffPayrollEarned =
+    offPayrollType === 'diaria' ? weekdayPresent * offPayrollAmount : offPayrollAmount;
+  const satReceiptRounded = Number(saturdayReceiptTotal.toFixed(2));
+  const satOffRounded = Number(saturdayOffTotal.toFixed(2));
+  const saturdayTotal = Number((satReceiptRounded + satOffRounded).toFixed(2));
+  const offPayrollEarned = Number((baseOffPayrollEarned + satOffRounded).toFixed(2));
 
-  const grossPay = Number((earnedBase + mealEarned + twelfthsTotal).toFixed(2));
+  const grossPay = Number((earnedBase + satReceiptRounded + mealEarned + twelfthsTotal).toFixed(2));
   const ssPercentage =
     employee?.ssPercentage !== undefined && employee?.ssPercentage !== null && employee?.ssPercentage !== ''
       ? Math.min(100, Math.max(0, Number(employee.ssPercentage) || 0))
       : 11;
-  // Segurança Social aplica-se ao vencimento e duodécimos em recibo; não incide sobre pagamento por fora.
-  const ssSubjectBase = Number((earnedBase + twelfthsTotal).toFixed(2));
+  // Segurança Social incide sobre vencimento base, sábados em recibo e duodécimos; não incide sobre pagamento por fora.
+  const ssSubjectBase = Number((earnedBase + satReceiptRounded + twelfthsTotal).toFixed(2));
   const ssDeduction = Number((ssSubjectBase * (ssPercentage / 100)).toFixed(2));
   const receiptNetPay = Math.max(0, Number((grossPay - ssDeduction).toFixed(2)));
   const totalCombinedGross = Number((grossPay + offPayrollEarned).toFixed(2));
@@ -425,10 +463,17 @@ export function computeEmployeeMonthlyPayroll(employee, attendanceMap = {}, empl
   return {
     workingDays,
     present,
+    weekdayPresent,
+    weekdayHours,
     totalHours,
     justified,
     unjustified,
     vacation,
+    saturdayCount,
+    saturdayReceiptTotal: satReceiptRounded,
+    saturdayOffTotal: satOffRounded,
+    saturdayTotal,
+    saturdayDetails,
     totalAbsences,
     attendanceRate,
     remunerationType: remType,
@@ -447,11 +492,156 @@ export function computeEmployeeMonthlyPayroll(employee, attendanceMap = {}, empl
     receiptNetPay,
     offPayrollType,
     offPayrollAmount: Number(offPayrollAmount.toFixed(2)),
-    offPayrollEarned: Number(offPayrollEarned.toFixed(2)),
+    baseOffPayrollEarned: Number(baseOffPayrollEarned.toFixed(2)),
+    offPayrollEarned,
     totalCombinedGross,
     monthAdvances,
     advancesTotal: Number(advancesTotal.toFixed(2)),
     rawNetPay: Number(rawNetPay.toFixed(2)),
     netToPay,
+  };
+}
+
+export function buildConsolidatedCashMovements(state = {}) {
+  const dbMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+  const seenOrigins = new Set(
+    dbMovements
+      .filter((m) => m.originType && m.originCode)
+      .map((m) => `${m.originType}:${m.originCode}`)
+  );
+
+  const synthetic = [];
+  const empMap = new Map((state.employees || []).map((e) => [e.id, e]));
+
+  (state.payslips || []).forEach((p) => {
+    if (p.status !== 'pago' || (Number(p.netSalary) || 0) <= 0) return;
+    if (seenOrigins.has(`recibo_vencimento:${p.id}`)) return;
+    const emp = empMap.get(p.employeeId);
+    const dt = p.paymentDate || `${p.month || currentYearMonth()}-28`;
+    synthetic.push({
+      id: `CX-REC-${p.id}`,
+      type: 'saida',
+      category: 'Salários & Ordenados',
+      originType: 'recibo_vencimento',
+      originCode: p.id,
+      date: dt,
+      month: p.month || String(dt).slice(0, 7),
+      description: `Pagamento de ordenado — ${emp?.name || 'Colaborador'} (${p.month || ''})`,
+      amount: Number(p.netSalary) || 0,
+      taxMode: (Number(p.offPayroll) || 0) > 0 ? 'misto' : 'recibo_ss',
+      projectId: '',
+      employeeId: p.employeeId,
+      notes: p.notes || '',
+    });
+  });
+
+  (state.employeeAdvances || []).forEach((adv) => {
+    if ((Number(adv.amount) || 0) <= 0) return;
+    if (seenOrigins.has(`adiantamento:${adv.id}`)) return;
+    const emp = empMap.get(adv.employeeId);
+    const dt = adv.date || `${adv.month || currentYearMonth()}-15`;
+    synthetic.push({
+      id: `CX-ADT-${adv.id}`,
+      type: 'saida',
+      category: 'Adiantamento / Vale',
+      originType: 'adiantamento',
+      originCode: adv.id,
+      date: dt,
+      month: adv.month || String(dt).slice(0, 7),
+      description: `Vale / Adiantamento — ${emp?.name || 'Colaborador'}`,
+      amount: Number(adv.amount) || 0,
+      taxMode: 'adiantamento',
+      projectId: '',
+      employeeId: adv.employeeId,
+      notes: adv.notes || '',
+    });
+  });
+
+  (state.projectInvoices || []).forEach((inv) => {
+    if (seenOrigins.has(`fatura_obra:${inv.id}`)) return;
+    const dt = inv.invoiceDate || inv.createdAt || todayISO();
+    synthetic.push({
+      id: `CX-FAT-${inv.id}`,
+      type: 'saida',
+      category: 'Fatura de Obra / Materiais',
+      originType: 'fatura_obra',
+      originCode: inv.id,
+      date: dt,
+      month: String(dt).slice(0, 7),
+      description: `Fatura #${inv.invoiceNumber || inv.id} — ${inv.supplier || 'Fornecedor'}`,
+      amount: Number(inv.amount) || 0,
+      taxMode: 'fatura',
+      projectId: inv.projectId || '',
+      employeeId: '',
+      notes: inv.category || 'Materiais de Construção',
+    });
+  });
+
+  (state.projects || []).forEach((proj) => {
+    (proj.payments || []).forEach((pay) => {
+      if (pay.status !== 'pago' || (Number(pay.amount) || 0) <= 0) return;
+      if (seenOrigins.has(`recebimento_obra:${pay.id}`)) return;
+      const dt = pay.paidDate || pay.dueDate || todayISO();
+      synthetic.push({
+        id: `CX-PAG-${pay.id}`,
+        type: 'entrada',
+        category: 'Recebimento de Obra',
+        originType: 'recebimento_obra',
+        originCode: pay.id,
+        date: dt,
+        month: String(dt).slice(0, 7),
+        description: `Recebimento (${proj.code || 'Obra'}) — ${pay.description || proj.name || 'Prestação'}`,
+        amount: Number(pay.amount) || 0,
+        taxMode: 'receita',
+        projectId: proj.code || proj.id || '',
+        employeeId: '',
+        notes: pay.method || 'Transferência Bancária',
+      });
+    });
+  });
+
+  return [...dbMovements, ...synthetic].sort((a, b) =>
+    String(b.date || '').localeCompare(String(a.date || ''))
+  );
+}
+
+export function computeCompanyCashSummary(state = {}) {
+  const openingBalance = Number(state.cashOpeningBalance) || 0;
+  const movements = buildConsolidatedCashMovements(state);
+  let totalInflows = 0;
+  let totalOutflows = 0;
+  let salariesOutflow = 0;
+  let advancesOutflow = 0;
+  let invoicesOutflow = 0;
+  let otherOutflow = 0;
+
+  movements.forEach((m) => {
+    const val = Number(m.amount) || 0;
+    if (m.type === 'entrada') {
+      totalInflows += val;
+    } else {
+      totalOutflows += val;
+      if (m.originType === 'recibo_vencimento' || m.category === 'Salários & Ordenados') {
+        salariesOutflow += val;
+      } else if (m.originType === 'adiantamento' || m.category === 'Adiantamento / Vale') {
+        advancesOutflow += val;
+      } else if (m.originType === 'fatura_obra' || m.category === 'Fatura de Obra / Materiais') {
+        invoicesOutflow += val;
+      } else {
+        otherOutflow += val;
+      }
+    }
+  });
+
+  return {
+    openingBalance: Number(openingBalance.toFixed(2)),
+    totalInflows: Number(totalInflows.toFixed(2)),
+    totalOutflows: Number(totalOutflows.toFixed(2)),
+    salariesOutflow: Number(salariesOutflow.toFixed(2)),
+    advancesOutflow: Number(advancesOutflow.toFixed(2)),
+    invoicesOutflow: Number(invoicesOutflow.toFixed(2)),
+    otherOutflow: Number(otherOutflow.toFixed(2)),
+    currentBalance: Number((openingBalance + totalInflows - totalOutflows).toFixed(2)),
+    movements,
   };
 }

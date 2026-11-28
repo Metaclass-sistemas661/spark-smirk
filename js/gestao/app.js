@@ -11,6 +11,7 @@ import {
 } from './core/formatters.js';
 import { confirmAction, showToast } from './core/ui.js';
 import { DashboardModule } from './modules/dashboard.js';
+import { RelatoriosAvancadosModule } from './modules/relatorios-avancados.js';
 import { RhFuncionariosModule } from './modules/rh-funcionarios.js';
 import { RhPagamentosModule } from './modules/rh-pagamentos.js';
 import { RhRecibosModule } from './modules/rh-recibos.js';
@@ -39,6 +40,16 @@ const ROUTES = {
     kicker: 'Visão Geral',
     title: 'Dashboard Executivo',
     perm: ['dashboard', 'ver'],
+  },
+  'relatorios-avancados': {
+    kicker: 'Visão Geral · Tesouraria',
+    title: 'Relatórios Avançados & Caixa da Empresa',
+    permAny: [
+      ['dashboard', 'valores'],
+      ['op_obras', 'valores'],
+      ['rh_recibos', 'ver'],
+      ['rh_funcionarios', 'pagamentos'],
+    ],
   },
   'rh-funcionarios': {
     kicker: 'Recursos Humanos',
@@ -133,6 +144,7 @@ class ErpApp {
       },
       onQuickAction: (action) => this._handleQuickAction(action),
     });
+    this.relatoriosAvancados = new RelatoriosAvancadosModule();
     this.rhRecibos = new RhRecibosModule();
     this.rhCandidaturas = new RhCandidaturasModule();
     this.rhPagamentos = new RhPagamentosModule({
@@ -143,6 +155,14 @@ class ErpApp {
         }
         this.activeRoute = 'rh-recibos';
         this.rhRecibos.focusEmployeeYear(empId, this.month.slice(0, 4));
+        this.render();
+      },
+      onOpenAdvancedReports: () => {
+        if (!this._canAccessRoute('relatorios-avancados')) {
+          showToast('Sem permissão para consultar relatórios financeiros.', 'warning');
+          return;
+        }
+        this.activeRoute = 'relatorios-avancados';
         this.render();
       },
     });
@@ -607,10 +627,13 @@ class ErpApp {
     const ctx = {
       month: this.month,
       search: this.search,
+      currentProfile: this.currentProfile,
       can: (mod, act) => (this.currentProfile ? hasPermission(this.currentProfile, mod, act) : false),
     };
     if (this.activeRoute === 'dashboard') {
       this.dashboard.render(this.workspace, ctx);
+    } else if (this.activeRoute === 'relatorios-avancados') {
+      this.relatoriosAvancados.render(this.workspace, ctx);
     } else if (this.activeRoute === 'rh-funcionarios') {
       this.rhFuncionarios.render(this.workspace, ctx);
     } else if (this.activeRoute === 'rh-pagamentos') {
