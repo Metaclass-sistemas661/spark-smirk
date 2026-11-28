@@ -36,13 +36,67 @@ const DEPARTMENTS = [
   'Administrativo',
 ];
 
+function hasSalaryConfigured(emp) {
+  return (
+    (Number(emp?.baseSalary) || 0) > 0 ||
+    (Number(emp?.dailyRate) || 0) > 0 ||
+    (Number(emp?.hourlyRate) || 0) > 0 ||
+    (Number(emp?.offPayrollAmount) || 0) > 0
+  );
+}
+
 export class RhPagamentosModule {
   constructor(options = {}) {
     this.viewMode = 'payroll'; // 'payroll' | 'config' | 'advances'
+    this.employeeFilter = 'all'; // 'all' | employeeId
     this.deptFilter = 'all';
     this.remFilter = 'all';
+    this.payStateFilter = 'all'; // 'all' | 'unclosed' | 'closed' | 'unconfigured' | 'off_payroll' | 'with_advances'
     this.advScope = 'month'; // 'month' | 'all'
+    this.expandedAdvEmployees = new Set();
     this.onOpenPayslips = options.onOpenPayslips || null;
+  }
+
+  _hasActiveFilters() {
+    return (
+      this.employeeFilter !== 'all' ||
+      this.deptFilter !== 'all' ||
+      this.remFilter !== 'all' ||
+      this.payStateFilter !== 'all'
+    );
+  }
+
+  _resetFilters() {
+    this.employeeFilter = 'all';
+    this.deptFilter = 'all';
+    this.remFilter = 'all';
+    this.payStateFilter = 'all';
+  }
+
+  _matchesEmployeeFilters(emp, state, month, payslipsByEmp, query) {
+    if (this.employeeFilter !== 'all' && emp.id !== this.employeeFilter) return false;
+    if (this.deptFilter !== 'all' && emp.department !== this.deptFilter) return false;
+    if (this.remFilter !== 'all' && (emp.remunerationType || 'mensal') !== this.remFilter) return false;
+
+    if (query) {
+      const hay = `${emp.name} ${emp.role} ${emp.department} ${emp.nif} ${emp.iban || ''}`.toLowerCase();
+      if (!hay.includes(query)) return false;
+    }
+
+    if (this.payStateFilter !== 'all') {
+      const configured = hasSalaryConfigured(emp);
+      const payslip = payslipsByEmp.get(emp.id);
+      const hasAdv = (state.employeeAdvances || []).some(
+        (a) => a.employeeId === emp.id && String(a.month || a.date || '').slice(0, 7) === month
+      );
+      if (this.payStateFilter === 'unclosed' && (payslip || !configured)) return false;
+      if (this.payStateFilter === 'closed' && !payslip) return false;
+      if (this.payStateFilter === 'unconfigured' && configured) return false;
+      if (this.payStateFilter === 'off_payroll' && (Number(emp.offPayrollAmount) || 0) <= 0) return false;
+      if (this.payStateFilter === 'with_advances' && !hasAdv) return false;
+    }
+
+    return true;
   }
 
   render(container, ctx) {
@@ -53,46 +107,69 @@ export class RhPagamentosModule {
     const { month, search } = ctx;
     const query = (search || '').trim().toLowerCase();
 
-    const activeEmployees = state.employees.filter((e) => e.status === 'ativo');
-    const filteredActive = activeEmployees.filter((e) => {
-      if (this.deptFilter !== 'all' && e.department !== this.deptFilter) return false;
-      if (this.remFilter !== 'all' && (e.remunerationType || 'mensal') !== this.remFilter) return false;
-      if (query) {
-        const hay = `${e.name} ${e.role} ${e.department} ${e.nif} ${e.iban || ''}`.toLowerCase();
-        if (!hay.includes(query)) return false;
-      }
-      return true;
-    });
+    const payslipsByEmp = new Map();
+    (state.payslips || [])
+      .filter((p) => p.month === month)
+      .forEach((p) => {
+        payslipsByEmp.set(p.employeeId, p);
+      });
 
-    const filteredAll = state.employees.filter((e) => {
-      if (this.deptFilter !== 'all' && e.department !== this.deptFilter) return false;
-      if (this.remFilter !== 'all' && (e.remunerationType || 'mensal') !== this.remFilter) return false;
-      if (query) {
-        const hay = `${e.name} ${e.role} ${e.department} ${e.nif} ${e.iban || ''}`.toLowerCase();
-        if (!hay.includes(query)) return false;
-      }
-      return true;
-    });
+    if (
+      this.employeeFilter !== 'all' &&
+      !(state.employees || []).some((e) => e.id === this.employeeFilter)
+    ) {
+      this.employeeFilter = 'all';
+    }
 
+    const activeEmployees = (state.employees || []).filter((e) => e.status === 'ativo');
+    const filteredActive = activeEmployees.filter((e) =>
+      this._matchesEmployeeFilters(e, state, month, payslipsByEmp, query)
+    );
+    const filteredAll = (state.employees || []).filter((e) =>
+      this._matchesEmployeeFilters(e, state, month, payslipsByEmp, query)
+    );
+
+    const kpiSource = filteredActive;
     let totalReceiptGross = 0;
     let totalSS = 0;
     let totalOffPayroll = 0;
     let totalNetToPay = 0;
-    let offPayrollActiveCount = 0;
+    let offPayrollCount = 0;
 
-    activeEmployees.forEach((emp) => {
+    kpiSource.forEach((emp) => {
       const s = computeEmployeeMonthlyPayroll(emp, state.attendance, state.employeeAdvances, month);
       totalReceiptGross += s.grossPay;
       totalSS += s.ssDeduction;
       totalOffPayroll += s.offPayrollEarned;
       totalNetToPay += s.netToPay;
-      if (s.offPayrollAmount > 0) offPayrollActiveCount += 1;
+      if (s.offPayrollAmount > 0) offPayrollCount += 1;
     });
 
-    const monthAdvances = (state.employeeAdvances || []).filter(
-      (a) => String(a.month || a.date || '').slice(0, 7) === month
+    const filteredEmpIds = new Set(kpiSource.map((e) => e.id));
+    const scopedMonthAdvances = (state.employeeAdvances || []).filter(
+      (a) =>
+        String(a.month || a.date || '').slice(0, 7) === month &&
+        (this.employeeFilter === 'all'
+          ? !this._hasActiveFilters() || filteredEmpIds.has(a.employeeId)
+          : a.employeeId === this.employeeFilter)
     );
-    const totalMonthAdvances = monthAdvances.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+    const totalMonthAdvances = scopedMonthAdvances.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+
+    const unclosedEligible = activeEmployees.filter(
+      (emp) => hasSalaryConfigured(emp) && !payslipsByEmp.has(emp.id)
+    );
+    const unconfiguredCount = activeEmployees.filter((emp) => !hasSalaryConfigured(emp)).length;
+    const selectedEmp =
+      this.employeeFilter !== 'all'
+        ? (state.employees || []).find((e) => e.id === this.employeeFilter) || null
+        : null;
+    const kpiScopeLabel = selectedEmp
+      ? `Filtro: ${selectedEmp.name}`
+      : this._hasActiveFilters()
+        ? `${kpiSource.length} colaborador(es) filtrado(s)`
+        : 'Base apurada + duodécimos + sub. alimentação';
+
+    const groupedAdvancePeopleCount = new Set(scopedMonthAdvances.map((a) => a.employeeId)).size;
 
     container.innerHTML = `
       <div class="erp-kpi-grid">
@@ -102,7 +179,7 @@ export class RhPagamentosModule {
             <span class="erp-kpi-card__icon">${ICONS.receipt}</span>
           </div>
           <div class="erp-kpi-card__value">${canSeeSalary ? escapeHtml(formatCurrency(totalReceiptGross)) : 'Restrito'}</div>
-          <div class="erp-kpi-card__meta">Base apurada + duodécimos + sub. alimentação</div>
+          <div class="erp-kpi-card__meta">${escapeHtml(kpiScopeLabel)}</div>
         </div>
 
         <div class="erp-kpi-card erp-kpi-card--warning">
@@ -111,7 +188,7 @@ export class RhPagamentosModule {
             <span class="erp-kpi-card__icon">${ICONS.chart}</span>
           </div>
           <div class="erp-kpi-card__value">${canSeeSalary ? escapeHtml(formatCurrency(totalSS)) : 'Restrito'}</div>
-          <div class="erp-kpi-card__meta">Retida sobre base em recibo e duodécimos</div>
+          <div class="erp-kpi-card__meta">Retida sobre vencimento e duodécimos em recibo</div>
         </div>
 
         <div class="erp-kpi-card">
@@ -120,7 +197,7 @@ export class RhPagamentosModule {
             <span class="erp-kpi-card__icon">${ICONS.briefcase}</span>
           </div>
           <div class="erp-kpi-card__value">${canSeeSalary ? escapeHtml(formatCurrency(totalOffPayroll)) : 'Restrito'}</div>
-          <div class="erp-kpi-card__meta">${offPayrollActiveCount} colaborador(es) com complemento sem SS</div>
+          <div class="erp-kpi-card__meta">${offPayrollCount} colaborador(es) com complemento sem SS</div>
         </div>
 
         <div class="erp-kpi-card erp-kpi-card--success">
@@ -129,7 +206,7 @@ export class RhPagamentosModule {
             <span class="erp-kpi-card__icon">${ICONS.euro}</span>
           </div>
           <div class="erp-kpi-card__value">${canSeePayable ? escapeHtml(formatCurrency(totalNetToPay)) : 'Restrito'}</div>
-          <div class="erp-kpi-card__meta">${monthAdvances.length} vale(s) abatido(s): ${escapeHtml(formatCurrency(totalMonthAdvances))}</div>
+          <div class="erp-kpi-card__meta">${scopedMonthAdvances.length} vale(s) em ${groupedAdvancePeopleCount} pessoa(s): -${escapeHtml(formatCurrency(totalMonthAdvances))}</div>
         </div>
       </div>
 
@@ -143,13 +220,13 @@ export class RhPagamentosModule {
             </button>
             <button type="button" class="erp-subtab ${this.viewMode === 'config' ? 'is-active' : ''}" data-paytab-view="config" ${canSeeSalary ? '' : 'style="display:none"'}>
               ${ICONS.edit}
-              <span>Configuração Salarial &amp; IBAN</span>
+              <span>Regras Salariais (Config. Única)</span>
               <span class="erp-subtab__badge">${filteredAll.length}</span>
             </button>
             <button type="button" class="erp-subtab ${this.viewMode === 'advances' ? 'is-active' : ''}" data-paytab-view="advances" ${canSeePayable ? '' : 'style="display:none"'}>
               ${ICONS.receipt}
               <span>Adiantamentos &amp; Vales</span>
-              <span class="erp-subtab__badge">${monthAdvances.length}</span>
+              <span class="erp-subtab__badge">${groupedAdvancePeopleCount}</span>
             </button>
           </div>
 
@@ -157,6 +234,14 @@ export class RhPagamentosModule {
             ${
               canSeeSalary || canSeePayable
                 ? `<button type="button" class="erp-btn erp-btn--outline" id="btnExportPayrollCsv">${ICONS.download}<span>Exportar Folha CSV</span></button>`
+                : ''
+            }
+            ${
+              canSeePayable && unclosedEligible.length > 0 && this._can('rh_recibos', 'emitir')
+                ? `<button type="button" class="erp-btn erp-btn--secondary" id="btnBatchCloseMonth" title="Gerar recibos mensais em lote usando as regras salariais guardadas">
+                    ${ICONS.checkCircle}
+                    <span>Fechar Mês em Lote (${unclosedEligible.length})</span>
+                  </button>`
                 : ''
             }
             ${
@@ -185,7 +270,11 @@ export class RhPagamentosModule {
     });
 
     container.querySelector('#btnExportPayrollCsv')?.addEventListener('click', () => {
-      this._exportPayrollCSV(activeEmployees, state, month, canSeeSalary, canSeePayable);
+      this._exportPayrollCSV(filteredActive, state, month, canSeeSalary, canSeePayable);
+    });
+
+    container.querySelector('#btnBatchCloseMonth')?.addEventListener('click', () => {
+      this._openBatchCloseMonthModal(unclosedEligible, month);
     });
 
     container.querySelector('#btnNewAdvanceGlobal')?.addEventListener('click', () => {
@@ -194,30 +283,75 @@ export class RhPagamentosModule {
 
     const body = container.querySelector('#payrollTabBody');
     if (this.viewMode === 'config') {
-      this._renderConfigDirectory(body, filteredAll, month);
+      this._renderConfigDirectory(body, filteredAll, state.employees || [], month);
     } else if (this.viewMode === 'advances') {
-      this._renderAdvancesLedger(body, state, month);
+      this._renderAdvancesLedger(body, state, month, query);
     } else {
-      this._renderPayrollSheet(body, filteredActive, state, month, canSeeSalary, canSeePayable);
+      this._renderPayrollSheet(
+        body,
+        filteredActive,
+        state,
+        month,
+        payslipsByEmp,
+        unconfiguredCount,
+        canSeeSalary,
+        canSeePayable
+      );
     }
   }
 
-  _renderFilterControls(labelText) {
+  _renderFilterControls(allEmployees, labelText, options = {}) {
+    const { showPayState = true, extraControlsHtml = '' } = options;
+    const sortedEmployees = [...allEmployees].sort((a, b) =>
+      String(a.name || '').localeCompare(String(b.name || ''), 'pt')
+    );
+
     return `
       <div class="erp-attendance-controls">
         <div class="erp-filter-bar">
-          <select class="erp-select-sm" id="filterPayDept">
+          <select class="erp-select-sm" id="filterPayEmployee" title="Filtrar por funcionário específico ou todos">
+            <option value="all" ${this.employeeFilter === 'all' ? 'selected' : ''}>Todos os Funcionários (${sortedEmployees.length})</option>
+            ${sortedEmployees
+              .map(
+                (e) => `<option value="${escapeHtml(e.id)}" ${this.employeeFilter === e.id ? 'selected' : ''}>${escapeHtml(e.name)} · ${escapeHtml(e.role)}</option>`
+              )
+              .join('')}
+          </select>
+
+          <select class="erp-select-sm" id="filterPayDept" title="Departamento">
             <option value="all">Todos os Departamentos</option>
             ${DEPARTMENTS.map(
               (d) => `<option value="${escapeHtml(d)}" ${this.deptFilter === d ? 'selected' : ''}>${escapeHtml(d)}</option>`
             ).join('')}
           </select>
-          <select class="erp-select-sm" id="filterPayRemType">
+
+          <select class="erp-select-sm" id="filterPayRemType" title="Modalidade Salarial">
             <option value="all" ${this.remFilter === 'all' ? 'selected' : ''}>Todas as Modalidades</option>
             <option value="mensal" ${this.remFilter === 'mensal' ? 'selected' : ''}>Fixo Mensal</option>
             <option value="diaria" ${this.remFilter === 'diaria' ? 'selected' : ''}>Por Dia (Diária)</option>
             <option value="hora" ${this.remFilter === 'hora' ? 'selected' : ''}>Por Hora</option>
           </select>
+
+          ${
+            showPayState
+              ? `<select class="erp-select-sm" id="filterPayState" title="Estado de Pagamento / Configuração">
+                   <option value="all" ${this.payStateFilter === 'all' ? 'selected' : ''}>Todos os Estados</option>
+                   <option value="unclosed" ${this.payStateFilter === 'unclosed' ? 'selected' : ''}>Por Fechar neste Mês</option>
+                   <option value="closed" ${this.payStateFilter === 'closed' ? 'selected' : ''}>Recibo já Emitido</option>
+                   <option value="unconfigured" ${this.payStateFilter === 'unconfigured' ? 'selected' : ''}>Sem Salário Definido (1.ª Vez)</option>
+                   <option value="off_payroll" ${this.payStateFilter === 'off_payroll' ? 'selected' : ''}>Com Por Fora da SS</option>
+                   <option value="with_advances" ${this.payStateFilter === 'with_advances' ? 'selected' : ''}>Com Adiantamentos / Vales</option>
+                 </select>`
+              : ''
+          }
+
+          ${extraControlsHtml}
+
+          ${
+            this._hasActiveFilters()
+              ? `<button type="button" class="erp-btn erp-btn--outline erp-btn--sm" id="btnClearPayFilters">Limpar Filtros</button>`
+              : ''
+          }
         </div>
         <span class="erp-cell-sub">${labelText}</span>
       </div>
@@ -225,6 +359,10 @@ export class RhPagamentosModule {
   }
 
   _bindFilterEvents(target) {
+    target.querySelector('#filterPayEmployee')?.addEventListener('change', (e) => {
+      this.employeeFilter = e.target.value;
+      store._commit();
+    });
     target.querySelector('#filterPayDept')?.addEventListener('change', (e) => {
       this.deptFilter = e.target.value;
       store._commit();
@@ -233,31 +371,55 @@ export class RhPagamentosModule {
       this.remFilter = e.target.value;
       store._commit();
     });
+    target.querySelector('#filterPayState')?.addEventListener('change', (e) => {
+      this.payStateFilter = e.target.value;
+      store._commit();
+    });
+    target.querySelector('#btnClearPayFilters')?.addEventListener('click', () => {
+      this._resetFilters();
+      store._commit();
+    });
   }
 
-  _renderPayrollSheet(target, employees, state, month, canSeeSalary, canSeePayable) {
-    const payslipsByEmp = new Map();
-    (state.payslips || [])
-      .filter((p) => p.month === month)
-      .forEach((p) => {
-        payslipsByEmp.set(p.employeeId, p);
-      });
+  _renderPayrollSheet(
+    target,
+    employees,
+    state,
+    month,
+    payslipsByEmp,
+    unconfiguredCount,
+    canSeeSalary,
+    canSeePayable
+  ) {
+    const allEmployees = state.employees || [];
+    const smartBanner =
+      unconfiguredCount > 0 && canSeeSalary && this.payStateFilter !== 'unconfigured'
+        ? `<div class="erp-smart-banner">
+             <span><strong>Configuração pendente:</strong> ${unconfiguredCount} colaborador(es) ativo(s) ainda não têm o ordenado base configurado. A configuração é feita apenas uma vez e replica automaticamente para os meses seguintes.</span>
+             <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" id="btnFilterUnconfigured">Ver Pendentes (${unconfiguredCount})</button>
+           </div>`
+        : '';
 
     target.innerHTML = `
-      ${this._renderFilterControls(`Processamento salarial de ${escapeHtml(formatMonthLabel(month))} · Configure ordenados, duodécimos, por fora SS e fecho de mês sem sair desta aba`)}
+      ${this._renderFilterControls(
+        allEmployees,
+        `Folha de ${escapeHtml(formatMonthLabel(month))} · Regras configuradas aplicam-se automaticamente todos os meses`,
+        { showPayState: true }
+      )}
+      ${smartBanner}
 
       ${
         employees.length === 0
-          ? `<div class="erp-empty">${ICONS.euro}<div class="erp-empty__title">Nenhum colaborador ativo encontrado</div><p>Ajuste os filtros ou registe colaboradores na aba Funcionários.</p></div>`
+          ? `<div class="erp-empty">${ICONS.euro}<div class="erp-empty__title">Nenhum colaborador encontrado neste filtro</div><p>Altere os filtros acima ou limpe a pesquisa para ver todos os colaboradores.</p></div>`
           : `
         <div class="erp-table-wrap">
           <table class="erp-table">
             <thead>
               <tr>
                 <th>Colaborador &amp; Assiduidade</th>
-                ${canSeeSalary ? '<th>Regime, Duodécimos &amp; SS%</th><th>Em Recibo (c/ SS)</th><th>Por Fora SS</th>' : ''}
+                ${canSeeSalary ? '<th>Regra Permanente, Duodécimos &amp; SS%</th><th>Em Recibo (c/ SS)</th><th>Por Fora SS</th>' : ''}
                 ${canSeePayable ? '<th>Adiantamentos</th><th>Líquido Final a Pagar</th>' : ''}
-                <th style="text-align:right">Ações de Pagamento</th>
+                <th style="text-align:right">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -265,6 +427,7 @@ export class RhPagamentosModule {
                 .map((emp) => {
                   const s = computeEmployeeMonthlyPayroll(emp, state.attendance, state.employeeAdvances, month);
                   const payslip = payslipsByEmp.get(emp.id);
+                  const configured = hasSalaryConfigured(emp);
                   const twMeta = getTwelfthsOptionMeta(s.twelfthsMode);
                   const rateLabel =
                     s.remunerationType === 'diaria'
@@ -291,8 +454,12 @@ export class RhPagamentosModule {
                     ${
                       canSeeSalary
                         ? `<td>
-                             <div class="erp-cell-title">${escapeHtml(rateLabel)} · ${escapeHtml(REMUNERATION_LABELS[s.remunerationType] || 'Fixo Mensal')}</div>
-                             <div class="erp-cell-sub">SS ${s.ssPercentage}%${s.twelfthsMode !== 'Não' ? ` · <strong>${escapeHtml(twMeta.shortLabel)}</strong> (+${escapeHtml(formatCurrency(s.twelfthsTotal))})` : ' · Sem duodécimos'}</div>
+                             ${
+                               configured
+                                 ? `<div class="erp-cell-title">${escapeHtml(rateLabel)} · ${escapeHtml(REMUNERATION_LABELS[s.remunerationType] || 'Fixo Mensal')}</div>
+                                    <div class="erp-cell-sub">SS ${s.ssPercentage}%${s.twelfthsMode !== 'Não' ? ` · <strong>${escapeHtml(twMeta.shortLabel)}</strong> (+${escapeHtml(formatCurrency(s.twelfthsTotal))})` : ' · Sem duodécimos'}</div>`
+                                 : `<span class="erp-badge erp-badge--warning">Salário por definir (1.ª vez)</span>`
+                             }
                            </td>
                            <td>
                              <div class="erp-cell-title">${escapeHtml(formatCurrency(s.receiptNetPay))}</div>
@@ -309,7 +476,7 @@ export class RhPagamentosModule {
                     ${
                       canSeePayable
                         ? `<td>
-                             <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-pay-adv="${escapeHtml(emp.id)}" title="Gerir Adiantamentos / Vales">
+                             <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-pay-adv="${escapeHtml(emp.id)}" title="Ver ou registar vales deste colaborador">
                                ${s.advancesTotal > 0 ? `<span style="color:var(--erp-danger);font-weight:700;">-${escapeHtml(formatCurrency(s.advancesTotal))} (${s.monthAdvances.length})</span>` : '€ 0,00 · + Vale'}
                              </button>
                            </td>
@@ -328,13 +495,18 @@ export class RhPagamentosModule {
                     <td>
                       <div class="erp-row-actions">
                         ${
-                          canSeeSalary
-                            ? `<button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-pay-config="${escapeHtml(emp.id)}" title="Definir Ordenado, Duodécimos, Por Fora SS e IBAN">Configurar Salário</button>`
+                          canSeeSalary && !configured
+                            ? `<button type="button" class="erp-btn erp-btn--primary erp-btn--sm" data-pay-config="${escapeHtml(emp.id)}">Definir Salário (1.ª Vez)</button>`
                             : ''
                         }
                         ${
-                          canSeePayable
-                            ? `<button type="button" class="erp-btn erp-btn--primary erp-btn--sm" data-pay-close="${escapeHtml(emp.id)}" title="Fechar Mês e Emitir Recibo">Fechar Mês</button>`
+                          canSeePayable && configured
+                            ? `<button type="button" class="erp-btn ${payslip ? 'erp-btn--outline' : 'erp-btn--primary'} erp-btn--sm" data-pay-close="${escapeHtml(emp.id)}" title="Fechar Mês e Emitir Recibo">${payslip ? 'Rever Fecho' : 'Fechar Mês'}</button>`
+                            : ''
+                        }
+                        ${
+                          canSeeSalary && configured
+                            ? `<button type="button" class="erp-icon-btn" data-pay-config="${escapeHtml(emp.id)}" title="Ajustar regra salarial permanente (${escapeHtml(emp.name)})">${ICONS.edit}</button>`
                             : ''
                         }
                         ${
@@ -354,6 +526,11 @@ export class RhPagamentosModule {
     `;
 
     this._bindFilterEvents(target);
+
+    target.querySelector('#btnFilterUnconfigured')?.addEventListener('click', () => {
+      this.payStateFilter = 'unconfigured';
+      store._commit();
+    });
 
     target.querySelectorAll('[data-pay-config]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -379,13 +556,21 @@ export class RhPagamentosModule {
     });
   }
 
-  _renderConfigDirectory(target, employees, month) {
+  _renderConfigDirectory(target, employees, allEmployees, month) {
     target.innerHTML = `
-      ${this._renderFilterControls('Tabela de condições salariais — clique em "Editar Regras Salariais" para configurar ordenado, duodécimos, pagamento por fora e IBAN')}
+      ${this._renderFilterControls(
+        allEmployees,
+        'Configuração única e permanente — defina uma vez e o sistema calcula automaticamente todos os meses',
+        { showPayState: true }
+      )}
+
+      <div class="erp-smart-banner">
+        <span><strong>Automação mensal ativa:</strong> Alterações aqui guardam a regra contratual permanente do colaborador na base de dados para todos os meses futuros.</span>
+      </div>
 
       ${
         employees.length === 0
-          ? `<div class="erp-empty">${ICONS.users}<div class="erp-empty__title">Nenhum colaborador encontrado</div></div>`
+          ? `<div class="erp-empty">${ICONS.users}<div class="erp-empty__title">Nenhum colaborador encontrado neste filtro</div></div>`
           : `
         <div class="erp-table-wrap">
           <table class="erp-table">
@@ -397,13 +582,14 @@ export class RhPagamentosModule {
                 <th>Duodécimos (Férias / Natal)</th>
                 <th>Por Fora da SS</th>
                 <th>IBAN</th>
-                <th style="text-align:right">Configurar</th>
+                <th style="text-align:right">Regra Permanente</th>
               </tr>
             </thead>
             <tbody>
               ${employees
                 .map((emp) => {
                   const s = computeEmployeeMonthlyPayroll(emp, store.getState().attendance, store.getState().employeeAdvances, month);
+                  const configured = hasSalaryConfigured(emp);
                   const twMeta = getTwelfthsOptionMeta(s.twelfthsMode);
                   const rateStr =
                     s.remunerationType === 'diaria'
@@ -423,8 +609,12 @@ export class RhPagamentosModule {
                       </div>
                     </td>
                     <td>
-                      <div class="erp-cell-title">${escapeHtml(rateStr)}</div>
-                      <div class="erp-cell-sub">${escapeHtml(REMUNERATION_LABELS[s.remunerationType] || 'Fixo Mensal')}</div>
+                      ${
+                        configured
+                          ? `<div class="erp-cell-title">${escapeHtml(rateStr)}</div>
+                             <div class="erp-cell-sub">${escapeHtml(REMUNERATION_LABELS[s.remunerationType] || 'Fixo Mensal')}</div>`
+                          : `<span class="erp-badge erp-badge--warning">Por configurar</span>`
+                      }
                     </td>
                     <td>
                       <div class="erp-cell-title">SS ${s.ssPercentage}%</div>
@@ -444,7 +634,7 @@ export class RhPagamentosModule {
                       <div class="erp-cell-sub" style="font-family:monospace;">${escapeHtml(emp.iban || 'Não definido')}</div>
                     </td>
                     <td style="text-align:right">
-                      <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-cfg-emp="${escapeHtml(emp.id)}">${ICONS.edit}<span>Editar Regras Salariais</span></button>
+                      <button type="button" class="erp-btn ${configured ? 'erp-btn--outline' : 'erp-btn--primary'} erp-btn--sm" data-cfg-emp="${escapeHtml(emp.id)}">${ICONS.edit}<span>${configured ? 'Alterar Regra' : 'Configurar (1.ª Vez)'}</span></button>
                     </td>
                   </tr>`;
                 })
@@ -464,65 +654,181 @@ export class RhPagamentosModule {
     });
   }
 
-  _renderAdvancesLedger(target, state, month) {
-    const empMap = new Map((state.employees || []).map((e) => [e.id, e]));
+  _renderAdvancesLedger(target, state, month, query) {
+    const allEmployees = state.employees || [];
+    const empMap = new Map(allEmployees.map((e) => [e.id, e]));
     const allAdvances = state.employeeAdvances || [];
-    const list =
-      this.advScope === 'month'
-        ? allAdvances.filter((a) => String(a.month || a.date || '').slice(0, 7) === month)
-        : allAdvances;
-    const totalVal = list.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+
+    const filteredAdvances = allAdvances.filter((adv) => {
+      if (this.advScope === 'month' && String(adv.month || adv.date || '').slice(0, 7) !== month) {
+        return false;
+      }
+      if (this.employeeFilter !== 'all' && adv.employeeId !== this.employeeFilter) {
+        return false;
+      }
+      const emp = empMap.get(adv.employeeId);
+      if (this.deptFilter !== 'all' && emp?.department !== this.deptFilter) {
+        return false;
+      }
+      if (this.remFilter !== 'all' && (emp?.remunerationType || 'mensal') !== this.remFilter) {
+        return false;
+      }
+      if (query) {
+        const hay = `${emp?.name || ''} ${emp?.role || ''} ${adv.notes || ''}`.toLowerCase();
+        if (!hay.includes(query)) return false;
+      }
+      return true;
+    });
+
+    // Agrupa por colaborador para nunca repetir o mesmo nome várias vezes na tabela principal
+    const groupedMap = new Map();
+    filteredAdvances.forEach((adv) => {
+      const empId = adv.employeeId || 'unknown';
+      if (!groupedMap.has(empId)) {
+        groupedMap.set(empId, {
+          employeeId: empId,
+          emp: empMap.get(empId) || null,
+          items: [],
+          totalAmount: 0,
+          latestDate: '',
+        });
+      }
+      const grp = groupedMap.get(empId);
+      grp.items.push(adv);
+      grp.totalAmount += Number(adv.amount) || 0;
+      const d = String(adv.date || adv.month || '');
+      if (!grp.latestDate || d > grp.latestDate) {
+        grp.latestDate = d;
+      }
+    });
+
+    const groups = [...groupedMap.values()].sort((a, b) =>
+      String(b.latestDate).localeCompare(String(a.latestDate))
+    );
+    groups.forEach((g) => {
+      g.items.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    });
+
+    const totalVal = groups.reduce((sum, g) => sum + g.totalAmount, 0);
+    const scopeControl = `
+      <select class="erp-select-sm" id="advScopeSelect" title="Período dos Vales">
+        <option value="month" ${this.advScope === 'month' ? 'selected' : ''}>Mês (${escapeHtml(month)})</option>
+        <option value="all" ${this.advScope === 'all' ? 'selected' : ''}>Todo o Histórico</option>
+      </select>
+    `;
 
     target.innerHTML = `
-      <div class="erp-attendance-controls">
-        <div class="erp-filter-bar">
-          <select class="erp-select-sm" id="advScopeSelect">
-            <option value="month" ${this.advScope === 'month' ? 'selected' : ''}>Mês Selecionado (${escapeHtml(month)})</option>
-            <option value="all" ${this.advScope === 'all' ? 'selected' : ''}>Todo o Histórico</option>
-          </select>
-        </div>
-        <span class="erp-cell-title" style="color:var(--erp-danger);">Total em Vales / Adiantamentos: -${escapeHtml(formatCurrency(totalVal))}</span>
-      </div>
+      ${this._renderFilterControls(
+        allEmployees,
+        `Agrupado por colaborador (${groups.length} pessoa(s) · ${filteredAdvances.length} vale(s) · Total -${escapeHtml(formatCurrency(totalVal))})`,
+        { showPayState: false, extraControlsHtml: scopeControl }
+      )}
 
       ${
-        list.length === 0
-          ? `<div class="erp-empty">${ICONS.receipt}<div class="erp-empty__title">Nenhum adiantamento registado</div><p>Clique em "Registar Adiantamento / Vale" acima para lançar um levantamento antecipado.</p></div>`
+        groups.length === 0
+          ? `<div class="erp-empty">${ICONS.receipt}<div class="erp-empty__title">Nenhum adiantamento encontrado</div><p>Altere os filtros ou clique em "Registar Adiantamento / Vale".</p></div>`
           : `
         <div class="erp-table-wrap">
           <table class="erp-table">
             <thead>
               <tr>
-                <th>Data</th>
                 <th>Colaborador</th>
-                <th>Mês de Abate</th>
-                <th>Observação / Motivo</th>
-                <th>Valor Retirado</th>
+                <th>Qtd. Vales / Último</th>
+                <th>Resumo dos Levantamentos</th>
+                <th>Total Abatido</th>
                 <th style="text-align:right">Ações</th>
               </tr>
             </thead>
             <tbody>
-              ${list
-                .map((adv) => {
-                  const emp = empMap.get(adv.employeeId);
-                  return `
+              ${groups
+                .map((g) => {
+                  const isSingleEmpFiltered = this.employeeFilter !== 'all' && this.employeeFilter === g.employeeId;
+                  const isExpanded = isSingleEmpFiltered || this.expandedAdvEmployees.has(g.employeeId);
+                  const previewItems = g.items.slice(0, 3);
+                  const extraCount = g.items.length - previewItems.length;
+
+                  const summaryRow = `
                   <tr>
-                    <td><div class="erp-cell-title">${escapeHtml(formatDatePT(adv.date || adv.month))}</div></td>
                     <td>
                       <div class="erp-person-cell">
-                        <span class="erp-avatar">${escapeHtml(getInitials(emp?.name || '?'))}</span>
+                        <span class="erp-avatar">${escapeHtml(getInitials(g.emp?.name || '?'))}</span>
                         <div>
-                          <div class="erp-cell-title">${escapeHtml(emp?.name || 'Colaborador removido')}</div>
-                          <div class="erp-cell-sub">${escapeHtml(emp?.role || '')}</div>
+                          <div class="erp-cell-title">${escapeHtml(g.emp?.name || 'Colaborador removido')}</div>
+                          <div class="erp-cell-sub">${escapeHtml(g.emp?.role || '—')}</div>
                         </div>
                       </div>
                     </td>
-                    <td><span class="erp-badge erp-badge--neutral">${escapeHtml(adv.month || String(adv.date || '').slice(0, 7))}</span></td>
-                    <td><div class="erp-cell-sub">${escapeHtml(adv.notes || 'Adiantamento de ordenado')}</div></td>
-                    <td><strong style="color:var(--erp-danger);">-${escapeHtml(formatCurrency(adv.amount))}</strong></td>
+                    <td>
+                      <span class="erp-badge erp-badge--warning">${g.items.length} ${g.items.length === 1 ? 'vale' : 'vales'}</span>
+                      <div class="erp-cell-sub" style="margin-top:4px;">Último: ${escapeHtml(formatDatePT(g.latestDate))}</div>
+                    </td>
+                    <td>
+                      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                        ${previewItems
+                          .map(
+                            (it) => `<span class="erp-badge erp-badge--neutral">${escapeHtml(formatDatePT(it.date || it.month).slice(0, 5))}: -${escapeHtml(formatCurrency(it.amount))}</span>`
+                          )
+                          .join('')}
+                        ${extraCount > 0 ? `<span class="erp-badge erp-badge--info">+${extraCount}</span>` : ''}
+                      </div>
+                    </td>
+                    <td><strong style="color:var(--erp-danger);font-size:14px;">-${escapeHtml(formatCurrency(g.totalAmount))}</strong></td>
                     <td style="text-align:right">
-                      <button type="button" class="erp-icon-btn erp-icon-btn--danger" data-del-adv-row="${escapeHtml(adv.id)}" title="Remover Adiantamento">${ICONS.trash}</button>
+                      <div class="erp-row-actions">
+                        <button type="button" class="erp-btn erp-btn--outline erp-btn--sm" data-toggle-adv-emp="${escapeHtml(g.employeeId)}">
+                          ${isExpanded ? 'Ocultar Detalhes' : `Ver Detalhes (${g.items.length})`}
+                        </button>
+                        ${
+                          g.emp
+                            ? `<button type="button" class="erp-btn erp-btn--primary erp-btn--sm" data-add-adv-emp="${escapeHtml(g.employeeId)}" title="Lançar novo vale para ${escapeHtml(g.emp.name)}">${ICONS.plus}<span>Novo Vale</span></button>`
+                            : ''
+                        }
+                      </div>
                     </td>
                   </tr>`;
+
+                  const detailRow = isExpanded
+                    ? `
+                  <tr class="erp-adv-detail-row">
+                    <td colspan="5">
+                      <div class="erp-adv-subcard">
+                        <div class="erp-adv-subcard__head">
+                          <span>Levantamentos individuais de ${escapeHtml(g.emp?.name || 'Colaborador')} (${g.items.length})</span>
+                          <span style="color:var(--erp-danger);">Soma abatida: -${escapeHtml(formatCurrency(g.totalAmount))}</span>
+                        </div>
+                        <table class="erp-table">
+                          <thead>
+                            <tr>
+                              <th>Data</th>
+                              <th>Mês de Abate</th>
+                              <th>Motivo / Observação</th>
+                              <th style="text-align:right">Valor</th>
+                              <th style="text-align:right">Remover</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${g.items
+                              .map(
+                                (adv) => `
+                              <tr>
+                                <td>${escapeHtml(formatDatePT(adv.date || adv.month))}</td>
+                                <td><span class="erp-badge erp-badge--neutral">${escapeHtml(adv.month || String(adv.date || '').slice(0, 7))}</span></td>
+                                <td><span class="erp-cell-sub">${escapeHtml(adv.notes || 'Adiantamento de ordenado')}</span></td>
+                                <td style="text-align:right;font-weight:700;color:var(--erp-danger);">-${escapeHtml(formatCurrency(adv.amount))}</td>
+                                <td style="text-align:right">
+                                  <button type="button" class="erp-icon-btn erp-icon-btn--danger" data-del-adv-row="${escapeHtml(adv.id)}" title="Remover este adiantamento">${ICONS.trash}</button>
+                                </td>
+                              </tr>`
+                              )
+                              .join('')}
+                          </tbody>
+                        </table>
+                      </div>
+                    </td>
+                  </tr>`
+                    : '';
+
+                  return `${summaryRow}${detailRow}`;
                 })
                 .join('')}
             </tbody>
@@ -531,9 +837,27 @@ export class RhPagamentosModule {
       }
     `;
 
+    this._bindFilterEvents(target);
+
     target.querySelector('#advScopeSelect')?.addEventListener('change', (e) => {
       this.advScope = e.target.value;
       store._commit();
+    });
+
+    target.querySelectorAll('[data-toggle-adv-emp]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const empId = btn.dataset.toggleAdvEmp;
+        if (this.expandedAdvEmployees.has(empId)) {
+          this.expandedAdvEmployees.delete(empId);
+        } else {
+          this.expandedAdvEmployees.add(empId);
+        }
+        store._commit();
+      });
+    });
+
+    target.querySelectorAll('[data-add-adv-emp]').forEach((btn) => {
+      btn.addEventListener('click', () => this._openAdvancePopup(btn.dataset.addAdvEmp, month));
     });
 
     target.querySelectorAll('[data-del-adv-row]').forEach((btn) => {
@@ -550,6 +874,135 @@ export class RhPagamentosModule {
           },
         });
       });
+    });
+  }
+
+  _openBatchCloseMonthModal(eligibleEmployees, month) {
+    if (!eligibleEmployees || eligibleEmployees.length === 0) {
+      showToast('Todos os colaboradores com salário configurado já têm recibo emitido neste mês.', 'info');
+      return;
+    }
+    const state = store.getState();
+    const rows = eligibleEmployees.map((emp) => ({
+      emp,
+      stats: computeEmployeeMonthlyPayroll(emp, state.attendance, state.employeeAdvances, month),
+    }));
+
+    openModal({
+      title: `Fechar Mês em Lote — ${formatMonthLabel(month)}`,
+      subtitle: 'Emissão automática usando as regras salariais permanentes guardadas na base de dados',
+      size: 'wide',
+      bodyHtml: `
+        <div class="erp-smart-banner">
+          <span><strong>Zero reconfiguração manual:</strong> Cada colaborador abaixo será processado com a sua modalidade, Segurança Social, duodécimos e pagamento por fora da SS já guardados (abatendo vales do mês).</span>
+        </div>
+
+        <div class="erp-table-wrap">
+          <table class="erp-table">
+            <thead>
+              <tr>
+                <th style="width:36px;"><input type="checkbox" id="batchCheckAll" checked title="Selecionar todos"></th>
+                <th>Colaborador</th>
+                <th>Presenças / Base</th>
+                <th>Duodécimos</th>
+                <th>Por Fora SS</th>
+                <th>Vales</th>
+                <th style="text-align:right">Total Líquido</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows
+                .map(
+                  ({ emp, stats }) => `
+                <tr>
+                  <td><input type="checkbox" class="batch-emp-check" value="${escapeHtml(emp.id)}" checked></td>
+                  <td>
+                    <div class="erp-cell-title">${escapeHtml(emp.name)}</div>
+                    <div class="erp-cell-sub">${escapeHtml(REMUNERATION_LABELS[stats.remunerationType] || 'Fixo Mensal')} · SS ${stats.ssPercentage}%</div>
+                  </td>
+                  <td>
+                    <div class="erp-cell-title">${escapeHtml(formatCurrency(stats.earnedBase))}</div>
+                    <div class="erp-cell-sub">${stats.present}P · SS -${escapeHtml(formatCurrency(stats.ssDeduction))}</div>
+                  </td>
+                  <td>${stats.twelfthsTotal > 0 ? `+${escapeHtml(formatCurrency(stats.twelfthsTotal))}` : '—'}</td>
+                  <td>${stats.offPayrollEarned > 0 ? `+${escapeHtml(formatCurrency(stats.offPayrollEarned))}` : '—'}</td>
+                  <td style="color:${stats.advancesTotal > 0 ? 'var(--erp-danger)' : 'var(--erp-text-muted)'};">${stats.advancesTotal > 0 ? `-${escapeHtml(formatCurrency(stats.advancesTotal))}` : '€ 0,00'}</td>
+                  <td style="text-align:right;font-weight:800;color:var(--erp-success);">${escapeHtml(formatCurrency(stats.netToPay))}</td>
+                </tr>`
+                )
+                .join('')}
+            </tbody>
+          </table>
+        </div>
+      `,
+      footerHtml: `
+        <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Cancelar</button>
+        <button type="button" class="erp-btn erp-btn--primary" id="btnRunBatchClose">
+          ${ICONS.checkCircle}<span id="lblBatchBtn">Emitir ${rows.length} Recibo(s) Agora</span>
+        </button>
+      `,
+      onMount: (modal) => {
+        const checkAll = modal.querySelector('#batchCheckAll');
+        const checks = [...modal.querySelectorAll('.batch-emp-check')];
+        const btnRun = modal.querySelector('#btnRunBatchClose');
+        const lblRun = modal.querySelector('#lblBatchBtn');
+
+        const syncCount = () => {
+          const checkedCount = checks.filter((c) => c.checked).length;
+          if (lblRun) lblRun.textContent = `Emitir ${checkedCount} Recibo(s) Agora`;
+          if (btnRun) btnRun.disabled = checkedCount === 0;
+        };
+
+        checkAll?.addEventListener('change', () => {
+          checks.forEach((c) => {
+            c.checked = checkAll.checked;
+          });
+          syncCount();
+        });
+
+        checks.forEach((c) => {
+          c.addEventListener('change', () => {
+            if (checkAll) checkAll.checked = checks.every((x) => x.checked);
+            syncCount();
+          });
+        });
+
+        btnRun?.addEventListener('click', async () => {
+          const selectedIds = new Set(checks.filter((c) => c.checked).map((c) => c.value));
+          const chosenRows = rows.filter((r) => selectedIds.has(r.emp.id));
+          if (chosenRows.length === 0) return;
+
+          btnRun.disabled = true;
+          if (lblRun) lblRun.textContent = 'A emitir recibos...';
+
+          let okCount = 0;
+          for (const { emp, stats } of chosenRows) {
+            const payslipId = generateId('REC');
+            const res = await store.addPayslip({
+              id: payslipId,
+              employeeId: emp.id,
+              month,
+              baseSalary: stats.earnedBase,
+              mealAllowanceTotal: stats.mealEarned,
+              twelfthVacation: stats.twelfthsVacation,
+              twelfthChristmas: stats.twelfthsChristmas,
+              overtimeBonus: 0,
+              socialSecurity: stats.ssDeduction,
+              irsRetention: 0,
+              otherDeductions: stats.advancesTotal,
+              offPayroll: stats.offPayrollEarned,
+              netSalary: stats.netToPay,
+              paymentDate: todayISO(),
+              status: 'pago',
+              notes: `Fecho automático (${REMUNERATION_LABELS[stats.remunerationType]} · ${getTwelfthsOptionMeta(stats.twelfthsMode).shortLabel} · SS ${stats.ssPercentage}%)`,
+            });
+            if (res !== null) okCount += 1;
+          }
+
+          showToast(`${okCount} recibo(s) de vencimento emitidos automaticamente para ${formatMonthLabel(month)}.`, 'success', 5500);
+          closeModal();
+        });
+      },
     });
   }
 
@@ -615,6 +1068,10 @@ export class RhPagamentosModule {
 
     const bodyHtml = `
       <form id="salaryConfigForm">
+        <div class="erp-smart-banner">
+          <span><strong>Configuração Permanente (1 só vez):</strong> Guarde uma única vez — estas condições mantêm-se ativas automaticamente em todos os meses seguintes.</span>
+        </div>
+
         <div class="erp-form-section">
           <div class="erp-form-section__title">1. Modalidade &amp; Ordenado em Recibo (Sujeito a Segurança Social)</div>
           <div class="erp-field erp-field--full" style="margin-bottom:12px;">
@@ -726,13 +1183,13 @@ export class RhPagamentosModule {
     `;
 
     openModal({
-      title: `Configuração Salarial — ${emp.name}`,
+      title: `Regra Salarial Permanente — ${emp.name}`,
       subtitle: `${emp.role} · NIF ${emp.nif || '—'}`,
       size: 'wide',
       bodyHtml,
       footerHtml: `
         <button type="button" class="erp-btn erp-btn--outline" data-modal-close>Cancelar</button>
-        <button type="submit" form="salaryConfigForm" id="btnSaveSalaryCfg" class="erp-btn erp-btn--primary">Guardar Condições Salariais</button>
+        <button type="submit" form="salaryConfigForm" id="btnSaveSalaryCfg" class="erp-btn erp-btn--primary">Guardar Regra Permanente</button>
       `,
       onMount: (modal) => {
         const form = modal.querySelector('#salaryConfigForm');
@@ -894,11 +1351,11 @@ export class RhPagamentosModule {
           });
 
           if (res !== null) {
-            showToast(`Condições salariais de ${emp.name} guardadas na base de dados.`);
+            showToast(`Regra salarial permanente de ${emp.name} guardada na base de dados.`);
             closeModal();
           } else if (saveBtn) {
             saveBtn.disabled = false;
-            saveBtn.textContent = 'Guardar Condições Salariais';
+            saveBtn.textContent = 'Guardar Regra Permanente';
           }
         });
       },
@@ -911,7 +1368,11 @@ export class RhPagamentosModule {
       showToast('Registe primeiro pelo menos um funcionário ativo.', 'warning');
       return;
     }
-    this._openAdvancePopup(activeEmployees[0].id, month, true);
+    const preferred =
+      this.employeeFilter !== 'all'
+        ? activeEmployees.find((e) => e.id === this.employeeFilter) || activeEmployees[0]
+        : activeEmployees[0];
+    this._openAdvancePopup(preferred.id, month, true);
   }
 
   _openAdvancePopup(empId, month, allowPickEmployee = false) {
@@ -927,7 +1388,7 @@ export class RhPagamentosModule {
     const s = computeEmployeeMonthlyPayroll(emp, state.attendance, state.employeeAdvances, month);
 
     openModal({
-      title: allowPickEmployee ? 'Registar Adiantamento / Vale Salarial' : `Ordenado & Adiantamentos — ${emp.name}`,
+      title: allowPickEmployee ? 'Registar Adiantamento / Vale Salarial' : `Adiantamentos de ${emp.name}`,
       subtitle: `${REMUNERATION_LABELS[s.remunerationType] || 'Fixo Mensal'} · ${formatMonthLabel(month)}`,
       bodyHtml: `
         ${
@@ -961,7 +1422,7 @@ export class RhPagamentosModule {
         </div>
 
         <form id="empAdvanceForm" class="erp-inline-invoice-box">
-          <div class="erp-form-section__title" style="margin-bottom:10px;">Registar Adiantamento Antecipado</div>
+          <div class="erp-form-section__title" style="margin-bottom:10px;">Registar Novo Adiantamento</div>
           <div class="erp-form-grid erp-form-grid--3">
             <div class="erp-field">
               <label for="advAmount">Valor Retirado (€) *</label>
@@ -986,7 +1447,7 @@ export class RhPagamentosModule {
         <div id="advMonthHistory" style="margin-top:14px;">
           ${
             s.monthAdvances.length > 0
-              ? `<div class="erp-form-section__title" style="margin-bottom:8px;">Vales já registados em ${escapeHtml(formatMonthLabel(month))}</div>
+              ? `<div class="erp-form-section__title" style="margin-bottom:8px;">Vales registados para ${escapeHtml(emp.name)} em ${escapeHtml(formatMonthLabel(month))} (${s.monthAdvances.length})</div>
                  <div class="erp-table-wrap">
                    <table class="erp-table">
                      <tbody>
@@ -1013,34 +1474,10 @@ export class RhPagamentosModule {
         <button type="button" class="erp-btn erp-btn--primary" data-modal-close>Concluir</button>
       `,
       onMount: (modal) => {
-        let selectedEmpId = emp.id;
+        const selectedEmpId = emp.id;
         const empPicker = modal.querySelector('#advEmpSelect');
         empPicker?.addEventListener('change', () => {
-          selectedEmpId = empPicker.value;
-          const targetEmp = store.getState().employees.find((x) => x.id === selectedEmpId);
-          if (!targetEmp) return;
-          const nextStats = computeEmployeeMonthlyPayroll(targetEmp, store.getState().attendance, store.getState().employeeAdvances, month);
-          const box = modal.querySelector('#advSummaryBox');
-          if (box) {
-            box.innerHTML = `
-              <div>
-                <div class="erp-summary-item__label">Líquido Recibo (c/ SS ${nextStats.ssPercentage}%)</div>
-                <div class="erp-summary-item__val">${escapeHtml(formatCurrency(nextStats.receiptNetPay))}</div>
-              </div>
-              <div>
-                <div class="erp-summary-item__label">+ Por Fora SS</div>
-                <div class="erp-summary-item__val" style="color:var(--erp-accent-dark);">+${escapeHtml(formatCurrency(nextStats.offPayrollEarned))}</div>
-              </div>
-              <div>
-                <div class="erp-summary-item__label">Vales Retirados (${nextStats.monthAdvances.length})</div>
-                <div class="erp-summary-item__val erp-summary-item__val--danger">-${escapeHtml(formatCurrency(nextStats.advancesTotal))}</div>
-              </div>
-              <div>
-                <div class="erp-summary-item__label">Total Final a Receber</div>
-                <div class="erp-summary-item__val erp-summary-item__val--success">${escapeHtml(formatCurrency(nextStats.netToPay))}</div>
-              </div>
-            `;
-          }
+          this._openAdvancePopup(empPicker.value, month, true);
         });
 
         modal.querySelector('#empAdvanceForm')?.addEventListener('submit', async (e) => {
@@ -1051,18 +1488,19 @@ export class RhPagamentosModule {
             return;
           }
           const targetEmp = store.getState().employees.find((x) => x.id === selectedEmpId) || emp;
+          const advDate = modal.querySelector('#advDate')?.value || todayISO();
           const saveBtn = modal.querySelector('#btnSaveAdvance');
           if (saveBtn) {
             saveBtn.disabled = true;
             saveBtn.textContent = 'A guardar...';
           }
           await store.addEmployeeAdvance({
-            id: generateId('ADV'),
+            id: generateId('ADT'),
             employeeId: targetEmp.id,
-            month,
-            date: modal.querySelector('#advDate')?.value || todayISO(),
-            amount,
-            notes: modal.querySelector('#advNotes')?.value || '',
+            month: String(advDate).slice(0, 7) || month,
+            date: advDate,
+            amount: Number(amount.toFixed(2)),
+            notes: modal.querySelector('#advNotes')?.value.trim() || 'Adiantamento de ordenado',
           });
           showToast(`Adiantamento de ${formatCurrency(amount)} registado para ${targetEmp.name}.`);
           this._openAdvancePopup(targetEmp.id, month, allowPickEmployee);
@@ -1164,7 +1602,7 @@ export class RhPagamentosModule {
             <div class="erp-field erp-field--full" style="margin-top:2px;">
               <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer;">
                 <input type="checkbox" id="closeMonthSaveTwelfths">
-                <span>Guardar esta preferência de duodécimos como padrão na ficha salarial de ${escapeHtml(emp.name)}</span>
+                <span>Guardar esta preferência de duodécimos como padrão permanente de ${escapeHtml(emp.name)}</span>
               </label>
             </div>
           </div>
