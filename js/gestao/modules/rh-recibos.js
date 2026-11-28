@@ -312,7 +312,7 @@ export class RhRecibosModule {
                     <td>
                       <div class="erp-cell-title">${escapeHtml(formatCurrency(p.baseSalary))}</div>
                       <div class="erp-cell-sub">Sub. Alim. ${escapeHtml(formatCurrency(p.mealAllowanceTotal))}${Number(p.overtimeBonus) > 0 ? ` · Extra ${escapeHtml(formatCurrency(p.overtimeBonus))}` : ''}</div>
-                      ${twelfthsVal > 0 ? `<div class="erp-cell-sub" style="color:var(--erp-navy);font-weight:600;">+ Duodécimos (Fér./Nat.): ${escapeHtml(formatCurrency(twelfthsVal))}</div>` : ''}
+                      ${twelfthsVal > 0 ? `<div class="erp-cell-sub" style="color:var(--erp-info);font-weight:600;">+ Duodécimos (Fér./Nat.): ${escapeHtml(formatCurrency(twelfthsVal))}</div>` : ''}
                       ${Number(p.offPayroll) > 0 ? `<div class="erp-cell-sub" style="color:var(--erp-accent-dark);font-weight:600;">+ Por fora SS: ${escapeHtml(formatCurrency(p.offPayroll))}</div>` : ''}
                     </td>
                     <td>
@@ -470,7 +470,7 @@ export class RhRecibosModule {
     target.innerHTML = `
       <div class="erp-attendance-controls">
         <div class="erp-filter-bar">
-          <label style="font-size:12.5px;font-weight:700;color:var(--erp-navy);">Funcionário:</label>
+          <label style="font-size:12.5px;font-weight:700;color:var(--erp-heading);">Funcionário:</label>
           <select class="erp-select-sm" id="annualEmpSelect">
             ${state.employees
               .map((e) => `<option value="${escapeHtml(e.id)}" ${activeEmpId === e.id ? 'selected' : ''}>${escapeHtml(e.name)}</option>`)

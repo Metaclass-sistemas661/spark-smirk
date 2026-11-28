@@ -366,7 +366,7 @@ export class RhFuncionariosModule {
     target.innerHTML = `
       <div class="erp-attendance-controls">
         <div class="erp-filter-bar">
-          <label style="font-size:12.5px;font-weight:700;color:var(--erp-navy);">Data da Folha de Ponto:</label>
+          <label style="font-size:12.5px;font-weight:700;color:var(--erp-heading);">Data da Folha de Ponto:</label>
           <input type="date" class="erp-select-sm" id="attDatePicker" value="${escapeHtml(this.selectedDate)}">
           <button type="button" class="erp-btn erp-btn--secondary erp-btn--sm" id="btnMarkAllPresent">
             ${ICONS.checkCircle}

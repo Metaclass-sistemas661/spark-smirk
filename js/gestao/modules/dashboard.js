@@ -357,7 +357,7 @@ export class DashboardModule {
             <div class="erp-att-bar-item" data-dash-open-proj="${escapeHtml(proj.id)}" data-dash-proj-status="${escapeHtml(proj.status)}">
               <div class="erp-att-bar-item__top">
                 <span class="erp-att-bar-item__name">${escapeHtml(proj.code)} — ${escapeHtml(proj.name)} <span style="font-weight:400;color:var(--erp-text-muted)">· ${escapeHtml(proj.district || '')}</span></span>
-                <span class="erp-att-bar-item__meta"><strong style="color:var(--erp-navy)">${pct}%</strong> concluído</span>
+                <span class="erp-att-bar-item__meta"><strong style="color:var(--erp-heading)">${pct}%</strong> concluído</span>
               </div>
               <div class="erp-progress">
                 <div class="erp-progress__track" style="height:10px;"><div class="erp-progress__fill" style="width:${pct}%"></div></div>
@@ -634,7 +634,7 @@ export class DashboardModule {
             <div class="erp-att-bar-item" data-dash-nav="rh-funcionarios">
               <div class="erp-att-bar-item__top">
                 <span class="erp-att-bar-item__name">${escapeHtml(emp.name)} <span style="font-weight:400;color:var(--erp-text-muted)">· ${escapeHtml(emp.department)}</span></span>
-                <span class="erp-att-bar-item__meta">${stats.p}P · ${stats.fj}FJ · ${stats.fi}FI · <strong style="color:var(--erp-navy)">${stats.rate}%</strong></span>
+                <span class="erp-att-bar-item__meta">${stats.p}P · ${stats.fj}FJ · ${stats.fi}FI · <strong style="color:var(--erp-heading)">${stats.rate}%</strong></span>
               </div>
               <div class="erp-stacked-track">
                 ${wP > 0 ? `<div class="erp-stacked-seg--P" style="width:${wP}%"></div>` : ''}

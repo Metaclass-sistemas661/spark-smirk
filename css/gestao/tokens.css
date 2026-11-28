@@ -9,6 +9,7 @@
   --erp-primary-hover: #c24e00;
   --erp-primary-soft: rgba(232, 101, 10, 0.1);
   --erp-primary-border: rgba(232, 101, 10, 0.28);
+  --erp-accent-dark: #c24e00;
   --erp-navy: #0c1829;
   --erp-navy-mid: #142236;
   --erp-navy-light: #1e324d;
@@ -81,9 +82,11 @@
   --erp-text-secondary: #cbd5e1;
   --erp-text-muted: #94a3b8;
   --erp-primary-soft: rgba(232, 101, 10, 0.18);
+  --erp-accent-dark: #fb923c;
   --erp-success-soft: rgba(16, 185, 129, 0.16);
   --erp-warning-soft: rgba(245, 158, 11, 0.18);
   --erp-danger-soft: rgba(239, 68, 68, 0.18);
+  --erp-info: #60a5fa;
   --erp-info-soft: rgba(59, 130, 246, 0.18);
   --erp-shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.35);
   --erp-shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.4);
